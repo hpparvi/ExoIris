@@ -1,5 +1,6 @@
+from ldtk import BoxcarFilter, LDPSetCreator
 from numba import njit, prange
-from numpy import zeros, log, pi, linspace, inf, atleast_2d, newaxis, clip, arctan2, ones, floor, sum
+from numpy import zeros, log, pi, linspace, inf, atleast_2d, newaxis, clip, arctan2, ones, floor, sum, concatenate, sort
 
 from pytransit import TSModel, RRModel, LDTkLD, TransitAnalysis
 from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
@@ -69,7 +70,9 @@ def baseline(xs, ys, dx, npb, npt, bl):
 
 
 class TSLPF(LogPosteriorFunction):
-    def __init__(self, name: str, ldmodel, time, wavelength, fluxes, errors, nk: int = None, nbl: int = None, nthreads: int = 1, tmpars = None):
+    def __init__(self, name: str, ldmodel, time, wavelength, fluxes, errors,
+                 nk: int = None, nbl: int = None, nldc: int = None,
+                 nthreads: int = 1, tmpars = None):
         super().__init__(name)
         self.ldmodel = ldmodel
         self.tm = TSModel(ldmodel, nthreads=nthreads, **(tmpars or {}))
@@ -93,6 +96,9 @@ class TSLPF(LogPosteriorFunction):
         self.bx_knots = linspace(0, 1, self.nbl)
         self.dbx = 1 / (self.nbl - 1)
 
+        self.nldc = 10 if nldc is None else min(nldc, self.npb)
+        self.ld_knots = linspace(wavelength[0], wavelength[-1], self.nldc)
+
         self._npv = 1
         self._bl_array = zeros((self._npv, self.npb, self.npt))
 
@@ -103,16 +109,28 @@ class TSLPF(LogPosteriorFunction):
         self.ps = ParameterSet([])
         self._init_p_star()
         self._init_p_orbit()
+        self._init_limb_darkening()
         self._init_p_radius_ratios()
         self._init_p_baseline()
         self.ps.freeze()
 
     def _init_p_star(self):
-        pstar = [GParameter('rho', 'stellar density', 'g/cm^3', UP(0.1, 25.0), (0, inf)),
-                 GParameter('teff', 'stellar TEff', 'K', NP(*self.ldmodel.sc.teff), (0, inf)),
-                 GParameter('logg', 'stellar log g', '', NP(*self.ldmodel.sc.logg), (0, inf)),
-                 GParameter('metal', 'stellar metallicity', '', NP(*self.ldmodel.sc.metal), (-inf, inf))]
+        pstar = [GParameter('rho', 'stellar density', 'g/cm^3', UP(0.1, 25.0), (0, inf))]
         self.ps.add_global_block('star', pstar)
+
+    def _init_limb_darkening(self):
+        if isinstance(self.ldmodel, LDTkLD):
+            pld = [GParameter('teff', 'stellar TEff', 'K', NP(*self.ldmodel.sc.teff), (0, inf)),
+                   GParameter('logg', 'stellar log g', '', NP(*self.ldmodel.sc.logg), (0, inf)),
+                   GParameter('metal', 'stellar metallicity', '', NP(*self.ldmodel.sc.metal), (-inf, inf))]
+        else:
+            pld = concatenate([
+                [GParameter(f'ldc1_{i:02d}', 'ldc1 {i:02d}', '', UP(0, 1), bounds=(-inf, inf)),
+                 GParameter(f'ldc2_{i:02d}', 'ldc2 {i:02d}', '', UP(0, 1), bounds=(-inf, inf))]
+                for i in range(self.nldc)])
+        self.ps.add_global_block('limb_darkening', pld)
+        self._start_ld = self.ps.blocks[-1].start
+        self._sl_ld = self.ps.blocks[-1].slice
 
     def _init_p_orbit(self):
         ps = self.ps
@@ -150,7 +168,6 @@ class TSLPF(LogPosteriorFunction):
             for ipv in range(pvp.shape[0]):
                 ks[ipv,:] =  splev(self.kx_all, splrep(self.kx_knots, pvp[ipv], s=0.0))
             return ks
-            #return cubic_interpolation_pvp(self.kx_all, pvp, self.dkx)
 
     def _eval_bl(self, pvp):
         if self.nbl == self.npb:
@@ -158,19 +175,32 @@ class TSLPF(LogPosteriorFunction):
         else:
             return baseline(self.bx_all, pvp, self.dbx, self.npb, self.npt, self._bl_array)
 
+    def _eval_ldc(self, pvp):
+        if isinstance(self.ldmodel, LDTkLD):
+            ldp = pvp[:, newaxis, self._sl_ld]
+            ldp[:, 0, 0] = clip(ldp[:, 0, 0], *self.ldmodel.sc.client.teffl)
+            ldp[:, 0, 1] = clip(ldp[:, 0, 1], *self.ldmodel.sc.client.loggl)
+            ldp[:, 0, 2] = clip(ldp[:, 0, 2], *self.ldmodel.sc.client.zl)
+            return ldp
+        else:
+            pvp = atleast_2d(pvp)
+            ldk = pvp[:, self._sl_ld].reshape([pvp.shape[0], self.nldc, 2])
+            ldp = zeros((pvp.shape[0], self.npb, 2))
+            for ipv in range(pvp.shape[0]):
+                ldp[ipv, :, 0] = splev(self.wavelength, splrep(self.ld_knots, ldk[ipv, :, 0], s=0.0))
+                ldp[ipv, :, 1] = splev(self.wavelength, splrep(self.ld_knots, ldk[ipv, :, 1], s=0.0))
+            return ldp
+
     def transit_model(self, pv, copy=True):
         pv = atleast_2d(pv)
-        ldp = pv[:, newaxis, 1:4]
-        ldp[:, 0, 0] = clip(ldp[:, 0, 0], *self.ldmodel.sc.client.teffl)
-        ldp[:, 0, 1] = clip(ldp[:, 0, 1], *self.ldmodel.sc.client.loggl)
-        ldp[:, 0, 2] = clip(ldp[:, 0, 2], *self.ldmodel.sc.client.zl)
-        t0 = pv[:, 4]
-        p = pv[:, 5]
+        ldp = self._eval_ldc(pv)
+        t0 = pv[:, 1]
+        p = pv[:, 2]
         k = self._eval_k(pv[:, self._sl_rratios])
         aor = as_from_rhop(pv[:, 0], p)
-        inc = i_from_ba(pv[:, 6], aor)
-        ecc = pv[:, 7] ** 2 + pv[:, 8] ** 2
-        w = arctan2(pv[:, 8], pv[:, 7])
+        inc = i_from_ba(pv[:, 3], aor)
+        ecc = pv[:, 4] ** 2 + pv[:, 5] ** 2
+        w = arctan2(pv[:, 5], pv[:, 4])
         return self.tm.evaluate(k, ldp, t0, p, aor, inc, ecc, w, copy)
 
     def flux_model(self, pv):
