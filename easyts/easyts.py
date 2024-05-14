@@ -37,6 +37,16 @@ class EasyTS:
         for ipb in range(self.nk):
             self.set_prior(f'k_{ipb + 1:03d}', prior, *nargs)
 
+    def set_ldtk_prior(self, teff, logg, metal, dataset: str = 'visir-lowres', width: float = 50, uncertainty_multiplier: float = 10):
+        self._tsa.set_ldtk_prior(teff, logg, metal, dataset, width, uncertainty_multiplier)
+
+    def set_k_knots(self, knot_wavelengths):
+        self._tsa.set_k_knots(knot_wavelengths)
+
+    @property
+    def ps(self):
+        return self._tsa.ps
+
     def print_parameters(self):
         self._tsa.print_parameters(1)
 
