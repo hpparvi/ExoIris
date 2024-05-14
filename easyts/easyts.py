@@ -84,9 +84,9 @@ class EasyTS:
             pv0 = self._wa._local_minimization.x
             pvp = self._tsa.ps.sample_from_prior(npop)
             pvp[:, 0] = normal(pv0[2], 0.05, size=npop)
-            pvp[:, 4] = normal(pv0[0], 1e-4, size=npop)
-            pvp[:, 5] = normal(pv0[1], 1e-5, size=npop)
-            pvp[:, 6] = clip(normal(pv0[3], 0.01, size=npop), 0.0, 1.0)
+            pvp[:, 1] = normal(pv0[0], 1e-4, size=npop)
+            pvp[:, 2] = normal(pv0[1], 1e-5, size=npop)
+            pvp[:, 3] = clip(normal(pv0[3], 0.01, size=npop), 0.0, 1.0)
             pvp[:, self._tsa._sl_rratios] = normal(sqrt(pv0[4]), 0.001, size=(npop, self.nk))
             pvp[:, self._tsa._sl_baseline] = normal(1.0, 1e-5, size=(npop, self.nbl))
         else:
