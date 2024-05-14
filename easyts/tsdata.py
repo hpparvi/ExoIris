@@ -1,8 +1,9 @@
 from typing import Union, Optional
 
 from astropy.stats import mad_std
-from matplotlib.pyplot import subplots
-from numpy import isfinite, median, where, concatenate, all
+from matplotlib.pyplot import subplots, setp
+from matplotlib.ticker import LinearLocator
+from numpy import isfinite, median, where, concatenate, all, zeros_like, diff, asarray, interp, arange, floor
 from scipy.ndimage import median_filter
 
 from .util import bin2d
@@ -47,11 +48,26 @@ class TSData:
         self.npt = self.time.size
         self.wllims = self.wavelength[[0, -1]]
 
-    def plot(self, ax=None):
+    def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None):
         if ax is None:
-            fig, ax = subplots()
-        ax.pcolormesh(self.time, self.wavelength, self.fluxes, )
-        return ax
+            fig, ax = subplots(figsize=figsize)
+        tref = floor(self.time.min())
+
+        def forward(x):
+            return interp(x, self.wavelength, arange(self.nwl))
+        def inverse(x):
+            return interp(x, arange(self.nwl), self.wavelength)
+
+        ax.pcolormesh(self.time - tref, self.wavelength, self.fluxes, vmin=vmin, vmax=vmax, cmap=cmap)
+        setp(ax, ylabel='Wavelength', xlabel=f'Time - {tref:.0f} [BJD]')
+        ax.yaxis.set_major_locator(LinearLocator(10))
+        ax.yaxis.set_major_formatter('{x:.2f}')
+
+        ax2 = ax.secondary_yaxis('right', functions=(forward, inverse))
+        ax2.set_ylabel('Light curve index')
+        ax2.set_yticks(forward(ax.get_yticks()))
+        ax2.yaxis.set_major_formatter('{x:.0f}')
+        return ax, ax2
 
     def __add__(self, other):
         if self.wllims[1] > other.wllims[0]:
