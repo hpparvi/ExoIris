@@ -19,56 +19,6 @@ def lnlike_normal(o, m, e):
     return lnlike
 
 
-@njit
-def cubic_coeffs(ys):
-    n = ys.size
-    cs = zeros((n-1, 4))
-    for i in range(n-1):
-        y0 = ys[max(0, i-1)]
-        y1 = ys[i]
-        y2 = ys[min(n-1, i+1)]
-        y3 = ys[min(n-1, i+2)]
-
-        cs[i,0] = y3 - y2 - y0 + y1
-        cs[i,1] = y0 - y1 - cs[i,0]
-        cs[i,2] = y2 - y0
-        cs[i,3] = y1
-    return cs
-
-
-@njit
-def cubic_interpolation(xs, ys, dx):
-    npt = xs.size
-    coeffs = cubic_coeffs(ys)
-    nc = coeffs.shape[0]
-    y = zeros(xs.size)
-    for i in range(npt):
-        x = min(xs[i], 0.9999)
-        ix = int(floor(x / dx))
-        a = (x - ix*dx) / dx
-        a2 = a*a
-        y[i] = coeffs[ix, 0]*a*a2 + coeffs[ix, 1]*a2 + coeffs[ix,2]*a + coeffs[ix,3]
-    return y
-
-
-@njit(parallel=True)
-def cubic_interpolation_pvp(xs, ys, dx):
-    y = zeros((ys.shape[0], xs.size))
-    for ip in prange(ys.shape[0]):
-        y[ip] = cubic_interpolation(xs, ys[ip], dx)
-    return y
-
-
-@njit(parallel=False)
-def baseline(xs, ys, dx, npb, npt, bl):
-    npv = ys.shape[0]
-    for ipv in prange(npv):
-        bl[ipv, :, 0] = cubic_interpolation(xs, ys[ipv], dx)
-        for ipb in range(npb):
-            bl[ipv, ipb, :] = bl[ipv, ipb, 0]
-    return bl
-
-
 class TSLPF(LogPosteriorFunction):
     def __init__(self, name: str, ldmodel, time, wavelength, fluxes, errors,
                  nk: int = None, nbl: int = None, nldc: int = None,
@@ -88,13 +38,10 @@ class TSLPF(LogPosteriorFunction):
         self.ootmask = None
 
         self.nk = self.npb if nk is None else min(nk, self.npb)
-        self.kx_all = wavelength
         self.kx_knots = linspace(wavelength[0], wavelength[-1], self.nk)
 
         self.nbl = self.npb if nbl is None else min(nbl, self.npb)
-        self.bx_all = linspace(0, 1, self.npb)
-        self.bx_knots = linspace(0, 1, self.nbl)
-        self.dbx = 1 / (self.nbl - 1)
+        self.bx_knots = linspace(wavelength[0], wavelength[-1], self.nbl)
 
         self.nldc = 10 if nldc is None else min(nldc, self.npb)
         self.ld_knots = linspace(wavelength[0], wavelength[-1], self.nldc)
@@ -191,14 +138,17 @@ class TSLPF(LogPosteriorFunction):
             pvp = atleast_2d(pvp)
             ks = zeros((pvp.shape[0], self.npb))
             for ipv in range(pvp.shape[0]):
-                ks[ipv,:] =  splev(self.kx_all, splrep(self.kx_knots, pvp[ipv], s=0.0))
+                ks[ipv,:] =  splev(self.wavelength, splrep(self.kx_knots, pvp[ipv], s=0.0))
             return ks
 
     def _eval_bl(self, pvp):
         if self.nbl == self.npb:
-            return pvp[:, :, newaxis] * self._bl_array
+            return pvp
         else:
-            return baseline(self.bx_all, pvp, self.dbx, self.npb, self.npt, self._bl_array)
+            pvp = atleast_2d(pvp)
+            for ipv in range(pvp.shape[0]):
+                self._bl_array[ipv, :, :] = splev(self.wavelength, splrep(self.bx_knots, pvp[ipv], s=0.0))[:, newaxis]
+            return self._bl_array
 
     def _eval_ldc(self, pvp):
         if isinstance(self.ldmodel, LDTkLD):
