@@ -159,6 +159,31 @@ class TSLPF(LogPosteriorFunction):
         self._start_baseline = ps.blocks[-1].start
         self._sl_baseline = ps.blocks[-1].slice
 
+    def set_ldtk_prior(self, teff, logg, metal, dataset: str = 'visir-lowres', width: float = 50,
+                       uncertainty_multiplier: float = 10):
+        hw = 0.5 * width
+        filters = [BoxcarFilter('a', wlc - hw, wlc + hw) for wlc in 1e3 * self.ld_knots]
+        sc = LDPSetCreator(teff, logg, metal, filters=filters, dataset=dataset)
+        ps = sc.create_profiles()
+
+        match self.ldmodel:
+            case 'power-2':
+                ldc, lde = ps.coeffs_p2()
+            case 'quadratic':
+                ldc, lde = ps.coeffs_qd()
+            case 'quadratic-triangular':
+                ldc, lde = ps.coeffs_tq()
+            case _:
+                raise ValueError('Unsupported limb darkening model.')
+
+        for i in range(self.nldc):
+            self.set_prior(f'ldc1_{i:02d}', 'NP', ldc[i, 0].round(3), (uncertainty_multiplier * lde[i, 0]).round(3))
+            self.set_prior(f'ldc2_{i:02d}', 'NP', ldc[i, 1].round(3), (uncertainty_multiplier * lde[i, 1]).round(3))
+
+    def set_k_knots(self, knot_wavelengths):
+        self.kx_knots = sort(knot_wavelengths)
+        self.nk = self.kx_knots.size
+
     def _eval_k(self, pvp):
         if self.nk == self.npb:
             return pvp
