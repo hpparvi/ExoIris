@@ -63,6 +63,8 @@ class TSData:
         wer = concatenate([self._wl_r_edges, other._wl_r_edges])
         return TSData(self.time, wavelength, fluxes, errors, wl_edges=(wel, wer))
 
-    def downsample(self, dwl: float, wlmin=None, wlmax=None):
-        bwl, bfl, bfe = downsample_time_2d(self.wavelength, self.fluxes, inttime=dwl * 1e-3, tmin=wlmin, tmax=wlmax)
-        return TSData(self.time, bwl, bfl, bfe)
+    def bin_wavelength(self, binning: Optional[Union[Binning, CompoundBinning]] = None, nb=None, bw=None, r=None):
+        if binning is None:
+            binning = Binning(self.wllims[0], self.wllims[1], nb=nb, bw=bw, r=r)
+        bf, be = bin2d(self.fluxes, self.errors, self._wl_l_edges, self._wl_r_edges, binning.bins)
+        return TSData(self.time, binning.bins.mean(1), bf, be, wl_edges=(binning.bins[:,0], binning.bins[:,1]))
