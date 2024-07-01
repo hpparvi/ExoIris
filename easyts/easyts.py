@@ -3,18 +3,21 @@ from numpy import poly1d, polyfit, where, sqrt, clip, percentile, median, squeez
 from numpy.random import normal
 from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_pkaiews, epoch
 
+from .tsdata import TSData
 from .wlpf import WhiteLPF
 from .tslpf import TSLPF
 
 class EasyTS:
-    def __init__(self, name: str, ldmodel, wavelength, time, fluxes, errors, nk: int = None, nbl: int = None, nldc: int = None,
+    def __init__(self, name: str, ldmodel, data: TSData, nk: int = None, nbl: int = None, nldc: int = None,
                  nthreads: int = 1, tmpars=None):
 
-        self._tsa = TSLPF(name, ldmodel, time, wavelength, fluxes, errors, nk=nk, nbl=nbl, nldc=nldc, nthreads=nthreads, tmpars=tmpars)
+        self.data = data
+        self._tsa = TSLPF(name, ldmodel, data.time, data.wavelength, data.fluxes, data.errors, nk=nk, nbl=nbl,
+                          nldc=nldc, nthreads=nthreads, tmpars=tmpars)
         self._wa = None
 
         self.nthreads = nthreads
-        self.wavelength = wavelength
+        self.wavelength = data.wavelength
         self.nk = self._tsa.nk
         self.nbl = self._tsa.nbl
 
