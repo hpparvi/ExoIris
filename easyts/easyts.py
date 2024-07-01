@@ -1,5 +1,9 @@
+from typing import Optional
+
+import seaborn as sb
+
 from matplotlib.pyplot import subplots, setp
-from numpy import poly1d, polyfit, where, sqrt, clip, percentile, median, squeeze, floor, interp, linspace
+from numpy import poly1d, polyfit, where, sqrt, clip, percentile, median, squeeze, floor, interp, linspace, ndarray
 from numpy.random import normal
 from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_pkaiews, epoch
 
@@ -33,6 +37,9 @@ class EasyTS:
         self._tref = floor(self.time.min())
         self._extent = (self.time[0] - self._tref, self.time[-1] - self._tref, self.wavelength[0], self.wavelength[-1])
 
+    def lnposterior(self, pvp):
+        return squeeze(self._tsa.lnposterior(pvp))
+
     def set_prior(self, parameter, prior, *nargs):
         self._tsa.set_prior(parameter, prior, *nargs)
 
@@ -43,7 +50,12 @@ class EasyTS:
     def set_ldtk_prior(self, teff, logg, metal, dataset: str = 'visir-lowres', width: float = 50, uncertainty_multiplier: float = 10):
         self._tsa.set_ldtk_prior(teff, logg, metal, dataset, width, uncertainty_multiplier)
 
+    @property
+    def k_knots(self) -> ndarray:
+        return self._tsa.kx_knots
+
     def set_k_knots(self, knot_wavelengths):
+        self.nk = len(knot_wavelengths)
         self._tsa.set_k_knots(knot_wavelengths)
 
     @property
