@@ -65,6 +65,22 @@ class EasyTS:
     def print_parameters(self):
         self._tsa.print_parameters(1)
 
+    def plot_setup(self, figsize=(13,4)):
+        fig, axs = subplots(3, 1, figsize=figsize, sharex='all', sharey='all')
+        axs[0].vlines(self._tsa.ld_knots, 0.1, 0.5, ec='k')
+        axs[0].text(0.01, 0.90, 'Limb darkening knots', va='top', transform=axs[0].transAxes)
+        axs[1].vlines(self._tsa.kx_knots, 0.1, 0.5, ec='k')
+        axs[1].text(0.01, 0.90, 'Radius ratio knots', va='top', transform=axs[1].transAxes)
+        axs[2].vlines(self.wavelength, 0.1, 0.5, ec='k')
+        axs[2].text(0.01, 0.90, 'Wavelength bins', va='top', transform=axs[2].transAxes)
+        sb.despine(ax=axs[0], top=False, bottom=True, right=False)
+        sb.despine(ax=axs[1], top=True, bottom=True, right=False)
+        sb.despine(ax=axs[2], top=True, bottom=False, right=False)
+        setp(axs, xlim=(self.wavelength[0]-0.02, self.wavelength[-1]+0.02), yticks=[], ylim=(0, 0.9))
+        setp(axs[-1], xlabel=r'Wavelength [$\mu$m]')
+        fig.tight_layout()
+        return fig
+
     def fit_white(self):
         self._wa = WhiteLPF(self._tsa)
         self._wa.optimize()
