@@ -72,9 +72,9 @@ class TSLPF(LogPosteriorFunction):
                    GParameter('metal', 'stellar metallicity', '', NP(*self.ldmodel.sc.metal), (-inf, inf))]
         else:
             pld = concatenate([
-                [GParameter(f'ldc1_{i:02d}', 'ldc1 {i:02d}', '', UP(0, 1), bounds=(-inf, inf)),
-                 GParameter(f'ldc2_{i:02d}', 'ldc2 {i:02d}', '', UP(0, 1), bounds=(-inf, inf))]
-                for i in range(self.nldc)])
+                [GParameter(f'ldc1_{l:08.5f}', fr'ldc1 at {l:08.5f} $\mu$m', '', UP(0, 1), bounds=(-inf, inf)),
+                 GParameter(f'ldc2_{l:08.5f}', fr'ldc2 at {l:08.5f} $\mu$m', '', UP(0, 1), bounds=(-inf, inf))]
+                for l in self.ld_knots])
         self.ps.add_global_block('limb_darkening', pld)
         self._start_ld = self.ps.blocks[-1].start
         self._sl_ld = self.ps.blocks[-1].slice
@@ -92,16 +92,14 @@ class TSLPF(LogPosteriorFunction):
 
     def _init_p_radius_ratios(self):
         ps = self.ps
-        pp = [GParameter(f'k_{i + 1:03d}', f'radius ratio {i + 1:03d}', 'A_s', UP(0.02, 0.2), (0, inf)) for i in
-              range(self.nk)]
+        pp = [GParameter(f'k_{k:08.5f}', fr'radius ratio at {k:08.5f} $\mu$m', 'A_s', UP(0.02, 0.2), (0, inf)) for k in self.kx_knots]
         ps.add_global_block('radius_ratios', pp)
         self._start_rratios = ps.blocks[-1].start
         self._sl_rratios = ps.blocks[-1].slice
 
     def _init_p_baseline(self):
         ps = self.ps
-        pp = [GParameter(f'c_{i + 1:03d}', f'Baseline constant {i + 1:03d}', 'A_s', NP(1.0, 0.001), (0, inf)) for i in
-              range(self.nbl)]
+        pp = [GParameter(f'c_{b:08.5f}', fr'Baseline constant at {b:08.5f} $\mu$m', 'A_s', NP(1.0, 0.001), (0, inf)) for b in self.bx_knots]
         ps.add_global_block('baseline', pp)
         self._start_baseline = ps.blocks[-1].start
         self._sl_baseline = ps.blocks[-1].slice
@@ -123,13 +121,18 @@ class TSLPF(LogPosteriorFunction):
             case _:
                 raise ValueError('Unsupported limb darkening model.')
 
-        for i in range(self.nldc):
-            self.set_prior(f'ldc1_{i:02d}', 'NP', ldc[i, 0].round(3), (uncertainty_multiplier * lde[i, 0]).round(3))
-            self.set_prior(f'ldc2_{i:02d}', 'NP', ldc[i, 1].round(3), (uncertainty_multiplier * lde[i, 1]).round(3))
+        for i,l in enumerate(self.ld_knots):
+            self.set_prior(f'ldc1_{l:08.5f}', 'NP', ldc[i, 0].round(3), (uncertainty_multiplier * lde[i, 0]).round(3))
+            self.set_prior(f'ldc2_{l:08.5f}', 'NP', ldc[i, 1].round(3), (uncertainty_multiplier * lde[i, 1]).round(3))
 
     def set_k_knots(self, knot_wavelengths):
         self.kx_knots = sort(knot_wavelengths)
         self.nk = self.kx_knots.size
+        pso = self.ps
+        self._init_parameters()
+        for po in pso:
+            if po.name in self.ps.names:
+                self.set_prior(po.name, po.prior)
 
     def _eval_k(self, pvp):
         if self.nk == self.npb:

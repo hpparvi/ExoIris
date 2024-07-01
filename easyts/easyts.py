@@ -44,8 +44,8 @@ class EasyTS:
         self._tsa.set_prior(parameter, prior, *nargs)
 
     def set_radius_ratio_prior(self, prior, *nargs):
-        for ipb in range(self.nk):
-            self.set_prior(f'k_{ipb + 1:03d}', prior, *nargs)
+        for l in self._tsa.kx_knots:
+            self.set_prior(f'k_{l:08.5f}', prior, *nargs)
 
     def set_ldtk_prior(self, teff, logg, metal, dataset: str = 'visir-lowres', width: float = 50, uncertainty_multiplier: float = 10):
         self._tsa.set_ldtk_prior(teff, logg, metal, dataset, width, uncertainty_multiplier)
