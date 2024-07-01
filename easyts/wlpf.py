@@ -5,14 +5,16 @@ from scipy.optimize import minimize
 from pytransit import BaseLPF, LinearModelBaseline
 from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_pkaiews, epoch
 
+from .tslpf import TSLPF
+
 class WhiteLPF(BaseLPF):
-    def __init__(self, tsa):
+    def __init__(self, tsa: TSLPF):
         super().__init__('white', ['white'], tsa.time, tsa.flux.mean(0), covariates=[array([[]])])
         self.set_prior('tc', tsa.ps[tsa.ps.find_pid('tc')].prior)
         self.set_prior('p', tsa.ps[tsa.ps.find_pid('p')].prior)
         self.set_prior('rho', tsa.ps[tsa.ps.find_pid('rho')].prior)
         self.set_prior('b', tsa.ps[tsa.ps.find_pid('b')].prior)
-        pr = tsa.ps[tsa.ps.find_pid('k_001')].prior
+        pr = tsa.ps[tsa._sl_rratios][0].prior
         if 'Uniform' in str(pr.__class__):
             self.set_prior('k2', 'UP', pr.a**2, pr.b**2)
         if 'Normal' in str(pr.__class__):
