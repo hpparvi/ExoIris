@@ -1,3 +1,5 @@
+import warnings
+import numba
 from typing import Union, Optional
 
 from astropy.stats import mad_std
@@ -59,7 +61,7 @@ class TSData:
             return interp(x, arange(self.nwl), self.wavelength)
 
         ax.pcolormesh(self.time - tref, self.wavelength, self.fluxes, vmin=vmin, vmax=vmax, cmap=cmap)
-        setp(ax, ylabel='Wavelength', xlabel=f'Time - {tref:.0f} [BJD]')
+        setp(ax, ylabel=r'Wavelength [$\mu$m]', xlabel=f'Time - {tref:.0f} [BJD]')
         ax.yaxis.set_major_locator(LinearLocator(10))
         ax.yaxis.set_major_formatter('{x:.2f}')
 
@@ -80,7 +82,9 @@ class TSData:
         return TSData(self.time, wavelength, fluxes, errors, wl_edges=(wel, wer))
 
     def bin_wavelength(self, binning: Optional[Union[Binning, CompoundBinning]] = None, nb=None, bw=None, r=None):
-        if binning is None:
-            binning = Binning(self.wllims[0], self.wllims[1], nb=nb, bw=bw, r=r)
-        bf, be = bin2d(self.fluxes, self.errors, self._wl_l_edges, self._wl_r_edges, binning.bins)
-        return TSData(self.time, binning.bins.mean(1), bf, be, wl_edges=(binning.bins[:,0], binning.bins[:,1]))
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', numba.NumbaPerformanceWarning)
+            if binning is None:
+                binning = Binning(self.wllims[0], self.wllims[1], nb=nb, bw=bw, r=r)
+            bf, be = bin2d(self.fluxes, self.errors, self._wl_l_edges, self._wl_r_edges, binning.bins)
+            return TSData(self.time, binning.bins.mean(1), bf, be, wl_edges=(binning.bins[:,0], binning.bins[:,1]))
