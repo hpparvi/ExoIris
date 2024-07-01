@@ -104,7 +104,7 @@ class EasyTS:
         axs[0].imshow(where(self.ootmask, self.original_fluxes, 1), aspect='auto', origin='lower', extent=self._extent)
         axs[1].imshow(where(self.ootmask, self.fluxes, 1), aspect='auto', origin='lower', extent=self._extent)
         setp(axs, xlabel=f'Time - {self._tref:.0f} [BJD]')
-        setp(axs[0], ylabel='Wavelength [$\mu$m]')
+        setp(axs[0], ylabel=r'Wavelength [$\mu$m]')
 
         if fig is not None:
             fig.tight_layout()
@@ -130,7 +130,7 @@ class EasyTS:
         self._tsa.sample_mcmc(niter=niter, thin=thin, repeats=repeats, pool=pool, lnpost=lnpost, vectorize=(pool is None), leave=leave, save=save, use_tqdm=use_tqdm)
         self.sampler = self._tsa.sampler
 
-    def plot_transmission_spectrum(self, ax=None):
+    def plot_transmission_spectrum(self, ax=None, xscale: Optional[str] = None, xticks=None, ylim=None):
         if ax is None:
             fig, ax = subplots()
 
@@ -144,7 +144,11 @@ class EasyTS:
             ar = 1e2 * self._tsa._eval_k(df.iloc[:, self._tsa._sl_rratios]) ** 2
             ax.fill_between(self.wavelength, *percentile(ar, [16, 84], axis=0), alpha=0.25)
             ax.plot(self.wavelength, median(ar, 0), c='k')
-        setp(ax, ylabel='Transit depth [%]', xlabel='Wavelength', xlim=self.wavelength[[0, -1]])
+        setp(ax, ylabel='Transit depth [%]', xlabel='Wavelength', xlim=self.wavelength[[0, -1]], ylim=ylim)
+        if xscale is not None:
+            ax.set_xscale(xscale)
+        if xticks is not None:
+            ax.set_xticks(xticks, labels=xticks)
         return ax
 
     def plot_residuals(self, ax=None, pmin=1, pmax=99):
@@ -167,7 +171,7 @@ class EasyTS:
             ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='k', ymax=0.05, lw=1)
             ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='k', ymin=0.95, lw=1)
 
-        setp(ax, xlabel=f'Time - {self._tref:.0f} [BJD]', ylabel='Wavelength [$\mu$m]')
+        setp(ax, xlabel=f'Time - {self._tref:.0f} [BJD]', ylabel=r'Wavelength [$\mu$m]')
         if fig is not None:
             fig.tight_layout()
         return ax
