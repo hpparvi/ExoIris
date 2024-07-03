@@ -19,6 +19,14 @@ def lnlike_normal(o, m, e):
     return lnlike
 
 
+def resample(x_new, x_old, y_old):
+    return splev(x_new, splrep(x_old, y_old, s=0.0))
+
+
+def add_knots(x_new, x_old):
+    return sort(concatenate([x_new, x_old]))
+
+
 class TSLPF(LogPosteriorFunction):
     def __init__(self, name: str, ldmodel, time, wavelength, fluxes, errors,
                  nk: int = None, nbl: int = None, nldc: int = None,
@@ -125,14 +133,40 @@ class TSLPF(LogPosteriorFunction):
             self.set_prior(f'ldc1_{l:08.5f}', 'NP', ldc[i, 0].round(3), (uncertainty_multiplier * lde[i, 0]).round(3))
             self.set_prior(f'ldc2_{l:08.5f}', 'NP', ldc[i, 1].round(3), (uncertainty_multiplier * lde[i, 1]).round(3))
 
+    def add_k_knots(self, knot_wavelengths) -> None:
+        self.set_k_knots(concatenate([self.kx_knots, knot_wavelengths]))
+
     def set_k_knots(self, knot_wavelengths):
-        self.kx_knots = sort(knot_wavelengths)
+        xo = self.kx_knots
+        xn = self.kx_knots = sort(knot_wavelengths)
         self.nk = self.kx_knots.size
+
+        pvpo = self.de.population.copy() if self.de is not None else None
         pso = self.ps
+        slko = self._sl_rratios
         self._init_parameters()
+        psn = self.ps
+        slkn = self._sl_rratios
         for po in pso:
-            if po.name in self.ps.names:
+            if po.name in psn.names:
                 self.set_prior(po.name, po.prior)
+
+        if self.de is not None:
+            pvpn = self.create_pv_population(pvpo.shape[0])
+            # Copy the old parameter values
+            # -----------------------------
+            for pid_old, p in enumerate(pso):
+                if p.name in psn:
+                    pid_new = psn.find_pid(p.name)
+                    pvpn[:, pid_new] = pvpo[:, pid_old]
+
+            # Resample the radius ratios
+            # --------------------------
+            for i in range(pvpn.shape[0]):
+                pvpn[i, slkn] = resample(xn, xo, pvpo[i, slko])
+
+            self.de = None
+            self._pv_population = pvpn
 
     def _eval_k(self, pvp):
         if self.nk == self.npb:
@@ -201,3 +235,15 @@ class TSLPF(LogPosteriorFunction):
     def lnlikelihood(self, pv):
         fmod = self.flux_model(pv)
         return lnlike_normal(self.flux, fmod, self.ferr)
+
+    def optimize_global(self, niter=200, npop=50, population=None, pool=None, lnpost=None, vectorize=True,
+                        label='Global optimisation', leave=False, plot_convergence: bool = True, use_tqdm: bool = True,
+                        plot_parameters: tuple = (0, 2, 3, 4)):
+
+        if population is None:
+            population = self._pv_population if self.de is None else None
+
+        super().optimize_global(niter=niter, npop=npop, population=population, pool=pool, lnpost=lnpost,
+                                vectorize=vectorize, label=label, leave=leave, plot_convergence=plot_convergence,
+                                use_tqdm=use_tqdm, plot_parameters=plot_parameters)
+
