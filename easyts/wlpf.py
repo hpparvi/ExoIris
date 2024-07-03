@@ -1,3 +1,4 @@
+from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
 from numpy import array, log10, diff, sqrt, floor
 from scipy.optimize import minimize
@@ -46,9 +47,11 @@ class WhiteLPF(BaseLPF):
         t14 = d_from_pkaiews(pv[1], sqrt(pv[4]), a, i, 0., 0., 1, 14)
         return t14
 
-    def plot(self, ax=None):
+    def plot(self, ax=None) -> Figure:
         if ax is None:
             fig, ax = subplots()
+        else:
+            fig = ax.get_figure()
 
         tref = floor(self.timea.min())
         fm = self.flux_model(self._local_minimization.x)
@@ -61,4 +64,4 @@ class WhiteLPF(BaseLPF):
         ax.axvline(tc - tref - 0.5*t14, ls='--', c='0.5')
         ax.axvline(tc - tref + 0.5*t14, ls='--', c='0.5')
         setp(ax, xlabel=f'Time - {tref:.0f} [BJD]', ylabel='Normalized flux', xlim=(self.timea.min()-tref, self.timea.max()-tref))
-        return ax
+        return fig
