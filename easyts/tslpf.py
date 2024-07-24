@@ -134,9 +134,26 @@ class TSLPF(LogPosteriorFunction):
             self.set_prior(f'ldc2_{l:08.5f}', 'NP', ldc[i, 1].round(3), (uncertainty_multiplier * lde[i, 1]).round(3))
 
     def add_k_knots(self, knot_wavelengths) -> None:
+        """
+        Add radius ratio (k) knots to the model.
+
+        Parameters
+        ----------
+        knot_wavelengths : array-like
+            An array of knot wavelengths to be added.
+        """
         self.set_k_knots(concatenate([self.kx_knots, knot_wavelengths]))
 
-    def set_k_knots(self, knot_wavelengths):
+    def set_k_knots(self, knot_wavelengths) -> None:
+        """
+        Set the radius ratio (k) knot wavelengths for the model.
+
+        Parameters
+        ----------
+        knot_wavelengths : array-like
+            Array of knot wavelengths.
+
+        """
         xo = self.kx_knots
         xn = self.kx_knots = sort(knot_wavelengths)
         self.nk = self.kx_knots.size
@@ -169,6 +186,20 @@ class TSLPF(LogPosteriorFunction):
             self._pv_population = pvpn
 
     def _eval_k(self, pvp):
+        """
+        Evaluate the radius ratio model.
+
+        Parameters
+        ----------
+        pvp : ndarray
+            The input array of shape (npv, np), where npv is the number of parameter vectors
+            and np is the number of parameters.
+
+        Returns
+        -------
+        ks : ndarray
+            The radius ratios of shape (npv, npb), where npb is the number of passbands.
+        """
         if self.nk == self.npb:
             return pvp
         else:
@@ -204,6 +235,30 @@ class TSLPF(LogPosteriorFunction):
             return ldp
 
     def transit_model(self, pv, copy=True):
+        """Evaluates the transit model for parameter vector pv.
+
+        Parameters
+        ----------
+        pv : numpy.ndarray
+            Array of transit parameters. Each row represents a set of transit parameters for a single transit event.
+            The columns of the array should be in the following order:
+            - Column 0: stellar density (g/cm^3)
+            - Column 1: transit center time (T0)
+            - Column 2: orbital period (P)
+            - Column 3: impact parameter
+            - Column 4: sqrt e cos w
+            - Column 5: sqrt e sin w
+            - Column 6: planet-to-star radius ratio (Rp/R_star)
+
+        copy : bool, optional
+            Whether to create a copy of the calculated values before returning the result. Default is True.
+
+        Returns
+        -------
+        numpy.ndarray
+            Array of model transit fluxes. Each element corresponds to the transit model flux for the corresponding set
+            of transit parameters in the input array 'pv'.
+        """
         pv = atleast_2d(pv)
         ldp = self._eval_ldc(pv)
         t0 = pv[:, 1]
@@ -225,7 +280,18 @@ class TSLPF(LogPosteriorFunction):
             self._bl_array = ones((pvp.shape[0], self.npb, self.npt))
         return self._eval_bl(pvp[:, self._sl_baseline])
 
-    def create_pv_population(self, npop=50):
+    def create_pv_population(self, npop: int = 50):
+        """ Crate a parameter vector population.
+        Parameters
+        ----------
+        npop : int, optional
+            The number of parameter vectors in the population. Default is 50.
+
+        Returns
+        -------
+        population : array_like
+            An array of parameter vectors sampled from the prior distribution.
+        """
         return self.ps.sample_from_prior(npop)
 
     def set_radius_ratio_limits(self, kmin, kmax):
@@ -233,6 +299,19 @@ class TSLPF(LogPosteriorFunction):
             self.set_prior(f'k_{ipb + 1:03d}', 'UP', kmin, kmax)
 
     def lnlikelihood(self, pv):
+        """Log likelihood for parameter vector pv.
+
+        Parameters
+        ----------
+        pv : array-like
+            The input parameter values for the flux model.
+
+        Returns
+        -------
+        lnlike : float
+            The logarithm of the likelihood value calculated using the normal distribution.
+
+        """
         fmod = self.flux_model(pv)
         return lnlike_normal(self.flux, fmod, self.ferr)
 
