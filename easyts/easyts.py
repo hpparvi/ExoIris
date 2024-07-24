@@ -1,24 +1,44 @@
-from typing import Optional
+from typing import Optional, Callable, Any
 
 import seaborn as sb
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
-
 from matplotlib.pyplot import subplots, setp
-from numpy import poly1d, polyfit, where, sqrt, clip, percentile, median, squeeze, floor, interp, linspace, ndarray, \
-    array
+from numpy import poly1d, polyfit, where, sqrt, clip, percentile, median, squeeze, floor, ndarray, array
 from numpy.random import normal
-from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_pkaiews, epoch
+from pytransit.orbits import fold
+from pytransit.param import ParameterSet
 
 from .tsdata import TSData
-from .wlpf import WhiteLPF
 from .tslpf import TSLPF
+from .wlpf import WhiteLPF
+
 
 class EasyTS:
     def __init__(self, name: str, ldmodel, data: TSData, nk: int = None, nbl: int = None, nldc: int = None,
                  nthreads: int = 1, tmpars=None):
+        """
+        Parameters
+        ----------
+        name : str
+            The name of the instance.
+        ldmodel : object
+            The model for the limb darkening.
+        data : TSData
+            The time-series data object.
+        nk : int, optional
+            The number of kernel samples.
+        nbl : int, optional
+            The number of bins for the light curve.
+        nldc : int, optional
+            The number of limb darkening coefficients.
+        nthreads : int, optional
+            The number of threads to use for computation.
+        tmpars : object, optional
+            Additional parameters.
 
+        """
         self.data = data
         self._tsa = TSLPF(name, ldmodel, data.time, data.wavelength, data.fluxes, data.errors, nk=nk, nbl=nbl,
                           nldc=nldc, nthreads=nthreads, tmpars=tmpars)
@@ -39,44 +59,122 @@ class EasyTS:
         self._extent = (self.time[0] - self._tref, self.time[-1] - self._tref, self.wavelength[0], self.wavelength[-1])
 
     def lnposterior(self, pvp):
+        """Log posterior probability for a single parameter vector or an array of parameter vectors.
+
+        Parameters
+        ----------
+        pvp : array_like
+            The vector of parameter values or an array of parameter vectors with a shape [npv, np].
+
+        Returns
+        -------
+        array_like
+            The natural logarithm of the posterior probability.
+
+        """
         return squeeze(self._tsa.lnposterior(pvp))
 
     def set_prior(self, parameter, prior, *nargs):
         self._tsa.set_prior(parameter, prior, *nargs)
 
     def set_radius_ratio_prior(self, prior, *nargs):
+        """Set an identical prior on all radius ratio (k) knots.
+
+        Parameters
+        ----------
+        prior : float
+            The prior for the radius ratios.
+        *nargs : float
+            Additional arguments for the prior.
+
+        """
         for l in self._tsa.kx_knots:
             self.set_prior(f'k_{l:08.5f}', prior, *nargs)
 
     def set_ldtk_prior(self, teff, logg, metal, dataset: str = 'visir-lowres', width: float = 50, uncertainty_multiplier: float = 10):
+        """Sets priors on the limb darkening parameters using LDTk.
+
+        Sets priors on the limb darkening parameters based on theoretical stellar models using LDTk.
+
+        Parameters
+        ----------
+        teff : float
+            The effective temperature in Kelvin.
+
+        logg : float
+            The surface gravity in cm/s^2.
+
+        metal : float
+            The metallicity.
+
+        dataset : str, optional
+            The name of the dataset. Default is 'visir-lowres'.
+
+        width : float, optional
+            The passband width in nanometers. Default is 50.
+
+        uncertainty_multiplier : float, optional
+            The uncertainty multiplier to adjust the width of the prior. Default is 10.
+
+        """
         self._tsa.set_ldtk_prior(teff, logg, metal, dataset, width, uncertainty_multiplier)
 
     @property
     def k_knots(self) -> ndarray:
+        """Get the radius ratio (k) knots."""
         return self._tsa.kx_knots
 
     @property
     def nk(self) -> int:
+        """Get the number of radius ratio (k) knots."""
         return self._tsa.nk
 
     @property
     def nbl(self) -> int:
+        """Get the number of baseline knots."""
         return self._tsa.nbl
 
     def add_k_knots(self, knot_wavelengths) -> None:
+        """Add radius ratio (k) knots.
+
+        Parameters
+        ----------
+        knot_wavelengths : array-like
+            List or array of knot wavelengths to be added.
+        """
         self._tsa.add_k_knots(knot_wavelengths)
 
-    def set_k_knots(self, knot_wavelengths):
+    def set_k_knots(self, knot_wavelengths) -> None:
+        """Set the radius ratio (k) knots.
+
+        Parameters
+        ----------
+        knot_wavelengths : array-like
+            List or array of knot wavelengths.
+        """
         self._tsa.set_k_knots(knot_wavelengths)
 
     @property
-    def ps(self):
+    def ps(self) -> ParameterSet:
+        """Get the model parameterization."""
         return self._tsa.ps
 
     def print_parameters(self):
+        """Prints the model parameterization."""
         self._tsa.print_parameters(1)
 
-    def plot_setup(self, figsize=(13,4)):
+    def plot_setup(self, figsize=(13,4)) -> Figure:
+        """Plots the model setup with limb darkening knots, radius ratio knots, and data binning.
+
+        Parameters
+        ----------
+        figsize : tuple, optional
+            The size of the figure. Default is (13, 4).
+
+        Returns
+        -------
+        Figure
+        """
         fig, axs = subplots(3, 1, figsize=figsize, sharex='all', sharey='all')
         axs[0].vlines(self._tsa.ld_knots, 0.1, 0.5, ec='k')
         axs[0].text(0.01, 0.90, 'Limb darkening knots', va='top', transform=axs[0].transAxes)
@@ -92,7 +190,8 @@ class EasyTS:
         fig.tight_layout()
         return fig
 
-    def fit_white(self):
+    def fit_white(self) -> None:
+        """Fits a white light curve model and sets the out-of-transit mask."""
         self._wa = WhiteLPF(self._tsa)
         self._wa.optimize()
         pv = self._wa._local_minimization.x
@@ -100,16 +199,58 @@ class EasyTS:
         self.ootmask = abs(phase) > 0.502 * self._wa.transit_duration
 
     def plot_white(self) -> Figure:
+        """Plots the white light curve data with the best-fit model.
+
+        Returns
+        -------
+        Figure
+        """
         return self._wa.plot()
 
     def normalize_baseline(self, deg: int = 1) -> None:
+        """Nortmalize the baseline flux for each spectroscopic light curve.
+
+        Normalize the baseline flux using a low-order polynomial fitted to the out-of-transit
+        data for each spectroscopic light curve.
+
+        Parameters
+        ----------
+        deg : int
+            The degree of the fitted polynomial. Should be 0 or 1. Higher degrees are not allowed
+            because they could affect the transit depths.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            If `deg` is greater than 1.
+
+        Notes
+        -----
+        This method normalizes the baseline of the fluxes for each planet. It fits a polynomial of degree
+        `deg` to the out-of-transit data points and divides the fluxes by the fitted polynomial evaluated
+        at each time point.
+        """
         if deg > 1:
             raise ValueError("The degree of the fitted polynomial ('deg') should be 0 or 1. Higher degrees are not allowed because they could affect the transit depths.")
         for ipb in range(self.npb):
             pl = poly1d(polyfit(self.time[self.ootmask], self.fluxes[ipb, self.ootmask], deg=deg))
             self.fluxes[ipb, :] /= pl(self.time)
 
-    def plot_baseline(self, axs=None):
+    def plot_baseline(self, axs: Optional[Axes] = None) -> Axes:
+        """Plots the out-of-transit spectroscopic light curves before and after the normalization.
+
+        Parameters
+        ----------
+        axs : matplotlib.axes.Axes object or None, optional
+
+        Returns
+        -------
+        axs : matplotlib.axes.Axes object
+        """
         if axs is None:
             fig, axs = subplots(1, 2, figsize=(13, 4), sharey='all')
         else:
@@ -123,7 +264,22 @@ class EasyTS:
             fig.tight_layout()
         return axs
 
-    def fit(self, niter: int = 200, npop: int = 150, pool=None, lnpost=None):
+    def fit(self, niter: int = 200, npop: int = 150, pool: Optional[Any] = None, lnpost: Optional[Callable]=None) -> None:
+        """Fit the spectroscopic light curves jointly using Differential Evolution.
+
+        Fit the spectroscopic light curves jointly for `niter` iterations using Differential Evolution.
+
+        Parameters
+        ----------
+        niter : int, optional
+            Number of iterations for optimization. Default is 200.
+        npop : int, optional
+            Population size for optimization. Default is 150.
+        pool : multiprocessing.Pool, optional
+            Multiprocessing pool for parallel optimization. Default is None.
+        lnpost : callable, optional
+            Log posterior function for optimization. Default is None.
+        """
         if self._tsa.de is None:
             pv0 = self._wa._local_minimization.x
             pvp = self._tsa.ps.sample_from_prior(npop)
@@ -140,12 +296,59 @@ class EasyTS:
         self.de = self._tsa.de
 
     def sample(self, niter: int = 500, thin: int = 10, repeats: int = 1, pool=None, lnpost=None, leave=True, save=False, use_tqdm: bool = True):
+        """Sample the posterior distribution using the emcee MCMC sampler.
+
+        Parameters
+        ----------
+        niter : int, optional
+            Number of iterations in the MCMC sampling. Default is 500.
+        thin : int, optional
+            Thinning factor for the MCMC samples. Default is 10.
+        repeats : int, optional
+            Number of repeated iterations in the MCMC sampling. Default is 1.
+        pool : object, optional
+            Parallel processing pool object to use for parallelization. Default is None.
+        lnpost : function, optional
+            Log posterior function that takes a parameter vector as input and returns the log posterior probability.
+            Default is None.
+        leave : bool, optional
+            Whether to leave the progress bar visible after sampling is finished. Default is True.
+        save : bool, optional
+            Whether to save the MCMC samples to disk. Default is False.
+        use_tqdm : bool, optional
+            Whether to use tqdm progress bar during sampling. Default is True.
+
+        """
         self._tsa.sample_mcmc(niter=niter, thin=thin, repeats=repeats, pool=pool, lnpost=lnpost, vectorize=(pool is None), leave=leave, save=save, use_tqdm=use_tqdm)
         self.sampler = self._tsa.sampler
 
-    def plot_transmission_spectrum(self, result: Optional[str] = None, ax: Axes = None, xscale: Optional[str] = None, xticks=None, ylim=None,
-                                   plot_resolution: bool = True) -> Figure:
+    def plot_transmission_spectrum(self, result: Optional[str] = None, ax: Axes = None, xscale: Optional[str] = None,
+                                   xticks=None, ylim=None,  plot_resolution: bool = True) -> Figure:
+        """Plots the transmission spectrum.
 
+        Parameters
+        ----------
+        result : Optional[str]
+            The type of result to plot. Can be 'fit', 'mcmc', or None. If None, the default behavior is to use 'mcmc' if
+            the MCMC sampler has been run, otherwise 'fit'. Default is None.
+        ax : Axes
+            The matplotlib Axes object to plot on. If None, a new figure and axes will be created. Default is None.
+        xscale : Optional[str]
+            The scale of the x-axis. Can be 'linear', 'log', 'symlog', 'logit', or None. If None, the default behavior is to
+            use the scale of the current axes. Default is None.
+        xticks
+            The tick locations for the x-axis. If None, the default behavior is to use the tick locations of the current axes.
+        ylim
+            The limits for the y-axis. If None, the default behavior is to use the limits of the current axes.
+        plot_resolution : bool
+            Whether to plot the resolution of the transmission spectrum as vertical lines. Default is True.
+
+        Returns
+        -------
+        Figure
+            The matplotlib Figure object of the plotted transmission spectrum.
+
+        """
         if result is None:
             result = 'mcmc' if self._tsa.sampler is not None else 'fit'
         if result not in ('fit', 'mcmc'):
@@ -177,7 +380,34 @@ class EasyTS:
             ax.set_xticks(xticks, labels=xticks)
         return ax.get_figure()
 
-    def plot_limb_darkening_parameters(self, result: Optional[str] = None, axs = None) -> Figure:
+    def plot_limb_darkening_parameters(self, result: Optional[str] = None, axs: Axes = None) -> Figure:
+        """
+        Parameters
+        ----------
+        result : str, optional
+            The type of result to plot. Can be 'fit', 'mcmc', or None. If None, the default behavior is to use 'mcmc' if
+            the MCMC sampler has been run, otherwise 'fit'. Default is None.
+        axs : Array-like of matplotlib.axes.Axes with a shape [2], optional
+            The axes to plot the limb darkening parameters on. If None, a new figure with subplots will be created.
+            Default is None.
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+            The figure containing the plot of the limb darkening parameters.
+
+        Raises
+        ------
+        ValueError
+            If the limb darkening model is not supported.
+            If the result is not 'fit', 'mcmc', or None.
+            If the result is 'mcmc' and the MCMC sampler has not been run.
+
+        Notes
+        -----
+        This method plots the limb darkening parameters for two-parameter limb darkening models. It supports only
+        quadratic, quadratic-tri, power-2, and power-2-pm models.
+        """
         if not self._tsa.ldmodel in ('quadratic', 'quadratic-tri', 'power-2', 'power-2-pm'):
             raise ValueError('Unsupportted limb darkening model: the plot supports only two-parameter limb darkening models at the moment.')
 
@@ -235,7 +465,32 @@ class EasyTS:
         fig.tight_layout()
         return fig
 
-    def plot_residuals(self, result: Optional[str] = None, ax: Axes = None, pmin=1, pmax=99) -> Figure:
+    def plot_residuals(self, result: Optional[str] = None, ax: Axes = None, pmin: float = 1, pmax: float = 99) -> Figure:
+        """
+        Parameters
+        ----------
+        result : Optional[str], default=None
+            The result type to plot. Must be either 'fit', 'mcmc', or None.
+        ax : Axes, default=None
+            The axes object to plot on. If None, a new figure and axes will be created.
+        pmin : float, default=1
+            The lower percentile to use when setting the color scale of the residuals image.
+        pmax : float, default=99
+            The upper percentile to use when setting the color scale of the residuals image.
+
+        Returns
+        -------
+        Figure
+            The figure object containing the plotted residuals.
+
+        Raises
+        ------
+        ValueError
+            If result is not one of 'fit', 'mcmc', or None.
+        ValueError
+            If result is 'mcmc' but the MCMC sampler has not been run.
+
+        """
         if result is None:
             result = 'mcmc' if self._tsa.sampler is not None else 'fit'
         if result not in ('fit', 'mcmc'):
@@ -265,6 +520,24 @@ class EasyTS:
         return fig
 
     def plot_fit(self, result: Optional[str] = None, figsize=None, res_args=None, trs_args=None) -> Figure:
+        """Plots the final fit.
+
+        Parameters
+        ----------
+        result : Optional[str]
+            The result of the fit. Default is None.
+        figsize : Optional[Tuple[float, float]]
+            The size of the figure in inches. Default is None.
+        res_args : Optional[Dict[str, Any]]
+            Additional arguments for plotting residuals. Default is None.
+        trs_args : Optional[Dict[str, Any]]
+            Additional arguments for plotting transmission spectrum. Default is None.
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+            The plotted figure containing the residual plot, transmission spectrum plot, and limb darkening parameters plot.
+        """
         if trs_args is None:
             trs_args = {}
         if res_args is None:
