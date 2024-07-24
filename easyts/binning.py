@@ -4,6 +4,37 @@ from numpy import array, floor, linspace, vstack, nan, concatenate
 
 
 class Binning:
+    """
+    Class representing a binning of values within a given range.
+
+    Parameters:
+        xmin (float): The minimum value of the binning range.
+        xmax (float): The maximum value of the binning range.
+        nb (float, optional): The number of bins. Default is None, in which case the binning will be determined by bin width or resolution.
+        bw (float, optional): The bin width. Default is None, in which case the binning will be determined by the number of bins or resolution.
+        r (float, optional): The resolution. Default is None, in which case the binning will be determined by the number of bins or bin width.
+
+    Raises:
+        ValueError: If the binning is not initialized properly.
+
+    Attributes:
+        xmin (float): The minimum value of the binning range.
+        xmax (float): The maximum value of the binning range.
+        nb (int|Optional): The number of bins in the binning.
+        bw (float|Optional): The width of each bin in the binning.
+        r (float|Optional): The resolution of the binning.
+        bins (numpy.ndarray|None): The array representing the bins in the binning.
+
+    Methods:
+        _bin_r(): Method to calculate the binning using the resolution.
+        _bin_bw(): Method to calculate the binning using the bin width.
+        _bin_nb(): Method to calculate the binning using the number of bins.
+
+    Magic Methods:
+        __repr__(): Returns a string representation of the Binning object.
+        __add__(): Defines the concatenation behavior when adding a Binning object with another object.
+
+    """
     def __init__(self, xmin: float, xmax: float, nb: Optional[float] = None, bw: Optional[float] = None, r: Optional[float] = None):
         if (nb is not None) + (bw is not None) + (r is not None) != 1:
             raise ValueError(
@@ -23,7 +54,15 @@ class Binning:
         else:
             self._bin_nb()
 
-    def _bin_r(self):
+    def _bin_r(self) -> None:
+        """
+        Create bins for a given range using the resolution.
+
+        Description:
+            This method creates bins for a given range using the value of r. It calculates the start and end values of each bin
+            based on the current xmin, xmax, and r values. The bins are then stored in the 'bins' attribute of the object instance.
+            The number of bins is stored in the 'nb' attribute.
+        """
         bins = []
         x0 = self.xmin
         while True:
@@ -35,14 +74,26 @@ class Binning:
         self.bins = array(bins)
         self.nb = self.bins.shape[0]
 
-    def _bin_bw(self):
+    def _bin_bw(self) -> None:
+        """
+        Create bins for a given range based on the bin width `bw` and the range limits (xmin, xmax).
+
+        Raises:
+            ValueError: If the bin width (bw) is greater than or equal to the binning span.
+        """
         if self.xmax - self.xmin <= self.bw:
             raise ValueError("The bin width (bw) should be smaller than the binning span.")
         self.nb = int(floor((self.xmax - self.xmin) / self.bw))
         self._bin_nb()
         self.nb = self.bins.shape[0]
 
-    def _bin_nb(self):
+    def _bin_nb(self) -> None:
+        """
+        Create bins for a given range based on the number of bins `nb` and the range limits (xmin, xmax).
+
+        Raises:
+            ValueError: If the number of bins (nb) is less than or equal to zero.
+        """
         if self.nb <= 0:
             raise ValueError("The number of bins (nb) should be larger than zero.")
         e = linspace(self.xmin, self.xmax, num=self.nb)
@@ -62,6 +113,13 @@ class Binning:
 
 
 class CompoundBinning:
+    """
+    Class representing a compound binning.
+
+    Attributes:
+        binnings (list): List of binning objects.
+        bins (ndarray): Concatenated bins from all the binning objects.
+    """
     def __init__(self, binnings):
         self.binnings = binnings
         self.bins = concatenate([b.bins for b in self.binnings])
