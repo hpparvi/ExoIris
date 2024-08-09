@@ -1,6 +1,5 @@
 [project]
 name = "EasyTS"
-version = "0.5"
 description = 'Easy and robust exoplanet transmission spectroscopy.'
 authors=[{name='Hannu Parviainen', email='hannu@iac.es'}]
 classifiers=[
@@ -13,10 +12,10 @@ classifiers=[
   "Programming Language :: Python",
 ]
 keywords = ['astronomy',  'astrophysics',  'exoplanets']
-dependencies = ["pytransit", "ldtk", "numpy", "scipy", "numba", "matplotlib"]
 requires-python = ">= 3.8"
 readme = "README.md"
 license = {text = "GPLv2"}
+dynamic = ["version", "dependencies"]
 
 [project.urls]
 homepage = 'https://github.com/hpparvi/EasyTS'
@@ -27,6 +26,10 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 include-package-data = true
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+version = {attr = "easyts.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["easyts"]

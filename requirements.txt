@@ -1,0 +1,6 @@
+pytransit
+ldtk
+numpy
+scipy
+numba
+matplotlib
