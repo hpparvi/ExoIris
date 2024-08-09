@@ -9,6 +9,7 @@ from numpy import poly1d, polyfit, where, sqrt, clip, percentile, median, squeez
 from numpy.random import normal
 from pytransit.orbits import fold
 from pytransit.param import ParameterSet
+from pytransit.utils.de import DiffEvol
 
 from .tsdata import TSData
 from .tslpf import TSLPF
@@ -16,6 +17,33 @@ from .wlpf import WhiteLPF
 
 
 class EasyTS:
+    """A class providing tools for easy and fast exoplanet transit spectroscopy.
+
+    EasyTS is a class providing the tools for easy and fast exoplanet transit spectroscopy. It provides methods
+    for modelling spectroscopic transit light curves and inferring posterior densities for the model parameters.
+
+    Attributes
+    ----------
+    name : str
+        The name of the analysis.
+    data : TSData
+        The time-series data object.
+    time : ndarray
+        The array of time values.
+    wavelength : ndarray
+        The array of wavelength values.
+    fluxes : ndarray
+        The array of flux values.
+    npb : int
+        The number of wavelength bins.
+    nthreads : int
+        The number of threads to use for computation.
+    de : None
+        The Differential Evolution global optimizer.
+    sampler : None
+        The MCMC sampler.
+    """
+
     def __init__(self, name: str, ldmodel, data: TSData, nk: int = None, nbl: int = None, nldc: int = None,
                  nthreads: int = 1, tmpars=None):
         """
@@ -37,7 +65,6 @@ class EasyTS:
             The number of threads to use for computation.
         tmpars : object, optional
             Additional parameters.
-
         """
         self.data = data
         self._tsa = TSLPF(name, ldmodel, data.time, data.wavelength, data.fluxes, data.errors, nk=nk, nbl=nbl,
@@ -52,14 +79,14 @@ class EasyTS:
         self.original_fluxes = self._tsa._original_flux
         self.ootmask = None
         self.npb = self._tsa.npb
-        self.de = None
+        self.de: Optional[DiffEvol] = None
         self.sampler = None
 
         self._tref = floor(self.time.min())
         self._extent = (self.time[0] - self._tref, self.time[-1] - self._tref, self.wavelength[0], self.wavelength[-1])
 
     def lnposterior(self, pvp):
-        """Log posterior probability for a single parameter vector or an array of parameter vectors.
+        """Calculate the log posterior probability for a single parameter vector or an array of parameter vectors.
 
         Parameters
         ----------
@@ -75,6 +102,7 @@ class EasyTS:
         return squeeze(self._tsa.lnposterior(pvp))
 
     def set_prior(self, parameter, prior, *nargs):
+        """Set a prior on a model parameter."""
         self._tsa.set_prior(parameter, prior, *nargs)
 
     def set_radius_ratio_prior(self, prior, *nargs):
@@ -92,7 +120,7 @@ class EasyTS:
             self.set_prior(f'k_{l:08.5f}', prior, *nargs)
 
     def set_ldtk_prior(self, teff, logg, metal, dataset: str = 'visir-lowres', width: float = 50, uncertainty_multiplier: float = 10):
-        """Sets priors on the limb darkening parameters using LDTk.
+        """Set priors on the limb darkening parameters using LDTk.
 
         Sets priors on the limb darkening parameters based on theoretical stellar models using LDTk.
 
@@ -134,7 +162,7 @@ class EasyTS:
         """Get the number of baseline knots."""
         return self._tsa.nbl
 
-    def add_k_knots(self, knot_wavelengths) -> None:
+    def add_radius_ratio_knots(self, knot_wavelengths) -> None:
         """Add radius ratio (k) knots.
 
         Parameters
@@ -144,7 +172,7 @@ class EasyTS:
         """
         self._tsa.add_k_knots(knot_wavelengths)
 
-    def set_k_knots(self, knot_wavelengths) -> None:
+    def set_radius_ratio_knots(self, knot_wavelengths) -> None:
         """Set the radius ratio (k) knots.
 
         Parameters
@@ -160,11 +188,11 @@ class EasyTS:
         return self._tsa.ps
 
     def print_parameters(self):
-        """Prints the model parameterization."""
+        """Print the model parameterization."""
         self._tsa.print_parameters(1)
 
     def plot_setup(self, figsize=(13,4)) -> Figure:
-        """Plots the model setup with limb darkening knots, radius ratio knots, and data binning.
+        """Plot the model setup with limb darkening knots, radius ratio knots, and data binning.
 
         Parameters
         ----------
@@ -191,7 +219,7 @@ class EasyTS:
         return fig
 
     def fit_white(self) -> None:
-        """Fits a white light curve model and sets the out-of-transit mask."""
+        """Fit a white light curve model and sets the out-of-transit mask."""
         self._wa = WhiteLPF(self._tsa)
         self._wa.optimize()
         pv = self._wa._local_minimization.x
@@ -199,7 +227,7 @@ class EasyTS:
         self.ootmask = abs(phase) > 0.502 * self._wa.transit_duration
 
     def plot_white(self) -> Figure:
-        """Plots the white light curve data with the best-fit model.
+        """Plot the white light curve data with the best-fit model.
 
         Returns
         -------
@@ -241,7 +269,7 @@ class EasyTS:
             self.fluxes[ipb, :] /= pl(self.time)
 
     def plot_baseline(self, axs: Optional[Axes] = None) -> Axes:
-        """Plots the out-of-transit spectroscopic light curves before and after the normalization.
+        """Plot the out-of-transit spectroscopic light curves before and after the normalization.
 
         Parameters
         ----------
@@ -324,7 +352,7 @@ class EasyTS:
 
     def plot_transmission_spectrum(self, result: Optional[str] = None, ax: Axes = None, xscale: Optional[str] = None,
                                    xticks=None, ylim=None,  plot_resolution: bool = True) -> Figure:
-        """Plots the transmission spectrum.
+        """Plot the transmission spectrum.
 
         Parameters
         ----------
@@ -381,7 +409,8 @@ class EasyTS:
         return ax.get_figure()
 
     def plot_limb_darkening_parameters(self, result: Optional[str] = None, axs: Axes = None) -> Figure:
-        """
+        """Plot the limb darkening parameters.
+
         Parameters
         ----------
         result : str, optional
@@ -466,7 +495,8 @@ class EasyTS:
         return fig
 
     def plot_residuals(self, result: Optional[str] = None, ax: Axes = None, pmin: float = 1, pmax: float = 99) -> Figure:
-        """
+        """Plot the model residuals.
+
         Parameters
         ----------
         result : Optional[str], default=None
@@ -520,7 +550,7 @@ class EasyTS:
         return fig
 
     def plot_fit(self, result: Optional[str] = None, figsize=None, res_args=None, trs_args=None) -> Figure:
-        """Plots the final fit.
+        """Plot the final fit.
 
         Parameters
         ----------
