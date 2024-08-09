@@ -1,19 +1,46 @@
-.. EasyTS documentation master file, created by
-   sphinx-quickstart on Mon May  6 18:42:25 2024.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+.. title:: EasyTS docs
 
-Welcome to EasyTS's documentation!
-==================================
+.. rst-class:: frontpage
+
+EasyTS
+======
+
+**EasyTS** is a Python library for easy, fast, and robust exoplanet transmission spectroscopy.
+
+**Version**: |version|
+
+Installation
+------------
+
+Install EasyTS either from PyPI as::
+
+    pip install easyts
+
+or clone it from GitHub and install as::
+
+   git clone https://github.com/hpparvi/EasyTS.git
+   cd EasyTS
+   pip install .
+
+Getting started
+---------------
+
+.. toctree::
+   :maxdepth: 3
+
+   examples/index
+
+API
+---
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
 
+   api/index
 
 
 Indices and tables
-==================
+------------------
 
 * :ref:`genindex`
 * :ref:`modindex`
