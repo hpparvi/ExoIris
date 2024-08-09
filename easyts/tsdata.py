@@ -13,40 +13,39 @@ from .binning import Binning, CompoundBinning
 
 class TSData:
     """
-    TSData is a class representing transmission spectroscopy time series data with associated wavelength, fluxes, and
-    errors. It provides methods for manipulating and analyzing the data.
+    TSData is a utility class representing transmission spectroscopy time series data with associated wavelength,
+    fluxes, and errors. It provides methods for manipulating and analyzing the data.
 
-    Parameters:
-    - time : 1D array-like
+    Attributes
+    ----------
+    time: 1D ndarray
         Array of time values.
-    - wavelength: 1D array-like
+    wavelength : 1D ndarray
         Array of wavelength values.
-    - fluxes: 2D array-like
-        2D array of flux values with a shape (nwl, npt), where nwl is the number of wavelengths and npt the
+    fluxes : 2D ndarray
+        2D array of flux values with a shape ``(nwl, npt)``, where ``nwl`` is the number of wavelengths and ``npt`` the
         number of exposures.
-    - errors: 2D array-like
-        2D Array of error values with a shape (nwl, npt), where nwl is the number of wavelengths and npt the
+    errors : 2D ndarray
+        2D Array of error values with a shape ``(nwl, npt)``, where ``nwl`` is the number of wavelengths and ``npt`` the
         number of exposures.
-    - wl_edges : tuple of 1D array-like, optional
-        Tuple containing left and right wavelength edges for each bin. Default is None.
-
-    Methods:
-    - crop_wavelength(lmin: float, lmax: float)
-        Crop the data to include only the wavelength range between lmin and lmax. Updates the wavelength, fluxes, errors, and wavelength edges accordingly.
-
-    - remove_outliers(sigma: float = 5.0)
-        Remove outliers from the data. Outliers are defined as data points that deviate from the median by more than sigma times the median absolute deviation. Updates the fluxes using a median filter.
-
-    - plot(ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None)
-        Plot the data as a pcolormesh plot. The time values are plotted on the x-axis, wavelength values on the y-axis, and the fluxes as the color map. Additional optional arguments can be used to customize the plot. Returns the matplotlib Axes objects.
-
-    - __add__(self, other)
-        Concatenate the data from two TSData objects along the wavelength axis. Returns a new TSData object with the concatenated data.
-
-    - bin_wavelength(binning: Optional[Union[Binning, CompoundBinning]] = None, nb=None, bw=None, r=None)
-        Bin the data along the wavelength axis. If binning is not specified, a Binning object is created using the minimum and maximum values of the wavelength. The binned fluxes and errors are computed using bin2d function. Returns a new TSData object with the binned data.
     """
     def __init__(self, time, wavelength, fluxes, errors, wl_edges = None):
+        """
+        Parameters
+        ----------
+        time : 1D array-like
+            Array of time values.
+        wavelength : 1D array-like
+            Array of wavelength values.
+        fluxes : 2D array-like
+            2D array of flux values with a shape ``(nwl, npt)``, where ``nwl`` is the number of wavelengths and ``npt`` the
+            number of exposures.
+        errors : 2D array-like
+            2D Array of error values with a shape ``(nwl, npt)``, where ``nwl`` is the number of wavelengths and ``npt`` the
+            number of exposures.
+        wl_edges : tuple of 1D array-like, optional
+            Tuple containing left and right wavelength edges for each wavelength element.
+        """
         if fluxes.shape[0] != wavelength.size:
             raise ValueError()
         m = all(isfinite(fluxes), axis=1)
@@ -66,17 +65,18 @@ class TSData:
             self._wl_r_edges = wl_edges[1]
 
     def crop_wavelength(self, lmin: float, lmax: float) -> None:
-        """
-        Crop the wavelength range of the spectrum.
+        """Crop the data to include only the wavelength range between lmin and lmax.
 
         Parameters
         ----------
         lmin : float
             The minimum wavelength value to crop.
-
         lmax : float
             The maximum wavelength value to crop.
 
+        Note
+        ----
+        The data will be modified in place.
         """
         m = (self.wavelength > lmin) & (self.wavelength < lmax)
         self.wavelength = self.wavelength[m]
@@ -87,38 +87,63 @@ class TSData:
         self._update()
 
     def remove_outliers(self, sigma: float = 5.0):
-        """Removes the outliers from the data.
+        """Remove outliers along the wavelength axis.
+
+        Replace outliers along the wavelength axis with the value of a 5-point running median filter. Outliers are
+        defined as data points that deviate from the median by more than sigma times the median absolute deviation
+        along the wavelength axis.
 
         Parameters
         ----------
-        sigma : float, optional
+        sigma : float, default = 5.0
             The number of standard deviations to use as the threshold for outliers.
-            Defaults to 5.0.
-
-        Description
-        -----------
-        This method removes outliers from the 'fluxes' attribute of the object. An outlier is defined as
-        a value that is more than sigma standard deviations away from the median of the fluxes.
-
-        The method first calculates the median and the median absolute deviation (MAD) standard deviation
-        of the fluxes along the wavelength axis. It then replaces the values that are more than sigma standard
-        deviations away from the median with the median value. The replacement is done using a 5-point median filter.
 
         Note
         ----
-        The 'fluxes' attribute of the object will be modified in place.
-
+        The data will be modified in place.
         """
         fm = median(self.fluxes, axis=0)
         fe = mad_std(self.fluxes, axis=0)
         self.fluxes = where(abs(self.fluxes - fm) / fe < sigma, self.fluxes, median_filter(self.fluxes, 5))
 
     def _update(self):
+        """Update the internal attributes."""
         self.nwl = self.wavelength.size
         self.npt = self.time.size
         self.wllims = self.wavelength[[0, -1]]
 
     def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None):
+        """Plot the data as a 2D image.
+
+        Plot the data as a 2D image with time on the x-axis, wavelength and light curve index on the y-axis, and the
+        flux as a color.
+
+        Parameters
+        ----------
+        ax : Axes, optional
+            The subplot axes on which to plot. If None, a new figure and axes will be created.
+
+        vmin : float, optional
+            The minimum value of the color scale.
+
+        vmax : float, optional
+            The maximum value of the color scale.
+
+        cmap : str or colormap, optional
+            The colormap to be used.
+
+        figsize : tuple, optional
+            The size of the figure in inches (width, height).
+
+        Returns
+        -------
+        ax : Axes
+            The subplot axes on which the plot was made.
+
+        ax2 : SecondaryAxis
+            The secondary y-axis used for the light curve index.
+
+        """
         if ax is None:
             fig, ax = subplots(figsize=figsize)
         tref = floor(self.time.min())
@@ -140,6 +165,24 @@ class TSData:
         return ax, ax2
 
     def __add__(self, other):
+        """Combine two transmission spectra along the wavelength axis.
+
+        Parameters
+        ----------
+        other : TSData
+            The TSData object to be added to the current TSData object.
+
+        Returns
+        -------
+        TSData
+            The resulting TSData object after adding the other TSData object.
+
+        Raises
+        ------
+        ValueError
+            If the wavelength ranges of the current TSData object and the other TSData object overlap.
+
+        """
         if self.wllims[1] > other.wllims[0]:
             raise ValueError('The wavelength ranges should not overlap.')
         fluxes = concatenate([self.fluxes, other.fluxes])
@@ -152,6 +195,9 @@ class TSData:
     def bin_wavelength(self, binning: Optional[Union[Binning, CompoundBinning]] = None,
                        nb: Optional[int] = None, bw: Optional[float] = None, r: Optional[float] = None):
         """Bin the data along the wavelength axis.
+
+        Bin the data along the wavelength axis. If binning is not specified, a Binning object is created using the
+        minimum and maximum values of the wavelength.
 
         Parameters
         ----------
