@@ -29,8 +29,7 @@ def add_knots(x_new, x_old):
 
 class TSLPF(LogPosteriorFunction):
     def __init__(self, name: str, ldmodel, time, wavelength, fluxes, errors,
-                 nk: int = None, nbl: int = None, nldc: int = None,
-                 nthreads: int = 1, tmpars = None):
+                 nk: int = None,nldc: int = 10, nthreads: int = 1, tmpars = None):
         super().__init__(name)
         self.ldmodel = ldmodel
         self.tm = TSModel(ldmodel, nthreads=nthreads, **(tmpars or {}))
@@ -48,10 +47,7 @@ class TSLPF(LogPosteriorFunction):
         self.nk = self.npb if nk is None else min(nk, self.npb)
         self.kx_knots = linspace(wavelength[0], wavelength[-1], self.nk)
 
-        self.nbl = self.npb if nbl is None else min(nbl, self.npb)
-        self.bx_knots = linspace(wavelength[0], wavelength[-1], self.nbl)
-
-        self.nldc = 10 if nldc is None else min(nldc, self.npb)
+        self.nldc = nldc
         self.ld_knots = linspace(wavelength[0], wavelength[-1], self.nldc)
 
         self._npv = 1
@@ -66,7 +62,6 @@ class TSLPF(LogPosteriorFunction):
         self._init_p_orbit()
         self._init_limb_darkening()
         self._init_p_radius_ratios()
-        self._init_p_baseline()
         self.ps.freeze()
 
     def _init_p_star(self):
@@ -104,13 +99,6 @@ class TSLPF(LogPosteriorFunction):
         ps.add_global_block('radius_ratios', pp)
         self._start_rratios = ps.blocks[-1].start
         self._sl_rratios = ps.blocks[-1].slice
-
-    def _init_p_baseline(self):
-        ps = self.ps
-        pp = [GParameter(f'c_{b:08.5f}', fr'Baseline constant at {b:08.5f} $\mu$m', 'A_s', NP(1.0, 0.001), (0, inf)) for b in self.bx_knots]
-        ps.add_global_block('baseline', pp)
-        self._start_baseline = ps.blocks[-1].start
-        self._sl_baseline = ps.blocks[-1].slice
 
     def set_ldtk_prior(self, teff, logg, metal, dataset: str = 'visir-lowres', width: float = 50,
                        uncertainty_multiplier: float = 10):
@@ -209,15 +197,6 @@ class TSLPF(LogPosteriorFunction):
                 ks[ipv,:] =  splev(self.wavelength, splrep(self.kx_knots, pvp[ipv], s=0.0))
             return ks
 
-    def _eval_bl(self, pvp):
-        if self.nbl == self.npb:
-            return pvp
-        else:
-            pvp = atleast_2d(pvp)
-            for ipv in range(pvp.shape[0]):
-                self._bl_array[ipv, :, :] = splev(self.wavelength, splrep(self.bx_knots, pvp[ipv], s=0.0))[:, newaxis]
-            return self._bl_array
-
     def _eval_ldc(self, pvp):
         if isinstance(self.ldmodel, LDTkLD):
             ldp = pvp[:, newaxis, self._sl_ld]
@@ -271,14 +250,7 @@ class TSLPF(LogPosteriorFunction):
         return self.tm.evaluate(k, ldp, t0, p, aor, inc, ecc, w, copy)
 
     def flux_model(self, pv):
-        return self.baseline(pv) * self.transit_model(pv)
-
-    def baseline(self, pvp):
-        pvp = atleast_2d(pvp)
-        if self._npv != pvp.shape[0]:
-            self._npv = pvp.shape[0]
-            self._bl_array = ones((pvp.shape[0], self.npb, self.npt))
-        return self._eval_bl(pvp[:, self._sl_baseline])
+        return self.transit_model(pv)
 
     def create_pv_population(self, npop: int = 50):
         """ Crate a parameter vector population.

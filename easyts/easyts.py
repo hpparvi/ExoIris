@@ -44,8 +44,7 @@ class EasyTS:
         The MCMC sampler.
     """
 
-    def __init__(self, name: str, ldmodel, data: TSData, nk: int = None, nbl: int = None, nldc: int = None,
-                 nthreads: int = 1, tmpars=None):
+    def __init__(self, name: str, ldmodel, data: TSData, nk: int = None, nldc: int = 10, nthreads: int = 1, tmpars=None):
         """
         Parameters
         ----------
@@ -67,8 +66,8 @@ class EasyTS:
             Additional parameters.
         """
         self.data = data
-        self._tsa = TSLPF(name, ldmodel, data.time, data.wavelength, data.fluxes, data.errors, nk=nk, nbl=nbl,
-                          nldc=nldc, nthreads=nthreads, tmpars=tmpars)
+        self._tsa = TSLPF(name, ldmodel, data.time, data.wavelength, data.fluxes, data.errors, nk=nk, nldc=nldc,
+                          nthreads=nthreads, tmpars=tmpars)
         self._wa = None
         self.nthreads = nthreads
         self.wavelength = data.wavelength
@@ -158,9 +157,9 @@ class EasyTS:
         return self._tsa.nk
 
     @property
-    def nbl(self) -> int:
-        """Get the number of baseline knots."""
-        return self._tsa.nbl
+    def nldp(self) -> int:
+        """Get the number of limb darkening knots."""
+        return self._tsa.nldc
 
     def add_radius_ratio_knots(self, knot_wavelengths) -> None:
         """Add radius ratio (k) knots.
@@ -215,6 +214,9 @@ class EasyTS:
         sb.despine(ax=axs[2], top=True, bottom=False, right=False)
         setp(axs, xlim=(self.wavelength[0]-0.02, self.wavelength[-1]+0.02), yticks=[], ylim=(0, 0.9))
         setp(axs[-1], xlabel=r'Wavelength [$\mu$m]')
+        setp(axs[0].get_xticklines(), visible=False)
+        setp(axs[0].get_xticklabels(), visible=False)
+        setp(axs[1].get_xticklines(), visible=False)
         fig.tight_layout()
         return fig
 
