@@ -48,7 +48,8 @@ pygments_style = 'sphinx'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'pydata_sphinx_theme'
-html_title = "EasyTS"
+#html_title = "EasyTS"
+html_title = f'EasyTS v{version}'
 html_theme_options = {
     "external_links": [],
     "github_url": "https://github.com/hpparvi/EasyTS"
@@ -57,6 +58,11 @@ html_static_path = ['_static']
 #html_css_files = [
 #    'css/custom.css',
 #]
+
+
+html_sidebars = {
+    "examples/*/*": []
+}
 
 default_role = 'py:obj'
 
