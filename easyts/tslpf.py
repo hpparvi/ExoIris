@@ -12,11 +12,14 @@ from scipy.interpolate import splev, splrep
 
 @njit(parallel=True, cache=False)
 def lnlike_normal(o, m, e):
-    npv = m.shape[0]
-    lnlike = zeros(npv)
-    for i in prange(npv):
-        lnlike[i] = -sum(log(e)) - 0.5 * o.size * log(2. * pi) - 0.5 * sum((o - m[i]) ** 2 / e ** 2)
-    return lnlike
+    if m.ndim == 2:
+        return -sum(log(e)) - 0.5 * o.size * log(2. * pi) - 0.5 * sum((o - m) ** 2 / e ** 2)
+    if m.ndim == 3:
+        npv = m.shape[0]
+        lnlike = zeros(npv)
+        for i in prange(npv):
+            lnlike[i] = -sum(log(e)) - 0.5 * o.size * log(2. * pi) - 0.5 * sum((o - m[i]) ** 2 / e ** 2)
+        return lnlike
 
 
 def resample(x_new, x_old, y_old):
@@ -29,7 +32,7 @@ def add_knots(x_new, x_old):
 
 class TSLPF(LogPosteriorFunction):
     def __init__(self, name: str, ldmodel, time, wavelength, fluxes, errors,
-                 nk: int = None,nldc: int = 10, nthreads: int = 1, tmpars = None):
+                 nk: int = None, nldc: int = 10, nthreads: int = 1, tmpars = None):
         super().__init__(name)
         self.ldmodel = ldmodel
         self.tm = TSModel(ldmodel, nthreads=nthreads, **(tmpars or {}))
@@ -122,8 +125,7 @@ class TSLPF(LogPosteriorFunction):
             self.set_prior(f'ldc2_{l:08.5f}', 'NP', ldc[i, 1].round(3), (uncertainty_multiplier * lde[i, 1]).round(3))
 
     def add_k_knots(self, knot_wavelengths) -> None:
-        """
-        Add radius ratio (k) knots to the model.
+        """Add radius ratio (k) knots to the model.
 
         Parameters
         ----------
@@ -133,8 +135,7 @@ class TSLPF(LogPosteriorFunction):
         self.set_k_knots(concatenate([self.kx_knots, knot_wavelengths]))
 
     def set_k_knots(self, knot_wavelengths) -> None:
-        """
-        Set the radius ratio (k) knot wavelengths for the model.
+        """Set the radius ratio (k) knot wavelengths for the model.
 
         Parameters
         ----------
@@ -169,6 +170,55 @@ class TSLPF(LogPosteriorFunction):
             # --------------------------
             for i in range(pvpn.shape[0]):
                 pvpn[i, slkn] = resample(xn, xo, pvpo[i, slko])
+
+            self.de = None
+            self._pv_population = pvpn
+
+    def add_ld_knots(self, knot_wavelengths) -> None:
+        """Add limb darkening knots to the model.
+
+        Parameters
+        ----------
+        knot_wavelengths : array-like
+            An array of knot wavelengths to be added.
+        """
+        self.set_ld_knots(concatenate([self.ld_knots, knot_wavelengths]))
+
+    def set_ld_knots(self, knot_wavelengths) -> None:
+        """Set the limb darkening knot wavelengths for the model.
+
+        Parameters
+        ----------
+        knot_wavelengths : array-like
+            Array of knot wavelengths.
+        """
+        xo = self.ld_knots
+        xn = self.ld_knots = sort(knot_wavelengths)
+        self.nldc = self.ld_knots.size
+
+        pvpo = self.de.population.copy() if self.de is not None else None
+        pso = self.ps
+        sldo = self._sl_ld
+        self._init_parameters()
+        psn = self.ps
+        sldn = self._sl_ld
+        for po in pso:
+            if po.name in psn.names:
+                self.set_prior(po.name, po.prior)
+
+        if self.de is not None:
+            pvpn = self.create_pv_population(pvpo.shape[0])
+            # Copy the old parameter values
+            # -----------------------------
+            for pid_old, p in enumerate(pso):
+                if p.name in psn:
+                    pid_new = psn.find_pid(p.name)
+                    pvpn[:, pid_new] = pvpo[:, pid_old]
+
+            # Resample the radius ratios
+            # --------------------------
+            for i in range(pvpn.shape[0]):
+                pvpn[i, sldn] = resample(xn, xo, pvpo[i, sldo])
 
             self.de = None
             self._pv_population = pvpn
