@@ -1,6 +1,13 @@
+import codecs
+import json
+import pickle
+from pathlib import Path
 from typing import Optional, Callable, Any
 
 import seaborn as sb
+import astropy.io.fits as pf
+
+from astropy.table import Table
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
@@ -14,6 +21,18 @@ from pytransit.utils.de import DiffEvol
 from .tsdata import TSData
 from .tslpf import TSLPF
 from .wlpf import WhiteLPF
+
+
+def read_model(fname):
+    with pf.open(fname) as hdul:
+        d = TSData(hdul['TIME'].data, hdul['WAVELENGTH'].data, hdul['FLUX'].data, hdul['FERR'].data)
+        a = EasyTS(hdul[0].header['NAME'], hdul[0].header['LDMODEL'], d)
+        a.set_radius_ratio_knots(hdul['K_KNOTS'].data)
+        a.set_limb_darkening_knots(hdul['LD_KNOTS'].data)
+        priors = pickle.loads(codecs.decode(json.loads(hdul['PRIORS'].header['PRIORS']).encode(), "base64"))
+        a._tsa.ps = ParameterSet([pickle.loads(p) for p in priors])
+        a._tsa.ps.freeze()
+        return a
 
 
 class EasyTS:
@@ -101,7 +120,21 @@ class EasyTS:
         return squeeze(self._tsa.lnposterior(pvp))
 
     def set_prior(self, parameter, prior, *nargs):
-        """Set a prior on a model parameter."""
+        """Set a prior on a model parameter.
+
+        Parameters
+        ----------
+        parameter : str
+            The name of the parameter to set prior for.
+
+        prior : str or Object
+            The prior distribution to set for the parameter. This can be "NP" for a normal prior, "UP" for a
+            uniform prior, or an object with .logpdf(x) method.
+
+        *nargs : tuple
+            Additional arguments to be passed to the prior: (mean, std) for the normal prior and (min, max)
+            for the uniform prior.
+        """
         self._tsa.set_prior(parameter, prior, *nargs)
 
     def set_radius_ratio_prior(self, prior, *nargs):
@@ -180,6 +213,26 @@ class EasyTS:
             List or array of knot wavelengths.
         """
         self._tsa.set_k_knots(knot_wavelengths)
+
+    def add_limb_darkening_knots(self, knot_wavelengths) -> None:
+        """Add limb darkening knots.
+
+        Parameters
+        ----------
+        knot_wavelengths : array-like
+            List or array of knot wavelengths to be added.
+        """
+        self._tsa.add_limb_darkening_knots(knot_wavelengths)
+
+    def set_limb_darkening_knots(self, knot_wavelengths) -> None:
+        """Set the limb darkening knots.
+
+        Parameters
+        ----------
+        knot_wavelengths : array-like
+            List or array of knot wavelengths.
+        """
+        self._tsa.set_ld_knots(knot_wavelengths)
 
     @property
     def ps(self) -> ParameterSet:
@@ -318,7 +371,6 @@ class EasyTS:
             pvp[:, 2] = normal(pv0[1], 1e-5, size=npop)
             pvp[:, 3] = clip(normal(pv0[3], 0.01, size=npop), 0.0, 1.0)
             pvp[:, self._tsa._sl_rratios] = normal(sqrt(pv0[4]), 0.001, size=(npop, self.nk))
-            pvp[:, self._tsa._sl_baseline] = normal(1.0, 1e-5, size=(npop, self.nbl))
         else:
             pvp = None
         self._tsa.optimize_global(niter=niter, npop=npop, population=pvp, pool=pool, lnpost=lnpost,
@@ -351,6 +403,9 @@ class EasyTS:
         """
         self._tsa.sample_mcmc(niter=niter, thin=thin, repeats=repeats, pool=pool, lnpost=lnpost, vectorize=(pool is None), leave=leave, save=save, use_tqdm=use_tqdm)
         self.sampler = self._tsa.sampler
+
+    def save(self, fname: Optional[str|Path] = None) -> None:
+        self._tsa.save(fname)
 
     def plot_transmission_spectrum(self, result: Optional[str] = None, ax: Axes = None, xscale: Optional[str] = None,
                                    xticks=None, ylim=None,  plot_resolution: bool = True) -> Figure:
@@ -399,7 +454,7 @@ class EasyTS:
             ax.fill_between(self.wavelength, *percentile(ar, [16, 84], axis=0), alpha=0.25)
             ax.plot(self.wavelength, median(ar, 0), c='k')
             ax.plot(self.k_knots, 1e2*median(df.iloc[:, self._tsa._sl_rratios].values, 0)**2, 'k.')
-        setp(ax, ylabel='Transit depth [%]', xlabel='Wavelength', xlim=self.wavelength[[0, -1]], ylim=ylim)
+        setp(ax, ylabel='Transit depth [%]', xlabel=r'Wavelength [$\mu$m]', xlim=self.wavelength[[0, -1]], ylim=ylim)
 
         if plot_resolution:
             yl = ax.get_ylim()
@@ -585,3 +640,34 @@ class EasyTS:
         fig.tight_layout()
         fig.align_ylabels()
         return fig
+
+    def save(self, overwrite: bool = False):
+        pri = pf.PrimaryHDU()
+        pri.header['name'] = self.name
+        pri.header['ldmodel'] = self._tsa.ldmodel
+
+        pr = pf.ImageHDU(name='priors')
+        priors = [pickle.dumps(p) for p in self.ps]
+        pr.header['priors'] = json.dumps(codecs.encode(pickle.dumps(priors), "base64").decode())
+
+        flux = pf.ImageHDU(self._tsa.flux, name='flux')
+        ferr = pf.ImageHDU(self._tsa.ferr, name='ferr')
+        wave = pf.ImageHDU(self._tsa.wavelength, name='wavelength')
+        time = pf.ImageHDU(self._tsa.time, name='time')
+        k_knots = pf.ImageHDU(self._tsa.kx_knots, name='k_knots')
+        ld_knots = pf.ImageHDU(self._tsa.ld_knots, name='ld_knots')
+        hdul = pf.HDUList([pri, time, wave, flux, ferr, k_knots, ld_knots, pr])
+
+        if self._tsa.de is not None:
+            de = pf.BinTableHDU(Table(self._tsa.de.population, names=self.ps.names), name='DE')
+            de.header['npop'] = self._tsa.de.n_pop
+            de.header['ndim'] = self._tsa.de.n_par
+            hdul.append(de)
+
+        if self._tsa.sampler is not None:
+            mc = pf.BinTableHDU(Table(self._tsa.sampler.flatchain, names=self.ps.names), name='MCMC')
+            mc.header['npop'] = self._tsa.sampler.nwalkers
+            mc.header['ndim'] = self._tsa.sampler.ndim
+            hdul.append(mc)
+
+        hdul.writeto(f"{self.name}.fits", overwrite=True)
