@@ -32,6 +32,12 @@ def read_model(fname):
         priors = pickle.loads(codecs.decode(json.loads(hdul['PRIORS'].header['PRIORS']).encode(), "base64"))
         a._tsa.ps = ParameterSet([pickle.loads(p) for p in priors])
         a._tsa.ps.freeze()
+        if 'DE' in hdul:
+            a._tsa._de_population = Table(hdul['DE'].data).to_pandas().values
+        if 'MCMC' in hdul:
+            npop = hdul['MCMC'].header['NPOP']
+            ndim = hdul['MCMC'].header['NDIM']
+            a._tsa._mc_chains = Table(hdul['MCMC'].data).to_pandas().values.reshape([npop, -1, ndim])
         return a
 
 
@@ -148,7 +154,7 @@ class EasyTS:
             Additional arguments for the prior.
 
         """
-        for l in self._tsa.kx_knots:
+        for l in self._tsa.k_knots:
             self.set_prior(f'k_{l:08.5f}', prior, *nargs)
 
     def set_ldtk_prior(self, teff, logg, metal, dataset: str = 'visir-lowres', width: float = 50, uncertainty_multiplier: float = 10):
@@ -182,7 +188,7 @@ class EasyTS:
     @property
     def k_knots(self) -> ndarray:
         """Get the radius ratio (k) knots."""
-        return self._tsa.kx_knots
+        return self._tsa.k_knots
 
     @property
     def nk(self) -> int:
@@ -258,7 +264,7 @@ class EasyTS:
         fig, axs = subplots(3, 1, figsize=figsize, sharex='all', sharey='all')
         axs[0].vlines(self._tsa.ld_knots, 0.1, 0.5, ec='k')
         axs[0].text(0.01, 0.90, 'Limb darkening knots', va='top', transform=axs[0].transAxes)
-        axs[1].vlines(self._tsa.kx_knots, 0.1, 0.5, ec='k')
+        axs[1].vlines(self._tsa.k_knots, 0.1, 0.5, ec='k')
         axs[1].text(0.01, 0.90, 'Radius ratio knots', va='top', transform=axs[1].transAxes)
         axs[2].vlines(self.wavelength, 0.1, 0.5, ec='k')
         axs[2].text(0.01, 0.90, 'Wavelength bins', va='top', transform=axs[2].transAxes)
@@ -447,7 +453,7 @@ class EasyTS:
             pv = self._tsa.de.minimum_location
             ar = 1e2 * squeeze(self._tsa._eval_k(pv[self._tsa._sl_rratios])) ** 2
             ax.plot(self.wavelength, ar, c='k')
-            ax.plot(self._tsa.kx_knots, 1e2 * pv[self._tsa._sl_rratios] ** 2, 'k.')
+            ax.plot(self._tsa.k_knots, 1e2 * pv[self._tsa._sl_rratios] ** 2, 'k.')
         else:
             df = self._tsa.posterior_samples()
             ar = 1e2 * self._tsa._eval_k(df.iloc[:, self._tsa._sl_rratios]) ** 2
@@ -654,12 +660,12 @@ class EasyTS:
         ferr = pf.ImageHDU(self._tsa.ferr, name='ferr')
         wave = pf.ImageHDU(self._tsa.wavelength, name='wavelength')
         time = pf.ImageHDU(self._tsa.time, name='time')
-        k_knots = pf.ImageHDU(self._tsa.kx_knots, name='k_knots')
+        k_knots = pf.ImageHDU(self._tsa.k_knots, name='k_knots')
         ld_knots = pf.ImageHDU(self._tsa.ld_knots, name='ld_knots')
         hdul = pf.HDUList([pri, time, wave, flux, ferr, k_knots, ld_knots, pr])
 
         if self._tsa.de is not None:
-            de = pf.BinTableHDU(Table(self._tsa.de.population, names=self.ps.names), name='DE')
+            de = pf.BinTableHDU(Table(self._tsa._de_population, names=self.ps.names), name='DE')
             de.header['npop'] = self._tsa.de.n_pop
             de.header['ndim'] = self._tsa.de.n_par
             hdul.append(de)

@@ -1,6 +1,9 @@
+from typing import Optional
+
 from ldtk import BoxcarFilter, LDPSetCreator
 from numba import njit, prange
-from numpy import zeros, log, pi, linspace, inf, atleast_2d, newaxis, clip, arctan2, ones, floor, sum, concatenate, sort
+from numpy import zeros, log, pi, linspace, inf, atleast_2d, newaxis, clip, arctan2, ones, floor, sum, concatenate, \
+    sort, ndarray, zeros_like
 
 from pytransit import TSModel, RRModel, LDTkLD, TransitAnalysis
 from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
@@ -31,31 +34,33 @@ def add_knots(x_new, x_old):
 
 
 class TSLPF(LogPosteriorFunction):
-    def __init__(self, name: str, ldmodel, time, wavelength, fluxes, errors,
+    def __init__(self, name: str, ldmodel, time: ndarray, wavelength: ndarray, fluxes: ndarray, errors: ndarray,
                  nk: int = None, nldc: int = 10, nthreads: int = 1, tmpars = None):
         super().__init__(name)
-        self.ldmodel = ldmodel
-        self.tm = TSModel(ldmodel, nthreads=nthreads, **(tmpars or {}))
-        self.nthreads = nthreads
         self.time = time.copy()
         self.wavelength = wavelength.copy()
-        self._original_flux = fluxes.copy()
         self.flux = fluxes.copy()
         self.ferr = errors.copy()
+
+        self.nthreads = nthreads
         self.npb = fluxes.shape[0]
         self.npt = fluxes.shape[1]
-        self.tm.set_data(self.time)
-        self.ootmask = None
-
-        self.nk = self.npb if nk is None else min(nk, self.npb)
-        self.kx_knots = linspace(wavelength[0], wavelength[-1], self.nk)
-
         self.nldc = nldc
+        self.ndim = None
+        self.nk = self.npb if nk is None else min(nk, self.npb)
+
+        self.k_knots = linspace(wavelength[0], wavelength[-1], self.nk)
         self.ld_knots = linspace(wavelength[0], wavelength[-1], self.nldc)
 
+        self._original_flux = fluxes.copy()
+        self._ootmask = None
         self._npv = 1
-        self._bl_array = zeros((self._npv, self.npb, self.npt))
+        self._de_population: Optional[ndarray] = None
+        self._mc_chains: Optional[ndarray] = None
 
+        self.ldmodel = ldmodel
+        self.tm = TSModel(ldmodel, nthreads=nthreads, **(tmpars or {}))
+        self.tm.set_data(self.time)
         self._init_parameters()
         self.white_model = None
 
@@ -66,6 +71,7 @@ class TSLPF(LogPosteriorFunction):
         self._init_limb_darkening()
         self._init_p_radius_ratios()
         self.ps.freeze()
+        self.ndim = len(self.ps)
 
     def _init_p_star(self):
         pstar = [GParameter('rho', 'stellar density', 'g/cm^3', UP(0.1, 25.0), (0, inf))]
@@ -98,7 +104,7 @@ class TSLPF(LogPosteriorFunction):
 
     def _init_p_radius_ratios(self):
         ps = self.ps
-        pp = [GParameter(f'k_{k:08.5f}', fr'radius ratio at {k:08.5f} $\mu$m', 'A_s', UP(0.02, 0.2), (0, inf)) for k in self.kx_knots]
+        pp = [GParameter(f'k_{k:08.5f}', fr'radius ratio at {k:08.5f} $\mu$m', 'A_s', UP(0.02, 0.2), (0, inf)) for k in self.k_knots]
         ps.add_global_block('radius_ratios', pp)
         self._start_rratios = ps.blocks[-1].start
         self._sl_rratios = ps.blocks[-1].slice
@@ -132,7 +138,7 @@ class TSLPF(LogPosteriorFunction):
         knot_wavelengths : array-like
             An array of knot wavelengths to be added.
         """
-        self.set_k_knots(concatenate([self.kx_knots, knot_wavelengths]))
+        self.set_k_knots(concatenate([self.k_knots, knot_wavelengths]))
 
     def set_k_knots(self, knot_wavelengths) -> None:
         """Set the radius ratio (k) knot wavelengths for the model.
@@ -143,36 +149,71 @@ class TSLPF(LogPosteriorFunction):
             Array of knot wavelengths.
 
         """
-        xo = self.kx_knots
-        xn = self.kx_knots = sort(knot_wavelengths)
-        self.nk = self.kx_knots.size
 
-        pvpo = self.de.population.copy() if self.de is not None else None
+        # Save the old variables
+        # ----------------------
+        xo = self.k_knots
         pso = self.ps
-        slko = self._sl_rratios
+        deo = self._de_population
+        mco = self._mc_chains
+        slo = self._sl_rratios
+        ndo = self.ndim
+
+        xn = self.k_knots = sort(knot_wavelengths)
+        self.nk = self.k_knots.size
+
         self._init_parameters()
         psn = self.ps
-        slkn = self._sl_rratios
+        sln = self._sl_rratios
+        ndn = self.ndim
+
+        # Set the priors back as they were
+        # --------------------------------
         for po in pso:
             if po.name in psn.names:
                 self.set_prior(po.name, po.prior)
 
+        # Resample the DE parameter population
+        # ------------------------------------
         if self.de is not None:
-            pvpn = self.create_pv_population(pvpo.shape[0])
+            den = zeros((deo.shape[0], ndn))
+
             # Copy the old parameter values
             # -----------------------------
             for pid_old, p in enumerate(pso):
-                if p.name in psn:
+                if p.name in psn.names:
                     pid_new = psn.find_pid(p.name)
-                    pvpn[:, pid_new] = pvpo[:, pid_old]
+                    den[:, pid_new] = deo[:, pid_old]
 
             # Resample the radius ratios
             # --------------------------
-            for i in range(pvpn.shape[0]):
-                pvpn[i, slkn] = resample(xn, xo, pvpo[i, slko])
+            for i in range(den.shape[0]):
+                den[i, sln] = resample(xn, xo, deo[i, slo])
 
+            self._de_population = den
             self.de = None
-            self._pv_population = pvpn
+
+        # Resample the MCMC parameter population
+        # --------------------------------------
+        if self.sampler is not None:
+            fmco = mco.reshape([-1, ndo])
+            fmcn = zeros((fmco.shape[0], ndn))
+
+            # Copy the old parameter values
+            # -----------------------------
+            for pid_old, p in enumerate(pso):
+                if p.name in psn.names:
+                    pid_new = psn.find_pid(p.name)
+                    fmcn[:, pid_new] = fmco[:, pid_old]
+
+            # Resample the radius ratios
+            # --------------------------
+            for i in range(fmcn.shape[0]):
+                fmcn[i, sln] = resample(xn, xo, fmco[i, slo])
+
+            self._mc_chains = fmcn.reshape([mco.shape[0], mco.shape[1], ndn])
+            self.sampler = None
+
 
     def add_ld_knots(self, knot_wavelengths) -> None:
         """Add limb darkening knots to the model.
@@ -221,7 +262,7 @@ class TSLPF(LogPosteriorFunction):
                 pvpn[i, sldn] = resample(xn, xo, pvpo[i, sldo])
 
             self.de = None
-            self._pv_population = pvpn
+            self._de_population = pvpn
 
     def _eval_k(self, pvp):
         """
@@ -244,7 +285,7 @@ class TSLPF(LogPosteriorFunction):
             pvp = atleast_2d(pvp)
             ks = zeros((pvp.shape[0], self.npb))
             for ipv in range(pvp.shape[0]):
-                ks[ipv,:] =  splev(self.wavelength, splrep(self.kx_knots, pvp[ipv], s=0.0))
+                ks[ipv,:] =  splev(self.wavelength, splrep(self.k_knots, pvp[ipv], s=0.0))
             return ks
 
     def _eval_ldc(self, pvp):
@@ -342,9 +383,26 @@ class TSLPF(LogPosteriorFunction):
                         plot_parameters: tuple = (0, 2, 3, 4)):
 
         if population is None:
-            population = self._pv_population if self.de is None else None
+            if self._de_population is None:
+                population = self.create_pv_population()
+            else:
+                population = self._de_population
 
         super().optimize_global(niter=niter, npop=npop, population=population, pool=pool, lnpost=lnpost,
                                 vectorize=vectorize, label=label, leave=leave, plot_convergence=plot_convergence,
                                 use_tqdm=use_tqdm, plot_parameters=plot_parameters)
+        self._de_population = self.de.population.copy()
 
+    def sample_mcmc(self, niter: int = 500, thin: int = 5, repeats: int = 1, npop: int = None, population=None,
+                    label='MCMC sampling', reset=True, leave=True, save=False, use_tqdm: bool = True, pool=None,
+                    lnpost=None, vectorize: bool = True):
+
+        if population is None:
+            if self._mc_chains is None:
+                population = self._de_population.copy()
+            else:
+                population = self._mc_chains[:, -1, :].copy()
+
+        super().sample_mcmc(niter, thin, repeats, npop=npop, population=population, label=label, reset=reset,
+                            leave=leave, save=save, use_tqdm=use_tqdm, pool=pool, lnpost=lnpost, vectorize=vectorize)
+        self._mc_chains = self.sampler.chain.copy()
