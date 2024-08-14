@@ -4,6 +4,7 @@ import pickle
 from pathlib import Path
 from typing import Optional, Callable, Any
 
+import pandas as pd
 import seaborn as sb
 import astropy.io.fits as pf
 
@@ -12,7 +13,8 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
 from matplotlib.pyplot import subplots, setp
-from numpy import poly1d, polyfit, where, sqrt, clip, percentile, median, squeeze, floor, ndarray, array
+from numpy import (poly1d, polyfit, where, sqrt, clip, percentile, median, squeeze, floor, ndarray,
+                   array, inf, newaxis, r_)
 from numpy.random import normal
 from pytransit.orbits import fold
 from pytransit.param import ParameterSet
