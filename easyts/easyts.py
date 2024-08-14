@@ -329,7 +329,7 @@ class EasyTS:
         """Print the model parameterization."""
         self._tsa.print_parameters(1)
 
-    def plot_setup(self, figsize=(13,4)) -> Figure:
+    def plot_setup(self, figsize=(13,4), xscale=None) -> Figure:
         """Plot the model setup with limb darkening knots, radius ratio knots, and data binning.
 
         Parameters
@@ -356,6 +356,8 @@ class EasyTS:
         setp(axs[0].get_xticklines(), visible=False)
         setp(axs[0].get_xticklabels(), visible=False)
         setp(axs[1].get_xticklines(), visible=False)
+        if xscale:
+            setp(axs, xscale=xscale)
         fig.tight_layout()
         return fig
 
@@ -366,6 +368,8 @@ class EasyTS:
         pv = self._wa._local_minimization.x
         phase = fold(self.time, pv[1], pv[0])
         self.ootmask = abs(phase) > 0.502 * self._wa.transit_duration
+        self.transit_center = self._wa.transit_center
+        self.transit_duration = self._wa.transit_duration
 
     def plot_white(self) -> Figure:
         """Plot the white light curve data with the best-fit model.
@@ -433,7 +437,8 @@ class EasyTS:
             fig.tight_layout()
         return axs
 
-    def fit(self, niter: int = 200, npop: int = 150, pool: Optional[Any] = None, lnpost: Optional[Callable]=None) -> None:
+    def fit(self, niter: int = 200, npop: int = 150, pool: Optional[Any] = None, lnpost: Optional[Callable]=None,
+            population = None) -> None:
         """Fit the spectroscopic light curves jointly using Differential Evolution.
 
         Fit the spectroscopic light curves jointly for `niter` iterations using Differential Evolution.
@@ -449,16 +454,19 @@ class EasyTS:
         lnpost : callable, optional
             Log posterior function for optimization. Default is None.
         """
-        if self._tsa.de is None:
-            pv0 = self._wa._local_minimization.x
-            pvp = self._tsa.ps.sample_from_prior(npop)
-            pvp[:, 0] = normal(pv0[2], 0.05, size=npop)
-            pvp[:, 1] = normal(pv0[0], 1e-4, size=npop)
-            pvp[:, 2] = normal(pv0[1], 1e-5, size=npop)
-            pvp[:, 3] = clip(normal(pv0[3], 0.01, size=npop), 0.0, 1.0)
-            pvp[:, self._tsa._sl_rratios] = normal(sqrt(pv0[4]), 0.001, size=(npop, self.nk))
+        if population is not None:
+            pvp = population
         else:
-            pvp = None
+            if self._tsa._de_population is not None:
+                pvp = self._tsa._de_population
+            else:
+                pv0 = self._wa._local_minimization.x
+                pvp = self._tsa.ps.sample_from_prior(npop)
+                pvp[:, 0] = normal(pv0[2], 0.05, size=npop)
+                pvp[:, 1] = normal(pv0[0], 1e-4, size=npop)
+                pvp[:, 2] = normal(pv0[1], 1e-5, size=npop)
+                pvp[:, 3] = clip(normal(pv0[3], 0.01, size=npop), 0.0, 1.0)
+                pvp[:, self._tsa._sl_rratios] = normal(sqrt(pv0[4]), 0.001, size=(npop, self.nk))
         self._tsa.optimize_global(niter=niter, npop=npop, population=pvp, pool=pool, lnpost=lnpost,
                                   vectorize=(pool is None))
         self.de = self._tsa.de
@@ -524,18 +532,18 @@ class EasyTS:
             result = 'mcmc' if self._tsa.sampler is not None else 'fit'
         if result not in ('fit', 'mcmc'):
             raise ValueError("Result must be either 'fit', 'mcmc', or None")
-        if result == 'mcmc' and self._tsa.sampler is None:
+        if result == 'mcmc' and self._tsa._mc_chains is None:
             raise ValueError("Cannot plot posterior solution before running the MCMC sampler.")
 
         fig, ax = subplots() if ax is None else (ax.get_figure(), ax)
 
         if result == 'fit':
-            pv = self._tsa.de.minimum_location
+            pv = self._tsa._de_population[self._tsa._de_imin]
             ar = 1e2 * squeeze(self._tsa._eval_k(pv[self._tsa._sl_rratios])) ** 2
             ax.plot(self.wavelength, ar, c='k')
             ax.plot(self._tsa.k_knots, 1e2 * pv[self._tsa._sl_rratios] ** 2, 'k.')
         else:
-            df = self._tsa.posterior_samples()
+            df = pd.DataFrame(self._tsa._mc_chains.reshape([-1, self._tsa.ndim]), columns=self._tsa.ps.names)
             ar = 1e2 * self._tsa._eval_k(df.iloc[:, self._tsa._sl_rratios]) ** 2
             ax.fill_between(self.wavelength, *percentile(ar, [16, 84], axis=0), alpha=0.25)
             ax.plot(self.wavelength, median(ar, 0), c='k')
@@ -551,7 +559,7 @@ class EasyTS:
             ax.set_xticks(xticks, labels=xticks)
         return ax.get_figure()
 
-    def plot_limb_darkening_parameters(self, result: Optional[str] = None, axs: Axes = None) -> Figure:
+    def plot_limb_darkening_parameters(self, result: Optional[str] = None, axs: Optional[tuple[Axes, Axes]] = None) -> Figure:
         """Plot the limb darkening parameters.
 
         Parameters
@@ -599,14 +607,14 @@ class EasyTS:
             raise ValueError("Cannot plot posterior solution before running the MCMC sampler.")
 
         if result == 'fit':
-            pv = self._tsa.de.minimum_location
+            pv = self._tsa._de_population[self._tsa._de_imin]
             ldc = self._tsa._eval_ldc(pv)[0]
             axs[0].plot(self._tsa.ld_knots, pv[self._tsa._sl_ld][0::2], 'ok')
             axs[0].plot(self.wavelength, ldc[:,0])
             axs[1].plot(self._tsa.ld_knots, pv[self._tsa._sl_ld][1::2], 'ok')
             axs[1].plot(self.wavelength, ldc[:,1])
         else:
-            df = self._tsa.posterior_samples()
+            df = pd.DataFrame(self._tsa._mc_chains.reshape([-1, self._tsa.ndim]), columns=self.ps.names)
             ldc = df.iloc[:,self._tsa._sl_ld]
 
             ld1m = median(ldc.values[:,::2], 0)
@@ -673,10 +681,10 @@ class EasyTS:
 
         fig, ax = subplots() if ax is None else (ax.get_figure(), ax)
 
-        tc = self._wa.transit_center
-        td = self._wa.transit_duration
+        tc = self.transit_center
+        td = self.transit_duration
 
-        pv = self._tsa.de.minimum_location if result == 'fit' else median(self._tsa.posterior_samples().values, 0)
+        pv = self._tsa._de_population[self._tsa._de_imin] if result == 'fit' else median(self._tsa._mc_chains.reshape([-1, self._tsa.ndim]), 0)
         fmodel = squeeze(self._tsa.flux_model(pv))
         residuals = self.fluxes - fmodel
         pp = percentile(residuals, [pmin, pmax])
@@ -692,7 +700,7 @@ class EasyTS:
         fig.tight_layout()
         return fig
 
-    def plot_fit(self, result: Optional[str] = None, figsize=None, res_args=None, trs_args=None) -> Figure:
+    def plot_fit(self, result: Optional[str] = None, figsize: Optional[tuple[float, float]]=None, res_args=None, trs_args=None) -> Figure:
         """Plot the final fit.
 
         Parameters
@@ -726,6 +734,24 @@ class EasyTS:
         fig.tight_layout()
         fig.align_ylabels()
         return fig
+
+    def get_transmission_spectrum(self) -> pd.DataFrame:
+        """Get the posterior transmission spectrum.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the transmission spectrum with its uncertainties.
+
+        Raises:
+            ValueError: If the MCMC sampler has not been run before calculating the transmission spectrum.
+        """
+        if self._tsa._mc_chains is None:
+            raise ValueError("Cannot calculate posterior transmission spectrum before running the MCMC sampler.")
+        df = pd.DataFrame(self._tsa._mc_chains.reshape([-1, self._tsa.ndim]), columns=self._tsa.ps.names)
+        ar = self._tsa._eval_k(df.iloc[:, self._tsa._sl_rratios])**2
+        pt = percentile(ar, [50, 16, 84], 0)
+        return pd.DataFrame(r_[pt[0:1], abs(pt[1:]-pt[0]).mean(0)[newaxis, :], pt[1:]-pt[0]].T,
+                            columns='depth depth_e depth_eneg depth_epos'.split(),
+                            index=pd.Index(self.wavelength, name='wavelength'))
 
     def save(self, overwrite: bool = False):
         pri = pf.PrimaryHDU()
