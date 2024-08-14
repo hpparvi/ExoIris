@@ -139,14 +139,7 @@ class EasyTS:
                           nthreads=nthreads, tmpars=tmpars)
         self._wa = None
         self.nthreads = nthreads
-        self.wavelength = data.wavelength
-
-        self.name = name
-        self.time = self._tsa.time
-        self.fluxes = self._tsa.flux
-        self.original_fluxes = self._tsa._original_flux
         self.ootmask = None
-        self.npb = self._tsa.npb
         self.de: Optional[DiffEvol] = None
         self.sampler = None
 
@@ -244,6 +237,31 @@ class EasyTS:
         self._tsa.set_ldtk_prior(teff, logg, metal, dataset, width, uncertainty_multiplier)
 
     @property
+    def name(self) -> str:
+        return self._tsa.name
+
+    @name.setter
+    def name(self, name: str):
+        self._tsa.name = name
+
+    @property
+    def time(self):
+        return self._tsa.time
+
+    @property
+    def wavelength(self):
+        return self._tsa.wavelength
+
+    @property
+    def fluxes(self):
+        return self._tsa.flux
+
+    @property
+    def original_fluxes(self):
+        return self._tsa._original_flux
+
+
+    @property
     def k_knots(self) -> ndarray:
         """Get the radius ratio (k) knots."""
         return self._tsa.k_knots
@@ -257,6 +275,10 @@ class EasyTS:
     def nldp(self) -> int:
         """Get the number of limb darkening knots."""
         return self._tsa.nldc
+
+    @property
+    def npb(self):
+        return self._tsa.npb
 
     def add_radius_ratio_knots(self, knot_wavelengths) -> None:
         """Add radius ratio (k) knots.
