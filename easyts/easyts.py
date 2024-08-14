@@ -63,15 +63,19 @@ def clean_knots(knots, min_distance, lmin=0, lmax=inf):
 
 def read_model(fname, name: Optional[str] = None):
     with pf.open(fname) as hdul:
-        d = TSData(hdul['TIME'].data, hdul['WAVELENGTH'].data, hdul['FLUX'].data, hdul['FERR'].data)
-        a = EasyTS(hdul[0].header['NAME'], hdul[0].header['LDMODEL'], d)
-        a.set_radius_ratio_knots(hdul['K_KNOTS'].data)
-        a.set_limb_darkening_knots(hdul['LD_KNOTS'].data)
+        d = TSData(hdul['TIME'].data.astype('d'), hdul['WAVELENGTH'].data.astype('d'),
+                   hdul['FLUX'].data.astype('d'), hdul['FERR'].data.astype('d'))
+        a = EasyTS(name or hdul[0].header['NAME'], hdul[0].header['LDMODEL'], d)
+        a.set_radius_ratio_knots(hdul['K_KNOTS'].data.astype('d'))
+        a.set_limb_darkening_knots(hdul['LD_KNOTS'].data.astype('d'))
+        a.transit_center = hdul[0].header['T0']
+        a.transit_duration = hdul[0].header['T14']
         priors = pickle.loads(codecs.decode(json.loads(hdul['PRIORS'].header['PRIORS']).encode(), "base64"))
         a._tsa.ps = ParameterSet([pickle.loads(p) for p in priors])
         a._tsa.ps.freeze()
         if 'DE' in hdul:
             a._tsa._de_population = Table(hdul['DE'].data).to_pandas().values
+            a._tsa._de_imin = hdul['DE'].header['IMIN']
         if 'MCMC' in hdul:
             npop = hdul['MCMC'].header['NPOP']
             ndim = hdul['MCMC'].header['NDIM']
@@ -143,6 +147,9 @@ class EasyTS:
         self.npb = self._tsa.npb
         self.de: Optional[DiffEvol] = None
         self.sampler = None
+
+        self.transit_center: Optional[float] = None
+        self.transit_duration: Optional[float] = None
 
         self._tref = floor(self.time.min())
         self._extent = (self.time[0] - self._tref, self.time[-1] - self._tref, self.wavelength[0], self.wavelength[-1])
@@ -700,6 +707,8 @@ class EasyTS:
         pri = pf.PrimaryHDU()
         pri.header['name'] = self.name
         pri.header['ldmodel'] = self._tsa.ldmodel
+        pri.header['t0'] = self.transit_center
+        pri.header['t14'] = self.transit_duration
 
         pr = pf.ImageHDU(name='priors')
         priors = [pickle.dumps(p) for p in self.ps]
@@ -717,6 +726,7 @@ class EasyTS:
             de = pf.BinTableHDU(Table(self._tsa._de_population, names=self.ps.names), name='DE')
             de.header['npop'] = self._tsa.de.n_pop
             de.header['ndim'] = self._tsa.de.n_par
+            de.header['imin'] = self._tsa.de.minimum_index
             hdul.append(de)
 
         if self._tsa.sampler is not None:
