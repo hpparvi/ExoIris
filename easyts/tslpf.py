@@ -60,6 +60,7 @@ class TSLPF(LogPosteriorFunction):
         self._ootmask = None
         self._npv = 1
         self._de_population: Optional[ndarray] = None
+        self._de_imin: Optional[int] = None
         self._mc_chains: Optional[ndarray] = None
 
         self._init_parameters()
@@ -185,7 +186,7 @@ class TSLPF(LogPosteriorFunction):
 
         # Resample the DE parameter population
         # ------------------------------------
-        if self.de is not None:
+        if self._de_population is not None:
             den = zeros((deo.shape[0], ndn))
 
             # Copy the old parameter values
@@ -205,7 +206,7 @@ class TSLPF(LogPosteriorFunction):
 
         # Resample the MCMC parameter population
         # --------------------------------------
-        if self.sampler is not None:
+        if self._mc_chains is not None:
             fmco = mco.reshape([-1, ndo])
             fmcn = zeros((fmco.shape[0], ndn))
 
@@ -402,6 +403,7 @@ class TSLPF(LogPosteriorFunction):
                                 vectorize=vectorize, label=label, leave=leave, plot_convergence=plot_convergence,
                                 use_tqdm=use_tqdm, plot_parameters=plot_parameters)
         self._de_population = self.de.population.copy()
+        self._de_imin = self.de.minimum_index
 
     def sample_mcmc(self, niter: int = 500, thin: int = 5, repeats: int = 1, npop: int = None, population=None,
                     label='MCMC sampling', reset=True, leave=True, save=False, use_tqdm: bool = True, pool=None,
