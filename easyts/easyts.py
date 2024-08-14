@@ -23,7 +23,45 @@ from .tslpf import TSLPF
 from .wlpf import WhiteLPF
 
 
-def read_model(fname):
+def clean_knots(knots, min_distance, lmin=0, lmax=inf):
+    """Clean the knot table by replacing groups of adjacent knots with a single knot at the group mean.
+
+    Parameters
+    ----------
+    knots : numpy.ndarray
+        An array of knots.
+
+    min_distance : float
+        The minimum distance between adjacent knots.
+
+    lmin : float, optional
+        The minimum value of knots to consider. Default is 0.
+
+    lmax : float, optional
+        The maximum value of knots to consider. Default is inf.
+
+    Returns
+    -------
+    numpy.ndarray
+        An array of cleaned knots, where adjacent knots that are less than `min_distance` apart are replaced
+        by the mean value of the group.
+    """
+    i = 0
+    nknots = []
+    while i < knots.size:
+        m = [i]
+        if lmin <= knots[i] <= lmax:
+            j = i+1
+            while i < knots.size - 1 and knots[j]-knots[i] < min_distance:
+                j += 1
+                i += 1
+                m.append(i)
+        nknots.append(knots[m].mean())
+        i += 1
+    return array(nknots)
+
+
+def read_model(fname, name: Optional[str] = None):
     with pf.open(fname) as hdul:
         d = TSData(hdul['TIME'].data, hdul['WAVELENGTH'].data, hdul['FLUX'].data, hdul['FERR'].data)
         a = EasyTS(hdul[0].header['NAME'], hdul[0].header['LDMODEL'], d)
