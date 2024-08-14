@@ -163,6 +163,17 @@ class EasyTS:
         """
         return squeeze(self._tsa.lnposterior(pvp))
 
+    def set_data(self, data: TSData) -> None:
+        """Set the model data.
+
+        Parameters
+        ----------
+        data : TSData
+           The time-series data object.
+        """
+        self.data = data
+        self._tsa.set_data(data.time, data.wavelength, data.fluxes, data.errors)
+
     def set_prior(self, parameter, prior, *nargs):
         """Set a prior on a model parameter.
 

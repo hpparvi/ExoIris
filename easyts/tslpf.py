@@ -37,32 +37,42 @@ class TSLPF(LogPosteriorFunction):
     def __init__(self, name: str, ldmodel, time: ndarray, wavelength: ndarray, fluxes: ndarray, errors: ndarray,
                  nk: int = None, nldc: int = 10, nthreads: int = 1, tmpars = None):
         super().__init__(name)
-        self.time = time.copy()
-        self.wavelength = wavelength.copy()
-        self.flux = fluxes.copy()
-        self.ferr = errors.copy()
+        self.time = None
+        self.wavelength = None
+        self.flux = None
+        self.ferr = None
+        self.npb = None
+        self.npt = None
+        self.ndim = None
+        self._original_flux = None
+
+        self.ldmodel = ldmodel
+        self.tm = TSModel(ldmodel, nthreads=nthreads, **(tmpars or {}))
+        self.set_data(time, wavelength, fluxes, errors)
 
         self.nthreads = nthreads
-        self.npb = fluxes.shape[0]
-        self.npt = fluxes.shape[1]
         self.nldc = nldc
-        self.ndim = None
         self.nk = self.npb if nk is None else min(nk, self.npb)
 
         self.k_knots = linspace(wavelength[0], wavelength[-1], self.nk)
         self.ld_knots = linspace(wavelength[0], wavelength[-1], self.nldc)
 
-        self._original_flux = fluxes.copy()
         self._ootmask = None
         self._npv = 1
         self._de_population: Optional[ndarray] = None
         self._mc_chains: Optional[ndarray] = None
 
-        self.ldmodel = ldmodel
-        self.tm = TSModel(ldmodel, nthreads=nthreads, **(tmpars or {}))
-        self.tm.set_data(self.time)
         self._init_parameters()
-        self.white_model = None
+
+    def set_data(self, time: ndarray, wavelength: ndarray, fluxes: ndarray, errors: ndarray):
+        self.time = time.copy()
+        self.wavelength = wavelength.copy()
+        self.flux = fluxes.copy()
+        self.ferr = errors.copy()
+        self._original_flux = fluxes.copy()
+        self.npb = fluxes.shape[0]
+        self.npt = fluxes.shape[1]
+        self.tm.set_data(self.time)
 
     def _init_parameters(self):
         self.ps = ParameterSet([])
