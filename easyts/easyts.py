@@ -34,6 +34,10 @@ def read_model(fname, name: Optional[str] = None):
         a.set_limb_darkening_knots(hdul['LD_KNOTS'].data.astype('d'))
         a.transit_center = hdul[0].header['T0']
         a.transit_duration = hdul[0].header['T14']
+
+        if a.transit_duration is not None:
+            a.ootmask = abs(a.time - a.transit_center) > 0.502 * a.transit_duration
+
         priors = pickle.loads(codecs.decode(json.loads(hdul['PRIORS'].header['PRIORS']).encode(), "base64"))
         a._tsa.ps = ParameterSet([pickle.loads(p) for p in priors])
         a._tsa.ps.freeze()
