@@ -3,7 +3,8 @@ from typing import Optional
 from ldtk import BoxcarFilter, LDPSetCreator
 from numba import njit, prange
 from numpy import zeros, log, pi, linspace, inf, atleast_2d, newaxis, clip, arctan2, ones, floor, sum, concatenate, \
-    sort, ndarray, zeros_like
+    sort, ndarray, zeros_like, array
+from numpy.random import default_rng
 
 from pytransit import TSModel, RRModel, LDTkLD, TransitAnalysis
 from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
@@ -31,6 +32,44 @@ def resample(x_new, x_old, y_old):
 
 def add_knots(x_new, x_old):
     return sort(concatenate([x_new, x_old]))
+
+
+def clean_knots(knots, min_distance, lmin=0, lmax=inf):
+    """Clean the knot table by replacing groups of adjacent knots with a single knot at the group mean.
+
+    Parameters
+    ----------
+    knots : numpy.ndarray
+        An array of knots.
+
+    min_distance : float
+        The minimum distance between adjacent knots.
+
+    lmin : float, optional
+        The minimum value of knots to consider. Default is 0.
+
+    lmax : float, optional
+        The maximum value of knots to consider. Default is inf.
+
+    Returns
+    -------
+    numpy.ndarray
+        An array of cleaned knots, where adjacent knots that are less than `min_distance` apart are replaced
+        by the mean value of the group.
+    """
+    i = 0
+    nknots = []
+    while i < knots.size:
+        m = [i]
+        if lmin <= knots[i] <= lmax:
+            j = i+1
+            while i < knots.size - 1 and knots[j]-knots[i] < min_distance:
+                j += 1
+                i += 1
+                m.append(i)
+        nknots.append(knots[m].mean())
+        i += 1
+    return array(nknots)
 
 
 class TSLPF(LogPosteriorFunction):
@@ -170,7 +209,7 @@ class TSLPF(LogPosteriorFunction):
         slo = self._sl_rratios
         ndo = self.ndim
 
-        xn = self.k_knots = sort(knot_wavelengths)
+        xn = self.k_knots = clean_knots(sort(knot_wavelengths), 1e-5)
         self.nk = self.k_knots.size
 
         self._init_parameters()
