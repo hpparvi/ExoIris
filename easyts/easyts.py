@@ -759,3 +759,63 @@ class EasyTS:
             hdul.append(mc)
 
         hdul.writeto(f"{self.name}.fits", overwrite=True)
+
+    def create_initial_population(self, n: int, source: str, add_noise: bool = True) -> ndarray:
+        """Create an initial parameter vector population for the DE optimisation.
+
+        Parameters
+        ----------
+        n : int
+            Number of parameter vectors in the population.
+        source : str
+            Source of the initial population. Must be either 'fit' or 'mcmc'.
+        add_noise : bool, optional
+            Flag indicating whether to add noise to the initial population. Default is True.
+
+        Returns
+        -------
+        numpy.ndarray
+            The initial population.
+
+        Raises
+        ------
+        ValueError
+            If the source is not 'fit' or 'mcmc'.
+        """
+        return self._tsa.create_initial_population(n, source, add_noise)
+
+    def add_noise_to_solution(self, result: str = 'fit') -> None:
+        """Add noise to the global optimization result or MCMC parameter posteriors.
+
+        Add noise to the global optimization result or MCMC parameter posteriors. You may want to do this if you
+        create a new analysis from another one, for example, by adding radius ratio knots or changing the intrinsic
+        data resolution.
+
+        Parameters
+        ----------
+        result : str, optional
+            Determines which result to add noise to. Default is 'fit'.
+
+        Raises
+        ------
+        ValueError
+            If the 'result' argument is not 'fit' or 'mcmc'.
+        """
+        if result == 'fit':
+            pvp = self._tsa._de_population[:, :].copy()
+        elif result == 'mcmc':
+            pvp = self._tsa._mc_chains[:, -1, :].copy()
+        else:
+            raise ValueError("The 'result' argument must be either 'fit' or 'mcmc'")
+
+        npv = pvp.shape[0]
+        pvp[:, 0] += normal(0, 0.005, size=npv)
+        pvp[:, 1] += normal(0, 0.001, size=npv)
+        pvp[:, 3] += normal(0, 0.005, size=npv)
+        pvp[:, self._tsa._sl_rratios] += normal(0, 1, pvp[:, self._tsa._sl_rratios].shape) * 0.002 * pvp[:, self._tsa._sl_rratios]
+        pvp[:, self._tsa._sl_ld] += normal(0, 1, pvp[:, self._tsa._sl_ld].shape) * 0.002 * pvp[:, self._tsa._sl_ld]
+
+        if result == 'fit':
+            self._tsa._de_population[:, :] = pvp
+        else:
+            pvp = self._tsa._mc_chains[:, -1, :] = pvp
