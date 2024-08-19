@@ -430,7 +430,7 @@ class TSLPF(LogPosteriorFunction):
 
     def optimize_global(self, niter=200, npop=50, population=None, pool=None, lnpost=None, vectorize=True,
                         label='Global optimisation', leave=False, plot_convergence: bool = True, use_tqdm: bool = True,
-                        plot_parameters: tuple = (0, 2, 3, 4)):
+                        plot_parameters: tuple = (0, 2, 3, 4), min_ptp: float = 5):
 
         if population is None:
             if self._de_population is None:
@@ -440,7 +440,7 @@ class TSLPF(LogPosteriorFunction):
 
         super().optimize_global(niter=niter, npop=npop, population=population, pool=pool, lnpost=lnpost,
                                 vectorize=vectorize, label=label, leave=leave, plot_convergence=plot_convergence,
-                                use_tqdm=use_tqdm, plot_parameters=plot_parameters)
+                                use_tqdm=use_tqdm, plot_parameters=plot_parameters, min_ptp=min_ptp)
         self._de_population = self.de.population.copy()
         self._de_imin = self.de.minimum_index
 

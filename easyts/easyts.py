@@ -399,8 +399,8 @@ class EasyTS:
             fig.tight_layout()
         return axs
 
-    def fit(self, niter: int = 200, npop: int = 150, pool: Optional[Any] = None, lnpost: Optional[Callable]=None,
-            population = None) -> None:
+    def fit(self, niter: int = 200, npop: Optional[int] = None, pool: Optional[Any] = None, lnpost: Optional[Callable]=None,
+            population: Optional[ndarray] = None, initial_population: Optional[ndarray] = None) -> None:
         """Fit the spectroscopic light curves jointly using Differential Evolution.
 
         Fit the spectroscopic light curves jointly for `niter` iterations using Differential Evolution.
@@ -417,19 +417,30 @@ class EasyTS:
             Log posterior function for optimization. Default is None.
         """
         if population is not None:
-            pvp = population
+            x0 = population
+            npop = x0.shape[0]
         else:
-            if self._tsa._de_population is not None:
-                pvp = self._tsa._de_population
+            if self._tsa.de is None and initial_population is not None:
+                x0 = initial_population
+                npop = x0.shape[0]
+            elif self._tsa._de_population is not None:
+                x0 = self._tsa._de_population
+                npop = x0.shape[0]
             else:
+                if npop is None:
+                    raise ValueError("'npop' cannot be None when starting global optimization from the white light curve fit.'")
+                if npop <= 2*self._tsa.ndim:
+                    raise ValueError("'npop' should be at least two times the number of free model parameters.")
+
                 pv0 = self._wa._local_minimization.x
-                pvp = self._tsa.ps.sample_from_prior(npop)
-                pvp[:, 0] = normal(pv0[2], 0.05, size=npop)
-                pvp[:, 1] = normal(pv0[0], 1e-4, size=npop)
-                pvp[:, 2] = normal(pv0[1], 1e-5, size=npop)
-                pvp[:, 3] = clip(normal(pv0[3], 0.01, size=npop), 0.0, 1.0)
-                pvp[:, self._tsa._sl_rratios] = normal(sqrt(pv0[4]), 0.001, size=(npop, self.nk))
-        self._tsa.optimize_global(niter=niter, npop=npop, population=pvp, pool=pool, lnpost=lnpost,
+                x0 = self._tsa.ps.sample_from_prior(npop)
+                x0[:, 0] = normal(pv0[2], 0.05, size=npop)
+                x0[:, 1] = normal(pv0[0], 1e-4, size=npop)
+                x0[:, 2] = normal(pv0[1], 1e-5, size=npop)
+                x0[:, 3] = clip(normal(pv0[3], 0.01, size=npop), 0.0, 1.0)
+                x0[:, self._tsa._sl_rratios] = normal(sqrt(pv0[4]), 0.001, size=(npop, self.nk))
+
+        self._tsa.optimize_global(niter=niter, npop=npop, population=x0, pool=pool, lnpost=lnpost,
                                   vectorize=(pool is None))
         self.de = self._tsa.de
 
