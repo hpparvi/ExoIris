@@ -233,6 +233,11 @@ class EasyTS:
         return self._tsa.k_knots
 
     @property
+    def ndim(self) -> int:
+        """Get the number of free model parameters."""
+        return self._tsa.ndim
+
+    @property
     def nk(self) -> int:
         """Get the number of radius ratio (k) knots."""
         return self._tsa.nk
@@ -332,10 +337,10 @@ class EasyTS:
         self._wa = WhiteLPF(self._tsa)
         self._wa.optimize()
         pv = self._wa._local_minimization.x
-        phase = fold(self.time, pv[1], pv[0])
-        self.ootmask = abs(phase) > 0.502 * self._wa.transit_duration
         self.transit_center = self._wa.transit_center
         self.transit_duration = self._wa.transit_duration
+        phase = fold(self.time, pv[1], pv[0])
+        self.ootmask = abs(phase) > 0.502 * self.transit_duration
 
     def plot_white(self) -> Figure:
         """Plot the white light curve data with the best-fit model.
@@ -472,10 +477,26 @@ class EasyTS:
             Whether to use tqdm progress bar during sampling. Default is True.
 
         """
-        self._tsa.sample_mcmc(niter=niter, thin=thin, repeats=repeats, pool=pool, lnpost=lnpost, vectorize=(pool is None), leave=leave, save=save, use_tqdm=use_tqdm)
+        self._tsa.sample_mcmc(niter=niter, thin=thin, repeats=repeats, pool=pool, lnpost=lnpost,
+                              vectorize=(pool is None), leave=leave, save=save, use_tqdm=use_tqdm)
         self.sampler = self._tsa.sampler
 
+    def reset_sampler(self) -> None:
+        """Reset the MCMC sampler
+
+        Reset the MCMC sampler by clearing the Monte Carlo chains and setting the sampler to None.
+        """
+        self._tsa._mc_chains = None
+        self._tsa.sampler = None
+
     def save(self, fname: Optional[str|Path] = None) -> None:
+        """Save the model.
+
+        Parameters
+        ----------
+        fname : Optional[str|Path], default None
+            The filename or path to save the data. If not provided, the data will be saved using the default filename.
+        """
         self._tsa.save(fname)
 
     def plot_transmission_spectrum(self, result: Optional[str] = None, ax: Axes = None, xscale: Optional[str] = None,
