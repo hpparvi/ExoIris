@@ -428,6 +428,54 @@ class TSLPF(LogPosteriorFunction):
         fmod = self.flux_model(pv)
         return lnlike_normal(self.flux, fmod, self.ferr)
 
+    def create_initial_population(self, n: int, source: str, add_noise: bool = True) -> ndarray:
+        """Create an initial parameter vector population for DE.
+
+        Parameters
+        ----------
+        n : int
+            Number of parameter vectors in the population.
+        source : str
+            Source of the initial population. Must be either 'fit' or 'mcmc'.
+        add_noise : bool, optional
+            Flag indicating whether to add noise to the initial population. Default is True.
+
+        Returns
+        -------
+        numpy.ndarray
+            The initial population.
+
+        Raises
+        ------
+        ValueError
+            If the source is not 'fit' or 'mcmc'.
+        """
+        rng = default_rng()
+
+        if source not in ('fit', 'mcmc'):
+            raise ValueError("source must be either 'fit' or 'mcmc'")
+
+        if source == 'fit':
+            pvs = self._de_population
+            if n == pvs.shape[0]:
+                pvp = pvs.copy()
+            else:
+                pvp = rng.choice(pvs, size=n)
+        else:
+            pvs = self._mc_chains
+            if n == pvs.shape[2]:
+                pvp = pvs[:,-1,:].copy()
+            else:
+                pvp = rng.choice(pvs.reshape([-1, self.ndim]), size=n)
+
+        if add_noise:
+            pvp[:, 0] += rng.normal(0, 0.005, size=n)
+            pvp[:, 1] += rng.normal(0, 0.001, size=n)
+            pvp[:, 3] += rng.normal(0, 0.005, size=n)
+            pvp[:, self._sl_rratios] += rng.normal(0, 1, pvp[:, self._sl_rratios].shape) * 0.002 * pvp[:, self._sl_rratios]
+            pvp[:, self._sl_ld] += rng.normal(0, 1, pvp[:, self._sl_ld].shape) * 0.002 * pvp[:, self._sl_ld]
+        return pvp
+
     def optimize_global(self, niter=200, npop=50, population=None, pool=None, lnpost=None, vectorize=True,
                         label='Global optimisation', leave=False, plot_convergence: bool = True, use_tqdm: bool = True,
                         plot_parameters: tuple = (0, 2, 3, 4), min_ptp: float = 5):
