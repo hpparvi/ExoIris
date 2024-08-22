@@ -3,8 +3,9 @@ from typing import Optional
 from ldtk import BoxcarFilter, LDPSetCreator
 from numba import njit, prange
 from numpy import zeros, log, pi, linspace, inf, atleast_2d, newaxis, clip, arctan2, ones, floor, sum, concatenate, \
-    sort, ndarray, zeros_like, array
+    sort, ndarray, zeros_like, array, tile, arange
 from numpy.random import default_rng
+from celerite2 import GaussianProcess as GP, terms
 
 from pytransit import TSModel, RRModel, LDTkLD, TransitAnalysis
 from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
@@ -13,6 +14,11 @@ from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_
 from pytransit.param import ParameterSet, UniformPrior as UP, NormalPrior as NP, GParameter
 from scipy.interpolate import splev, splrep
 
+NM_WHITE = 0
+NM_GP_FIXED = 1
+NM_GP_FREE = 2
+
+noise_models = dict(white=NM_WHITE, fixed_gp=NM_GP_FIXED, free_gp=NM_GP_FREE)
 
 @njit(parallel=True, cache=False)
 def lnlike_normal(o, m, e):
@@ -74,7 +80,7 @@ def clean_knots(knots, min_distance, lmin=0, lmax=inf):
 
 class TSLPF(LogPosteriorFunction):
     def __init__(self, name: str, ldmodel, time: ndarray, wavelength: ndarray, fluxes: ndarray, errors: ndarray,
-                 nk: int = None, nldc: int = 10, nthreads: int = 1, tmpars = None):
+                 nk: int = None, nldc: int = 10, nthreads: int = 1, tmpars = None, noise_model: str = 'white'):
         super().__init__(name)
         self.time = None
         self.wavelength = None
@@ -84,6 +90,13 @@ class TSLPF(LogPosteriorFunction):
         self.npt = None
         self.ndim = None
         self._original_flux = None
+
+        self._gp: Optional[GP] = None
+        self._gp_time: Optional[ndarray] = None
+        self._gp_flux: Optional[ndarray] = None
+        self._gp_time: Optional[ndarray] = None
+
+        self.set_noise_model(noise_model)
 
         self.ldmodel = ldmodel
         self.tm = TSModel(ldmodel, nthreads=nthreads, **(tmpars or {}))
@@ -113,8 +126,10 @@ class TSLPF(LogPosteriorFunction):
         self.npb = fluxes.shape[0]
         self.npt = fluxes.shape[1]
         self.tm.set_data(self.time)
+        if self._nm in (NM_GP_FIXED, NM_GP_FREE):
+            self._init_gp()
 
-    def _init_parameters(self):
+    def _init_parameters(self) -> None:
         self.ps = ParameterSet([])
         self._init_p_star()
         self._init_p_orbit()
@@ -123,11 +138,74 @@ class TSLPF(LogPosteriorFunction):
         self.ps.freeze()
         self.ndim = len(self.ps)
 
-    def _init_p_star(self):
+    def set_noise_model(self, noise_model: str) -> None:
+        """Sets the noise model for the analysis.
+
+        Parameters
+        ----------
+        noise_model : str
+            The noise model to be used. Must be one of the following: white, fixed_gp, free_gp.
+
+        Raises
+        ------
+        ValueError
+            If noise_model is not one of the specified options.
+        """
+        if noise_model not in noise_models.keys():
+            raise ValueError('noise_model must be one of: white, fixed_gp, free_gp')
+        self.noise_model = noise_model
+        self._nm = noise_models[noise_model]
+        if self._nm in (NM_GP_FIXED, NM_GP_FREE):
+            self._init_gp()
+
+    def _init_gp(self) -> None:
+        """Initializes the Gaussian Process (GP) .
+
+        This method initializes the necessary variables and sets up the GP for the given data.
+        """
+        self._gp_time = (tile(self.time[newaxis, :], (self.npb, 1)) + arange(self.npb)[:, newaxis]).ravel()
+        self._gp_flux = self.flux.ravel()
+        self._gp_ferr = self.ferr.ravel()
+        self._gp = GP(terms.Matern32Term(sigma=self._gp_flux.std(), rho=0.1))
+        self._gp.compute(self._gp_time, yerr=self._gp_ferr, quiet=True)
+
+    def set_gp_hyperparameters(self, sigma: float, rho: float) -> None:
+        """Sets the Gaussian Process hyperparameters assuming a Matern32 kernel.
+
+        Parameters
+        ----------
+        sigma : float
+            The kernel amplitude parameter.
+
+        rho : float
+            The length scale parameter.
+
+        Raises
+        ------
+        RuntimeError
+            If the GP has not been initialized before setting the hyperparameters.
+        """
+        if self._gp is None:
+            raise RuntimeError('The GP needs to be initialized before setting hyperparameters.')
+        self._gp.kernel = terms.Matern32Term(sigma=sigma, rho=rho)
+        self._gp.compute(self._gp_time, yerr=self._gp_ferr, quiet=True)
+
+    def set_gp_kernel(self, kernel: terms.Term) -> None:
+        """Sets the kernel for the Gaussian Process (GP) model and recomputes the GP.
+
+        Parameters
+        ----------
+        kernel : terms.Term
+            The kernel to be set for the GP.
+        """
+        self._gp.kernel = kernel
+        self._gp.compute(self._gp_time, yerr=self._gp_ferr, quiet=True)
+
+    def _init_p_star(self) -> None:
         pstar = [GParameter('rho', 'stellar density', 'g/cm^3', UP(0.1, 25.0), (0, inf))]
         self.ps.add_global_block('star', pstar)
 
-    def _init_limb_darkening(self):
+    def _init_limb_darkening(self) -> None:
         if isinstance(self.ldmodel, LDTkLD):
             pld = [GParameter('teff', 'stellar TEff', 'K', NP(*self.ldmodel.sc.teff), (0, inf)),
                    GParameter('logg', 'stellar log g', '', NP(*self.ldmodel.sc.logg), (0, inf)),
@@ -426,7 +504,12 @@ class TSLPF(LogPosteriorFunction):
 
         """
         fmod = self.flux_model(pv)
-        return lnlike_normal(self.flux, fmod, self.ferr)
+        if self._nm == NM_WHITE:
+            return lnlike_normal(self.flux, fmod, self.ferr)
+        elif self._nm == NM_GP_FIXED:
+            return self._gp.log_likelihood(self._gp_flux - fmod.ravel())
+        else:
+            raise NotImplementedError("The free GP noise model hasn't been implemented yet.")
 
     def create_initial_population(self, n: int, source: str, add_noise: bool = True) -> ndarray:
         """Create an initial parameter vector population for DE.

@@ -2,19 +2,20 @@ import codecs
 import json
 import pickle
 from pathlib import Path
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, Iterable
 
 import pandas as pd
 import seaborn as sb
 import astropy.io.fits as pf
 
 from astropy.table import Table
+from celerite2 import GaussianProcess, terms
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
 from matplotlib.pyplot import subplots, setp
 from numpy import (poly1d, polyfit, where, sqrt, clip, percentile, median, squeeze, floor, ndarray,
-                   array, inf, newaxis, r_)
+                   array, inf, newaxis, r_, arange, tile, log10)
 from numpy.random import normal
 from pytransit.orbits import fold
 from pytransit.param import ParameterSet
@@ -79,7 +80,8 @@ class EasyTS:
         The MCMC sampler.
     """
 
-    def __init__(self, name: str, ldmodel, data: TSData, nk: int = None, nldc: int = 10, nthreads: int = 1, tmpars=None):
+    def __init__(self, name: str, ldmodel, data: TSData, nk: int = None, nldc: int = 10, nthreads: int = 1, tmpars=None,
+                 noise_model: str = 'white'):
         """
         Parameters
         ----------
@@ -102,7 +104,7 @@ class EasyTS:
         """
         self.data = data
         self._tsa = TSLPF(name, ldmodel, data.time, data.wavelength, data.fluxes, data.errors, nk=nk, nldc=nldc,
-                          nthreads=nthreads, tmpars=tmpars)
+                          nthreads=nthreads, tmpars=tmpars, noise_model=noise_model)
         self._wa = None
         self.nthreads = nthreads
         self.ootmask = None
@@ -127,9 +129,23 @@ class EasyTS:
         -------
         array_like
             The natural logarithm of the posterior probability.
-
         """
         return squeeze(self._tsa.lnposterior(pvp))
+
+    def set_noise_model(self, noise_model: str) -> None:
+        """Set the noise model for the analysis.
+
+        Parameters
+        ----------
+        noise_model : str
+            The noise model to be used. Must be one of the following: white, fixed_gp, free_gp.
+
+        Raises
+        ------
+        ValueError
+            If noise_model is not one of the specified options.
+        """
+        self._tsa.set_noise_model(noise_model)
 
     def set_data(self, data: TSData) -> None:
         """Set the model data.
@@ -142,7 +158,7 @@ class EasyTS:
         self.data = data
         self._tsa.set_data(data.time, data.wavelength, data.fluxes, data.errors)
 
-    def set_prior(self, parameter, prior, *nargs):
+    def set_prior(self, parameter, prior, *nargs) -> None:
         """Set a prior on a model parameter.
 
         Parameters
@@ -160,7 +176,7 @@ class EasyTS:
         """
         self._tsa.set_prior(parameter, prior, *nargs)
 
-    def set_radius_ratio_prior(self, prior, *nargs):
+    def set_radius_ratio_prior(self, prior, *nargs) -> None:
         """Set an identical prior on all radius ratio (k) knots.
 
         Parameters
@@ -169,7 +185,6 @@ class EasyTS:
             The prior for the radius ratios.
         *nargs : float
             Additional arguments for the prior.
-
         """
         for l in self._tsa.k_knots:
             self.set_prior(f'k_{l:08.5f}', prior, *nargs)
@@ -201,6 +216,29 @@ class EasyTS:
 
         """
         self._tsa.set_ldtk_prior(teff, logg, metal, dataset, width, uncertainty_multiplier)
+
+    def set_gp_hyperparameters(self, sigma: float, rho: float) -> None:
+        """Set Gaussian Process (GP) hyperparameters assuming a Matern-3/2 kernel..
+
+        Parameters
+        ----------
+        sigma : float
+            The kernel amplitude parameter.
+
+        rho : float
+            The length scale parameter.
+        """
+        self._tsa.set_gp_hyperparameters(sigma, rho)
+
+    def set_gp_kernel(self, kernel: terms.Term) -> None:
+        """Set the Gaussian Process (GP) kernel.
+
+        Parameters
+        ----------
+        kernel : terms.Term
+            The kernel to set for the GP.
+        """
+        self._tsa.set_gp_kernel(kernel)
 
     @property
     def name(self) -> str:
@@ -250,6 +288,10 @@ class EasyTS:
     @property
     def npb(self):
         return self._tsa.npb
+
+    @property
+    def gp(self) -> GaussianProcess:
+        return self._tsa._gp
 
     def add_radius_ratio_knots(self, knot_wavelengths) -> None:
         """Add radius ratio (k) knots.
@@ -844,3 +886,123 @@ class EasyTS:
             self._tsa._de_population[:, :] = pvp
         else:
             pvp = self._tsa._mc_chains[:, -1, :] = pvp
+
+    def optimize_gp_hyperparameters(self,
+                                    log10_sigma_bounds: float | tuple[float, float] = (-5, -2),
+                                    log10_rho_bounds: float | tuple[float, float] = (-5, 0),
+                                    log10_sigma_prior=None, log10_rho_prior=None,
+                                    npop: int = 10, niter: int = 100, subset = None):
+        """Optimize the Matern-3/2 kernel Gaussian Process hyperparameters.
+
+        Parameters
+        ----------
+        log10_sigma_bounds : float or tuple[float, float], optional
+            The bounds for the log10 of the sigma hyperparameter. If float is provided, the parameter will be
+            fixed to the given value. Default is (-5, -2).
+        log10_rho_bounds : float or tuple[float, float], optional
+            The bounds for the log10 of the rho hyperparameter. If float is provided, the parameter will be fixed
+            to the given value. Default is (-5, 0).
+        log10_sigma_prior : object or iterable, optional
+            The prior distribution for the sigma hyperparameter expressed as an object with a `logpdf` method
+            or as an iterable containing the mean and standard deviation of the prior distribution. Default is None.
+        log10_rho_prior : object or iterable, optional
+            The prior distribution for the rho hyperparameter expressed as an object with a `logpdf` method
+            or as an iterable containing the mean and standard deviation of the prior distribution. Default is None.
+        npop : int, optional
+            The population size for the differential evolution optimizer. Default is 10.
+        niter : int, optional
+            The number of iterations for the differential evolution optimization process. Default is 100.
+        subset : iterable or float, optional
+            The subset used for the optimization process. If `subset` is a float, a random subset of size
+            `0.5 * self.npb` is used. If `subset` is an iterable, it must contain the indices of the subset.
+            Default is None.
+
+        Returns
+        -------
+        tuple[float, float]
+            The optimized values for the log10 of the sigma and rho hyperparameters.
+        float
+            The fitness value.
+
+        Raises
+        ------
+        ValueError
+            If `subset` is not an iterable or a float.
+        ValueError
+            If `log10_sigma_prior` is not an object with a `logpdf` method or iterable.
+        ValueError
+            If `log10_rho_prior` is not an object with a `logpdf` method or iterable.
+
+        Notes
+        -----
+        - The Gaussian Process is reconfigured with the optimal hyperparameters. Any previous kernels are overwritten.
+        """
+
+        if self._tsa.noise_model != 'fixed_gp':
+            raise ValueError("The noise model must be set to 'fixed_gp' before the hyperparameter optimization.")
+
+        sb = log10_sigma_bounds if isinstance(log10_sigma_bounds, Iterable) else [log10_sigma_bounds-1, log10_sigma_bounds+1]
+        rb = log10_rho_bounds if isinstance(log10_rho_bounds, Iterable) else [log10_rho_bounds-1, log10_rho_bounds+1]
+        bounds = array([sb, rb])
+
+        if subset is not None:
+            if isinstance(subset, float):
+                ids = sort(permutation(self.npb)[:int(0.5*self.npb)])
+            elif isinstance(subset, Iterable):
+                ids = array(subset, int)
+            else:
+                raise ValueError("subset must be either an iterable or a float.")
+        else:
+            ids = arange(self.npb)
+
+        class DummyPrior:
+            def logpdf(self, x):
+                return 0.0
+
+        if log10_sigma_prior is not None:
+            if isinstance(log10_sigma_prior, Iterable):
+                sp = norm(*log10_sigma_prior)
+            elif hasattr(log10_sigma_prior, logpdf):
+                sp = log10_sigma_prior
+            else:
+                raise ValueError('Bad sigma_prior')
+        else:
+            sp = DummyPrior()
+
+        if log10_rho_prior is not None:
+            if isinstance(log10_rho_prior, Iterable):
+                rp = norm(*log10_rho_prior)
+            elif hasattr(log10_rho_prior, logpdf):
+                rp = log10_rho_prior
+            else:
+                raise ValueError('Bad rho_prior')
+        else:
+            rp = DummyPrior()
+
+        npb = ids.size
+        time = (tile(self.time[newaxis, self.ootmask], (npb, 1)) + arange(npb)[:, newaxis]).ravel()
+        flux = (self.fluxes[ids, :][:, self.ootmask]).ravel() - 1
+        ferr = (self._tsa.ferr[ids, :][:, self.ootmask]).ravel()
+        gp = GaussianProcess(terms.Matern32Term(sigma=flux.std(), rho=0.1))
+
+        def nll(log10x):
+            x = 10**log10x
+            if any(log10x < bounds[:,0]) or any(log10x > bounds[:,1]):
+                return inf
+            gp.kernel = terms.Matern32Term(sigma=x[0], rho=x[1])
+            gp.compute(time, yerr=ferr, quiet=True)
+            return -(gp.log_likelihood(flux) + sp.logpdf(log10x[0]) + rp.logpdf(log10x[1]))
+
+        de = DiffEvol(nll, bounds, npop, min_ptp=0.2)
+        if isinstance(log10_sigma_bounds, float):
+            de.population[:, 0] = log10_sigma_bounds
+        if isinstance(log10_rho_bounds, float):
+            de.population[:, 1] = log10_rho_bounds
+
+        de.optimize(niter)
+
+        x = de.minimum_location
+        gp.kernel = terms.Matern32Term(sigma=10**x[0], rho=10**x[1])
+        gp.compute(self._tsa._gp_time, yerr=self._tsa._gp_ferr, quiet=True)
+        self._tsa._gp = gp
+        return 10**x, de._fitness.ptp()
