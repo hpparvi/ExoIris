@@ -1,0 +1,4 @@
+.idea
+/doc/build/
+/EasyTS.egg-info/
+*.ipynb_checkpoints
