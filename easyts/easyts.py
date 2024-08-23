@@ -270,7 +270,6 @@ class EasyTS:
     def original_fluxes(self):
         return self._tsa._original_flux
 
-
     @property
     def k_knots(self) -> ndarray:
         """Get the radius ratio (k) knots."""
@@ -293,11 +292,28 @@ class EasyTS:
 
     @property
     def npb(self):
+        """Get the number of passbands."""
         return self._tsa.npb
 
     @property
     def gp(self) -> GaussianProcess:
+        """Get the Gaussian Process (GP) model."""
         return self._tsa._gp
+
+    @property
+    def optimizer_population(self):
+        """Get the current population of the optimizer."""
+        return self._tsa._de_population
+
+    @property
+    def mcmc_chains(self):
+        """Get the current emcee MCMC chains."""
+        return self._tsa._mc_chains
+
+    @property
+    def posterior_samples(self):
+        """Get the posterior samples from the MCMC sampler."""
+        return pd.DataFrame(self._tsa._mc_chains.reshape([-1, self.ndim]), columns=self.ps.names)
 
     def add_radius_ratio_knots(self, knot_wavelengths) -> None:
         """Add radius ratio (k) knots.
@@ -348,7 +364,7 @@ class EasyTS:
         """Print the model parameterization."""
         self._tsa.print_parameters(1)
 
-    def plot_setup(self, figsize=(13,4), xscale=None) -> Figure:
+    def plot_setup(self, figsize=(13,4), xscale=None, xticks=None) -> Figure:
         """Plot the model setup with limb darkening knots, radius ratio knots, and data binning.
 
         Parameters
@@ -377,6 +393,8 @@ class EasyTS:
         setp(axs[1].get_xticklines(), visible=False)
         if xscale:
             setp(axs, xscale=xscale)
+        if xticks is not None:
+            [ax.set_xticks(xticks, labels=xticks) for ax in axs]
         fig.tight_layout()
         return fig
 
@@ -595,7 +613,7 @@ class EasyTS:
             ax.set_xticks(xticks, labels=xticks)
         return ax.get_figure()
 
-    def plot_limb_darkening_parameters(self, result: Optional[str] = None, axs: Optional[tuple[Axes, Axes]] = None) -> Figure:
+    def plot_limb_darkening_parameters(self, result: Optional[str] = None, axs: Optional[tuple[Axes, Axes]] = None) -> Figure | None:
         """Plot the limb darkening parameters.
 
         Parameters
@@ -625,7 +643,7 @@ class EasyTS:
         quadratic, quadratic-tri, power-2, and power-2-pm models.
         """
         if not self._tsa.ldmodel in ('quadratic', 'quadratic-tri', 'power-2', 'power-2-pm'):
-            raise ValueError('Unsupportted limb darkening model: the plot supports only two-parameter limb darkening models at the moment.')
+            return None
 
         if axs is None:
             fig, axs = subplots(1, 2, sharey='all', figsize=(13,4))
