@@ -21,16 +21,22 @@ from pytransit.orbits import fold
 from pytransit.param import ParameterSet
 from pytransit.utils.de import DiffEvol
 
+from .ldtkld import LDTkLD
 from .tsdata import TSData
 from .tslpf import TSLPF, clean_knots
 from .wlpf import WhiteLPF
 
 
-def read_model(fname, name: Optional[str] = None):
+def load_model(fname, name: Optional[str] = None):
     with pf.open(fname) as hdul:
         d = TSData(hdul['TIME'].data.astype('d'), hdul['WAVELENGTH'].data.astype('d'),
                    hdul['FLUX'].data.astype('d'), hdul['FERR'].data.astype('d'))
-        a = EasyTS(name or hdul[0].header['NAME'], hdul[0].header['LDMODEL'], d)
+        if hdul[0].header['LDMODEL'] == 'ldtk':
+            filters, teff, logg, metal, dataset = pickle.loads(codecs.decode(json.loads(hdul[0].header['LDTKLD']).encode(), "base64"))
+            ldm = LDTkLD(filters, teff, logg, metal, dataset=dataset)
+        else:
+            ldm =  hdul[0].header['LDMODEL']
+        a = EasyTS(name or hdul[0].header['NAME'], ldmodel=ldm, data=d)
         a.set_radius_ratio_knots(hdul['K_KNOTS'].data.astype('d'))
         a.set_limb_darkening_knots(hdul['LD_KNOTS'].data.astype('d'))
         a.transit_center = hdul[0].header['T0']
@@ -531,16 +537,6 @@ class EasyTS:
         self._tsa._mc_chains = None
         self._tsa.sampler = None
 
-    def save(self, fname: Optional[str|Path] = None) -> None:
-        """Save the model.
-
-        Parameters
-        ----------
-        fname : Optional[str|Path], default None
-            The filename or path to save the data. If not provided, the data will be saved using the default filename.
-        """
-        self._tsa.save(fname)
-
     def plot_transmission_spectrum(self, result: Optional[str] = None, ax: Axes = None, xscale: Optional[str] = None,
                                    xticks=None, ylim=None,  plot_resolution: bool = True) -> Figure:
         """Plot the transmission spectrum.
@@ -796,13 +792,20 @@ class EasyTS:
     def save(self, overwrite: bool = False):
         pri = pf.PrimaryHDU()
         pri.header['name'] = self.name
-        pri.header['ldmodel'] = self._tsa.ldmodel
         pri.header['t0'] = self.transit_center
         pri.header['t14'] = self.transit_duration
 
         pr = pf.ImageHDU(name='priors')
         priors = [pickle.dumps(p) for p in self.ps]
         pr.header['priors'] = json.dumps(codecs.encode(pickle.dumps(priors), "base64").decode())
+
+        if isinstance(self._tsa.ldmodel, LDTkLD):
+            ldm = self._tsa.ldmodel
+            pri.header['ldmodel'] = 'ldtk'
+            pri.header['ldtkld'] = json.dumps(codecs.encode(pickle.dumps((ldm.sc.filters, ldm.sc.teff, ldm.sc.logg,
+                                                                          ldm.sc.metal, ldm.dataset)), "base64").decode())
+        else:
+            pri.header['ldmodel'] = self._tsa.ldmodel
 
         flux = pf.ImageHDU(self._tsa.flux, name='flux')
         ferr = pf.ImageHDU(self._tsa.ferr, name='ferr')
