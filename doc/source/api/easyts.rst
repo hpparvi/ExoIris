@@ -24,8 +24,8 @@ Model setup
 .. autosummary::
     :toctree: api/
 
-    EasyTS.set_k_knots
-    EasyTS.add_k_knots
+    EasyTS.set_radius_ratio_knots
+    EasyTS.add_radius_ratio_knots
     EasyTS.set_ldtk_prior
     EasyTS.set_radius_ratio_prior
     EasyTS.plot_setup

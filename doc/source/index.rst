@@ -5,13 +5,13 @@
 EasyTS
 ======
 
-A Python package for easy, fast, and robust exoplanet transmission spectroscopy.
+EasyTS is a Python package for fast, flexible, and easy exoplanet transmission spectroscopy.
 
 Getting started
 ---------------
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
 
    install
    examples/index
