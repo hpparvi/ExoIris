@@ -102,12 +102,19 @@ class TSLPF(LogPosteriorFunction):
         self.tm = TSModel(ldmodel, nthreads=nthreads, **(tmpars or {}))
         self.set_data(time, wavelength, fluxes, errors)
 
+        if isinstance(ldmodel, LDTkLD):
+            self.ldmodel._init_interpolation(self.tm.mu)
+
         self.nthreads = nthreads
         self.nldc = nldc
         self.nk = self.npb if nk is None else min(nk, self.npb)
 
         self.k_knots = linspace(wavelength[0], wavelength[-1], self.nk)
-        self.ld_knots = linspace(wavelength[0], wavelength[-1], self.nldc)
+
+        if isinstance(ldmodel, LDTkLD):
+            self.ld_knots = array([])
+        else:
+            self.ld_knots = linspace(wavelength[0], wavelength[-1], self.nldc)
 
         self._ootmask = None
         self._npv = 1

@@ -296,6 +296,11 @@ class EasyTS:
         return self._tsa.npb
 
     @property
+    def ldmodel(self):
+        """Get the limb darkening model."""
+        return self._tsa.ldmodel
+
+    @property
     def gp(self) -> GaussianProcess:
         """Get the Gaussian Process (GP) model."""
         return self._tsa._gp
@@ -364,7 +369,7 @@ class EasyTS:
         """Print the model parameterization."""
         self._tsa.print_parameters(1)
 
-    def plot_setup(self, figsize=(13,4), xscale=None, xticks=None) -> Figure:
+    def plot_setup(self, figsize=None, xscale=None, xticks=None) -> Figure:
         """Plot the model setup with limb darkening knots, radius ratio knots, and data binning.
 
         Parameters
@@ -376,21 +381,40 @@ class EasyTS:
         -------
         Figure
         """
-        fig, axs = subplots(3, 1, figsize=figsize, sharex='all', sharey='all')
-        axs[0].vlines(self._tsa.ld_knots, 0.1, 0.5, ec='k')
-        axs[0].text(0.01, 0.90, 'Limb darkening knots', va='top', transform=axs[0].transAxes)
-        axs[1].vlines(self._tsa.k_knots, 0.1, 0.5, ec='k')
-        axs[1].text(0.01, 0.90, 'Radius ratio knots', va='top', transform=axs[1].transAxes)
-        axs[2].vlines(self.wavelength, 0.1, 0.5, ec='k')
-        axs[2].text(0.01, 0.90, 'Wavelength bins', va='top', transform=axs[2].transAxes)
-        sb.despine(ax=axs[0], top=False, bottom=True, right=False)
-        sb.despine(ax=axs[1], top=True, bottom=True, right=False)
-        sb.despine(ax=axs[2], top=True, bottom=False, right=False)
+        using_ldtk = isinstance(self._tsa.ldmodel, LDTkLD)
+
+        if not using_ldtk:
+            figsize = figsize or (13, 4)
+            fig, axs = subplots(3, 1, figsize=figsize, sharex='all', sharey='all')
+            axl, axk, axw = axs
+
+            axl.vlines(self._tsa.ld_knots, 0.1, 0.5, ec='k')
+            axl.text(0.01, 0.90, 'Limb darkening knots', va='top', transform=axl.transAxes)
+        else:
+            figsize = figsize or (13, 2*4/3)
+            fig, axs = subplots(2, 1, figsize=figsize, sharex='all', sharey='all')
+            axk, axw = axs
+            axl = None
+
+        axk.vlines(self._tsa.k_knots, 0.1, 0.5, ec='k')
+        axk.text(0.01, 0.90, 'Radius ratio knots', va='top', transform=axk.transAxes)
+        axw.vlines(self.wavelength, 0.1, 0.5, ec='k')
+        axw.text(0.01, 0.90, 'Wavelength bins', va='top', transform=axw.transAxes)
+
+        if not using_ldtk:
+            sb.despine(ax=axl, top=False, bottom=True, right=False)
+            sb.despine(ax=axk, top=True, bottom=True, right=False)
+        else:
+            sb.despine(ax=axk, top=False, bottom=True, right=False)
+
+        sb.despine(ax=axw, top=True, bottom=False, right=False)
         setp(axs, xlim=(self.wavelength[0]-0.02, self.wavelength[-1]+0.02), yticks=[], ylim=(0, 0.9))
-        setp(axs[-1], xlabel=r'Wavelength [$\mu$m]')
+        setp(axw, xlabel=r'Wavelength [$\mu$m]')
         setp(axs[0].get_xticklines(), visible=False)
         setp(axs[0].get_xticklabels(), visible=False)
         setp(axs[1].get_xticklines(), visible=False)
+        setp(axs[-1].get_xticklines(), visible=True)
+
         if xscale:
             setp(axs, xscale=xscale)
         if xticks is not None:
