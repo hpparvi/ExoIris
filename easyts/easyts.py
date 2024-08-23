@@ -28,6 +28,29 @@ from .wlpf import WhiteLPF
 
 
 def load_model(fname, name: Optional[str] = None):
+    """Loads an EasyTS analysis from a FITS file.
+
+    Parameters
+    ----------
+    fname : str
+        The name of the savefile.
+
+    name : str, optional
+        The name of the new EasyTS model. If not provided, the original analysis name will be used.
+
+    Returns
+    -------
+    a : EasyTS
+        An EasyTS analysis.
+
+    Raises
+    ------
+    IOError
+        If there is an error while opening or reading the file.
+
+    ValueError
+        If the file format is invalid or does not match the expected format.
+    """
     with pf.open(fname) as hdul:
         d = TSData(hdul['TIME'].data.astype('d'), hdul['WAVELENGTH'].data.astype('d'),
                    hdul['FLUX'].data.astype('d'), hdul['FERR'].data.astype('d'))
@@ -831,7 +854,14 @@ class EasyTS:
                             columns='depth depth_e depth_eneg depth_epos'.split(),
                             index=pd.Index(self.wavelength, name='wavelength'))
 
-    def save(self, overwrite: bool = False):
+    def save(self, overwrite: bool = False) -> None:
+        """Saves the EasyTS analysis to a FITS file.
+
+        Parameters
+        ----------
+        overwrite : bool, optional
+            Flag indicating whether to overwrite an existing file with the same name.
+        """
         pri = pf.PrimaryHDU()
         pri.header['name'] = self.name
         pri.header['t0'] = self.transit_center

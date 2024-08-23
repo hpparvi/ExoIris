@@ -18,6 +18,19 @@ define the analysis, but these can also be set later.
 
     EasyTS
 
+Model saving and loading
+------------------------
+
+An `EasyTS` instance can be saved into a fits file using the `EasyTS.save` method. This saves the model setup,
+optimiser state, and the MCMC sampler state, so that the model can be recreated using the `load_model` function.
+
+.. autosummary::
+    :toctree: api/
+
+    EasyTS.save
+    load_model
+
+
 Model setup
 -----------
 
@@ -50,3 +63,15 @@ Fitting and sampling
 
     EasyTS.fit
     EasyTS.sample
+
+Noise model
+-----------
+
+.. autosummary::
+    :toctree: api/
+
+    EasyTS.set_noise_model
+    EasyTS.set_gp_kernel
+    EasyTS.set_gp_hyperparameters
+    EasyTS.optimize_gp_hyperparameters
+    EasyTS.gp
