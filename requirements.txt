@@ -7,3 +7,5 @@ matplotlib
 celerite2
 pandas
 xarray
+seaborn
+astropy
