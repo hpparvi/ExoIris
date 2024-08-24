@@ -3,3 +3,10 @@ nbsphinx
 sphinx-book-theme
 numpydoc
 pydata-sphinx-theme
+pytransit
+ldtk
+numpy
+scipy
+numba
+matplotlib
+celerite2
