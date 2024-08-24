@@ -4,8 +4,7 @@ from numpy import array, floor, linspace, vstack, nan, concatenate
 
 
 class Binning:
-    """
-    Class representing a binning of values within a given range.
+    """Class representing a binning of values within a given range.
 
     Parameters:
         xmin (float): The minimum value of the binning range.
@@ -55,8 +54,7 @@ class Binning:
             self._bin_nb()
 
     def _bin_r(self) -> None:
-        """
-        Create bins for a given range using the resolution.
+        """Create bins for a given range using the resolution.
 
         Description:
             This method creates bins for a given range using the value of r. It calculates the start and end values of each bin
@@ -75,8 +73,7 @@ class Binning:
         self.nb = self.bins.shape[0]
 
     def _bin_bw(self) -> None:
-        """
-        Create bins for a given range based on the bin width `bw` and the range limits (xmin, xmax).
+        """Create bins for a given range based on the bin width `bw` and the range limits (xmin, xmax).
 
         Raises:
             ValueError: If the bin width (bw) is greater than or equal to the binning span.
@@ -88,15 +85,14 @@ class Binning:
         self.nb = self.bins.shape[0]
 
     def _bin_nb(self) -> None:
-        """
-        Create bins for a given range based on the number of bins `nb` and the range limits (xmin, xmax).
+        """Create bins for a given range based on the number of bins `nb` and the range limits (xmin, xmax).
 
         Raises:
             ValueError: If the number of bins (nb) is less than or equal to zero.
         """
         if self.nb <= 0:
             raise ValueError("The number of bins (nb) should be larger than zero.")
-        e = linspace(self.xmin, self.xmax, num=self.nb)
+        e = linspace(self.xmin, self.xmax, num=self.nb+1)
         self.bins = vstack([e[:-1], e[1:]]).T
         self.bw = (self.xmax - self.xmin) / self.nb
 
@@ -109,12 +105,11 @@ class Binning:
         elif isinstance(other, CompoundBinning):
             return other + self
         else:
-            raise ValueError(f"Can't concatenate Binning and {other.__class__.__name__}")
+            raise TypeError(f"Can't concatenate Binning and {other.__class__.__name__}")
 
 
 class CompoundBinning:
-    """
-    Class representing a compound binning.
+    """Class representing a compound binning.
 
     Attributes:
         binnings (list): List of binning objects.
@@ -137,5 +132,5 @@ class CompoundBinning:
             cb.binnings.append(other)
             cb.bins = concatenate([cb.bins, other.bins])
         else:
-            raise ValueError(f"Can't concatenate CompoundBinning and {other.__class__.__name__}")
+            raise TypeError(f"Can't concatenate CompoundBinning and {other.__class__.__name__}")
         return cb
