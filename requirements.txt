@@ -5,3 +5,5 @@ scipy
 numba
 matplotlib
 celerite2
+pandas
+xarray
