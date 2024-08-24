@@ -128,7 +128,7 @@ class TSData:
         self.npt = self.time.size
         self.wllims = self.wavelength[[0, -1]]
 
-    def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None):
+    def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None, data=None):
         """Plot the data as a 2D image.
 
         Plot the data as a 2D image with time on the x-axis, wavelength and light curve index on the y-axis, and the
@@ -151,6 +151,9 @@ class TSData:
         figsize : tuple, optional
             The size of the figure in inches (width, height).
 
+        data : ndarray, optional
+            Dataset to plot instead of self.fluxes.
+
         Returns
         -------
         ax : Axes
@@ -169,7 +172,8 @@ class TSData:
         def inverse(x):
             return interp(x, arange(self.nwl), self.wavelength)
 
-        ax.pcolormesh(self.time - tref, self.wavelength, self.fluxes, vmin=vmin, vmax=vmax, cmap=cmap)
+        data = data if data is not None else self.fluxes
+        ax.pcolormesh(self.time - tref, self.wavelength, data, vmin=vmin, vmax=vmax, cmap=cmap)
         setp(ax, ylabel=r'Wavelength [$\mu$m]', xlabel=f'Time - {tref:.0f} [BJD]')
         ax.yaxis.set_major_locator(LinearLocator(10))
         ax.yaxis.set_major_formatter('{x:.2f}')
