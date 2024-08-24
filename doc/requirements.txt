@@ -1,0 +1,5 @@
+ipykernel
+nbsphinx
+sphinx-book-theme
+numpydoc
+pydata-sphinx-theme
