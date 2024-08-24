@@ -12,6 +12,13 @@ Fast, flexible, and easy exoplanet transmission spectroscopy in Python.
 |:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:| 
 | Reanalysis of WASP-39 b  JWST NIRISS observations by [Feinstein et al. (2023)](https://ui.adsabs.harvard.edu/abs/2023Natur.614..670F/abstract) done with EasyTS using the full native data resolution. |
 
+<figure>
+  <img src="doc/source/examples/e01/example1.png" alt="example1.png"/>
+  <figcaption>Reanalysis of WASP-39 b  JWST NIRISS observations by [Feinstein et al. (2023)](https://ui.adsabs.harvard.edu/abs/2023Natur.614..670F/abstract) 
+  done with EasyTS using the full native data resolution.
+</figcaption>
+</figure>
+
 ## Documentation
 
 Read the docs at [easyts.readthedocs.io](https://easyts.readthedocs.io).
