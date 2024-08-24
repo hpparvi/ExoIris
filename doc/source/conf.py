@@ -8,8 +8,9 @@
 
 import os
 import sys
+from pathlib import Path
 
-sys.path.append(os.path.join(os.path.dirname(__name__), '..'))
+sys.path.append(str(Path(__file__).parent.parent.parent))
 
 import easyts
 
