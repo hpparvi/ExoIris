@@ -15,11 +15,12 @@ from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
 from matplotlib.pyplot import subplots, setp
 from numpy import (poly1d, polyfit, where, sqrt, clip, percentile, median, squeeze, floor, ndarray,
-                   array, inf, newaxis, r_, arange, tile, log10)
-from numpy.random import normal
+                   array, inf, newaxis, r_, arange, tile, log10, sort)
+from numpy.random import normal, permutation
 from pytransit.orbits import fold
 from pytransit.param import ParameterSet
 from pytransit.utils.de import DiffEvol
+from scipy.stats import norm
 
 from .ldtkld import LDTkLD
 from .tsdata import TSData
@@ -1037,7 +1038,7 @@ class EasyTS:
         if log10_sigma_prior is not None:
             if isinstance(log10_sigma_prior, Iterable):
                 sp = norm(*log10_sigma_prior)
-            elif hasattr(log10_sigma_prior, logpdf):
+            elif hasattr(log10_sigma_prior, 'logpdf'):
                 sp = log10_sigma_prior
             else:
                 raise ValueError('Bad sigma_prior')
@@ -1047,7 +1048,7 @@ class EasyTS:
         if log10_rho_prior is not None:
             if isinstance(log10_rho_prior, Iterable):
                 rp = norm(*log10_rho_prior)
-            elif hasattr(log10_rho_prior, logpdf):
+            elif hasattr(log10_rho_prior, 'logpdf'):
                 rp = log10_rho_prior
             else:
                 raise ValueError('Bad rho_prior')
