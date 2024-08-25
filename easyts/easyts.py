@@ -41,7 +41,7 @@ from .tslpf import TSLPF, clean_knots
 from .wlpf import WhiteLPF
 
 
-def load_model(fname, name: Optional[str] = None):
+def load_model(fname, name: str | None = None):
     """Loads an EasyTS analysis from a FITS file.
 
     Parameters
@@ -66,14 +66,21 @@ def load_model(fname, name: Optional[str] = None):
         If the file format is invalid or does not match the expected format.
     """
     with pf.open(fname) as hdul:
-        d = TSData(hdul['TIME'].data.astype('d'), hdul['WAVELENGTH'].data.astype('d'),
-                   hdul['FLUX'].data.astype('d'), hdul['FERR'].data.astype('d'))
+        d = []
+        for i in range(hdul[0].header['NDGROUPS']):
+            print(hdul[f'FLUX_{i}'].header)
+            d.append(TSData(hdul[f'TIME_{i}'].data.astype('d'), hdul[f'WAVELENGTH_{i}'].data.astype('d'),
+                            hdul[f'FLUX_{i}'].data.astype('d'), hdul[f'FERR_{i}'].data.astype('d'),
+                            name=hdul[f'FLUX_{i}'].header['NAME']))
+        data = TSDataSet(d)
+
         if hdul[0].header['LDMODEL'] == 'ldtk':
             filters, teff, logg, metal, dataset = pickle.loads(codecs.decode(json.loads(hdul[0].header['LDTKLD']).encode(), "base64"))
             ldm = LDTkLD(filters, teff, logg, metal, dataset=dataset)
         else:
             ldm =  hdul[0].header['LDMODEL']
-        a = EasyTS(name or hdul[0].header['NAME'], ldmodel=ldm, data=d)
+
+        a = EasyTS(name or hdul[0].header['NAME'], ldmodel=ldm, data=data)
         a.set_radius_ratio_knots(hdul['K_KNOTS'].data.astype('d'))
         a.set_limb_darkening_knots(hdul['LD_KNOTS'].data.astype('d'))
         a.transit_center = hdul[0].header['T0']
@@ -919,6 +926,7 @@ class EasyTS:
         pri.header['name'] = self.name
         pri.header['t0'] = self.transit_center
         pri.header['t14'] = self.transit_duration
+        pri.header['ndgroups'] = self.data.ngroups
 
         pr = pf.ImageHDU(name='priors')
         priors = [pickle.dumps(p) for p in self.ps]
@@ -932,13 +940,17 @@ class EasyTS:
         else:
             pri.header['ldmodel'] = self._tsa.ldmodel
 
-        flux = pf.ImageHDU(self._tsa.flux, name='flux')
-        ferr = pf.ImageHDU(self._tsa.ferr, name='ferr')
-        wave = pf.ImageHDU(self._tsa.wavelength, name='wavelength')
-        time = pf.ImageHDU(self._tsa.time, name='time')
         k_knots = pf.ImageHDU(self._tsa.k_knots, name='k_knots')
         ld_knots = pf.ImageHDU(self._tsa.ld_knots, name='ld_knots')
-        hdul = pf.HDUList([pri, time, wave, flux, ferr, k_knots, ld_knots, pr])
+        hdul = pf.HDUList([pri, k_knots, ld_knots, pr])
+
+        for i, d in enumerate(self.data.data):
+            flux = pf.ImageHDU(d.fluxes, name=f'flux_{i}')
+            flux.header['name'] = d.name
+            ferr = pf.ImageHDU(d.errors, name=f'ferr_{i}')
+            wave = pf.ImageHDU(d.wavelength, name=f'wavelength_{i}')
+            time = pf.ImageHDU(d.time, name=f'time_{i}')
+            hdul.extend([time, wave, flux, ferr])
 
         if self._tsa.de is not None:
             de = pf.BinTableHDU(Table(self._tsa._de_population, names=self.ps.names), name='DE')
