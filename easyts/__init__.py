@@ -19,4 +19,4 @@ from .tsdata import TSData
 from .binning import Binning
 from .ldtkld import LDTkLD
 
-__version__ = '0.8.0'
+__version__ = '0.9.0'
