@@ -68,7 +68,6 @@ def load_model(fname, name: str | None = None):
     with pf.open(fname) as hdul:
         d = []
         for i in range(hdul[0].header['NDGROUPS']):
-            print(hdul[f'FLUX_{i}'].header)
             d.append(TSData(hdul[f'TIME_{i}'].data.astype('d'), hdul[f'WAVELENGTH_{i}'].data.astype('d'),
                             hdul[f'FLUX_{i}'].data.astype('d'), hdul[f'FERR_{i}'].data.astype('d'),
                             name=hdul[f'FLUX_{i}'].header['NAME']))
