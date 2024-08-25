@@ -652,16 +652,18 @@ class EasyTS:
 
         fig, ax = subplots() if ax is None else (ax.get_figure(), ax)
 
+        ix = argsort(self.wavelength)
+
         if result == 'fit':
             pv = self._tsa._de_population[self._tsa._de_imin]
             ar = 1e2 * squeeze(self._tsa._eval_k(pv[self._tsa._sl_rratios])) ** 2
-            ax.plot(self.wavelength, ar, c='k')
+            ax.plot(self.wavelength[ix], ar[ix], c='k')
             ax.plot(self._tsa.k_knots, 1e2 * pv[self._tsa._sl_rratios] ** 2, 'k.')
         else:
             df = pd.DataFrame(self._tsa._mc_chains.reshape([-1, self._tsa.ndim]), columns=self._tsa.ps.names)
             ar = 1e2 * self._tsa._eval_k(df.iloc[:, self._tsa._sl_rratios]) ** 2
-            ax.fill_between(self.wavelength, *percentile(ar, [16, 84], axis=0), alpha=0.25)
-            ax.plot(self.wavelength, median(ar, 0), c='k')
+            ax.fill_between(self.wavelength[ix], *percentile(ar[:, ix], [16, 84], axis=0), alpha=0.25)
+            ax.plot(self.wavelength[ix], median(ar, 0)[ix], c='k')
             ax.plot(self.k_knots, 1e2*median(df.iloc[:, self._tsa._sl_rratios].values, 0)**2, 'k.')
         setp(ax, ylabel='Transit depth [%]', xlabel=r'Wavelength [$\mu$m]', xlim=self.wavelength[[0, -1]], ylim=ylim)
 
@@ -721,13 +723,15 @@ class EasyTS:
         if result == 'mcmc' and self._tsa.sampler is None:
             raise ValueError("Cannot plot posterior solution before running the MCMC sampler.")
 
+        ix = argsort(self.wavelength)
+
         if result == 'fit':
             pv = self._tsa._de_population[self._tsa._de_imin]
             ldc = self._tsa._eval_ldc(pv)[0]
             axs[0].plot(self._tsa.ld_knots, pv[self._tsa._sl_ld][0::2], 'ok')
-            axs[0].plot(self.wavelength, ldc[:,0])
+            axs[0].plot(self.wavelength[ix], ldc[:,0][ix])
             axs[1].plot(self._tsa.ld_knots, pv[self._tsa._sl_ld][1::2], 'ok')
-            axs[1].plot(self.wavelength, ldc[:,1])
+            axs[1].plot(self.wavelength[ix], ldc[:,1][ix])
         else:
             df = pd.DataFrame(self._tsa._mc_chains.reshape([-1, self._tsa.ndim]), columns=self.ps.names)
             ldc = df.iloc[:,self._tsa._sl_ld]
@@ -741,10 +745,10 @@ class EasyTS:
             ld1p = percentile(ldc[:,:,0], [50, 16, 84], axis=0)
             ld2p = percentile(ldc[:,:,1], [50, 16, 84], axis=0)
 
-            axs[0].fill_between(self._tsa.wavelength, ld1p[1], ld1p[2], alpha=0.5)
-            axs[0].plot(self._tsa.wavelength, ld1p[0], 'k')
-            axs[1].fill_between(self._tsa.wavelength, ld2p[1], ld2p[2], alpha=0.5)
-            axs[1].plot(self._tsa.wavelength, ld2p[0], 'k')
+            axs[0].fill_between(self.wavelength[ix], ld1p[1, ix], ld1p[2, ix], alpha=0.5)
+            axs[0].plot(self.wavelength[ix], ld1p[0][ix], 'k')
+            axs[1].fill_between(self.wavelength[ix], ld2p[1, ix], ld2p[2, ix], alpha=0.5)
+            axs[1].plot(self.wavelength[ix], ld2p[0][ix], 'k')
 
             axs[0].errorbar(self._tsa.ld_knots, ld1m, ld1e, fmt='ok')
             axs[1].errorbar(self._tsa.ld_knots, ld2m, ld2e, fmt='ok')
@@ -757,10 +761,11 @@ class EasyTS:
         setp(axs, xlim=self.wavelength[[0,-1]], xlabel=r'Wavelength [$\mu$m]')
         setp(axs[0], ylabel='Limb darkening coefficient 1')
         setp(axs[1], ylabel='Limb darkening coefficient 2')
-        fig.tight_layout()
         return fig
 
-    def plot_residuals(self, result: Optional[str] = None, ax: Axes = None, pmin: float = 1, pmax: float = 99) -> Figure:
+    def plot_residuals(self, result: Optional[str] = None, ax: None | Axes | Iterable[Axes] = None,
+                       pmin: float = 1, pmax: float = 99,
+                       show_names: bool = False, cmap = None) -> Figure:
         """Plot the model residuals.
 
         Parameters
@@ -787,41 +792,65 @@ class EasyTS:
             If result is 'mcmc' but the MCMC sampler has not been run.
 
         """
-        if result is None:
-            result = 'mcmc' if self._tsa.sampler is not None else 'fit'
-        if result not in ('fit', 'mcmc'):
+        if result not in ('fit', 'mcmc', None):
             raise ValueError("Result must be either 'fit', 'mcmc', or None")
-        if result == 'mcmc' and self._tsa.sampler is None:
-            raise ValueError("Cannot plot posterior solution before running the MCMC sampler.")
 
-        fig, ax = subplots() if ax is None else (ax.get_figure(), ax)
+        if result is None:
+            if self._tsa._mc_chains is not None:
+                result = 'mcmc'
+            elif self._tsa._de_population is not None:
+                result = 'fit'
+            else:
+                raise ValueError("Cannot plot residuals before running either the optimizer or the MCMC sampler.")
+
+        if isinstance(self.data, TSData):
+            nrows = 1
+        else:
+            nrows = self.data.ngroups
+
+        if ax is None:
+            fig, axs = subplots(nrows, 1, sharex='all', squeeze=False) if ax is None else (ax.figure, ax)
+            axs = axs[:, 0]
+        else:
+            axs = [ax] if isinstance(ax, Axes) else ax
+            if len(axs) != self.data.ngroups:
+                raise ValueError("The number of axes must match the number of groups in the data.")
+            fig = axs[0].figure
+
+        if result == 'fit':
+            pv = self._tsa._de_population[self._tsa._de_imin]
+        else:
+            pv = median(self._tsa._mc_chains.reshape([-1, self._tsa.ndim]), 0)
+
+        fmodel = squeeze(self._tsa.flux_model(pv))
+        residuals = self.fluxes - fmodel
+        pp = percentile(residuals, [pmin, pmax])
+        self.data.plot(ax = axs if isinstance(self.data, TSDataSet) else axs[0],
+                       data=residuals, vmin=pp[0], vmax=pp[1], cmap=cmap)
 
         tc = self.transit_center
         td = self.transit_duration
 
-        pv = self._tsa._de_population[self._tsa._de_imin] if result == 'fit' else median(self._tsa._mc_chains.reshape([-1, self._tsa.ndim]), 0)
-        fmodel = squeeze(self._tsa.flux_model(pv))
-        residuals = self.fluxes - fmodel
-        pp = percentile(residuals, [pmin, pmax])
-        ax.imshow(residuals, aspect='auto', vmin=pp[0], vmax=pp[1], origin='lower', extent=self._extent)
+        for ax in axs:
+            for i in range(2):
+                ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='w', ymax=0.05, lw=5)
+                ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='w', ymin=0.95, lw=5)
+                ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='k', ymax=0.05, lw=1)
+                ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='k', ymin=0.95, lw=1)
+            if not show_names:
+                ax.set_title("")
 
-        for i in range(2):
-            ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='w', ymax=0.05, lw=5)
-            ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='w', ymin=0.95, lw=5)
-            ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='k', ymax=0.05, lw=1)
-            ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='k', ymin=0.95, lw=1)
-
-        setp(ax, xlabel=f'Time - {self._tref:.0f} [BJD]', ylabel=r'Wavelength [$\mu$m]')
-        fig.tight_layout()
+        if isinstance(fig, Figure):
+            fig.tight_layout()
         return fig
 
     def plot_fit(self, result: Optional[str] = None, figsize: Optional[tuple[float, float]]=None, res_args=None, trs_args=None) -> Figure:
-        """Plot the final fit.
+        """Plot either the best-fit model or the posterior model.
 
         Parameters
         ----------
         result : Optional[str]
-            The result of the fit. Default is None.
+            Should be "fit", "mcmc", or None. Default is None.
         figsize : Optional[Tuple[float, float]]
             The size of the figure in inches. Default is None.
         res_args : Optional[Dict[str, Any]]
@@ -838,16 +867,26 @@ class EasyTS:
             trs_args = {}
         if res_args is None:
             res_args = {}
-        fig = Figure(figsize=figsize)
-        gs = GridSpec(2,3)
-        axr = fig.add_subplot(gs[1,0])
-        axs = fig.add_subplot(gs[0,:])
-        axl = fig.add_subplot(gs[1,1]), fig.add_subplot(gs[1,2])
-        self.plot_residuals(result, axr, **res_args)
-        self.plot_transmission_spectrum(result, ax=axs, **trs_args)
-        self.plot_limb_darkening_parameters(result, axs=axl)
-        fig.tight_layout()
-        fig.align_ylabels()
+
+        fig = figure(layout='constrained', figsize=figsize)
+        fts, fbelow = fig.subfigures(2, 1, hspace=0.07)
+        fres, fldc = fbelow.subfigures(1, 2, wspace=0.05, width_ratios=(0.4, 0.6))
+        axts = fts.add_subplot()
+        axs_res = [fres.add_subplot(self.data.ngroups, 1, i+1) for i in range(self.data.ngroups)]
+        axs_ldc = (fldc.add_subplot(2, 1, 1), fldc.add_subplot(2, 1, 2))
+
+        self.plot_transmission_spectrum(result=result, ax=axts, **trs_args)
+        self.plot_residuals(result=result, ax=axs_res, **res_args)
+        self.plot_limb_darkening_parameters(result=result, axs=axs_ldc)
+        fts.suptitle('Transmission spectrum')
+        fres.suptitle('Residuals')
+        fldc.suptitle('Limb darkening')
+        setp(axs_ldc[0].get_xticklabels(), visible=False)
+        for i in range(self.data.ngroups-1):
+            setp(axs_res[i].get_xticklabels(), visible=False)
+        setp(axs_ldc[0], xlabel="", ylabel='LDC 1', ylim=(0.18, 1.02))
+        setp(axs_ldc[1], ylabel='LDC 2', ylim=(0.18, 1.02))
+        fig.align_labels()
         return fig
 
     def get_transmission_spectrum(self) -> pd.DataFrame:
