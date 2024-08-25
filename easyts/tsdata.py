@@ -16,12 +16,13 @@
 
 import warnings
 import numba
-from typing import Union, Optional
+from typing import Union, Optional, Iterable
 
 from astropy.stats import mad_std
+from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import LinearLocator
-from numpy import isfinite, median, where, concatenate, all, zeros_like, diff, asarray, interp, arange, floor
+from numpy import isfinite, median, where, concatenate, all, zeros_like, diff, asarray, interp, arange, floor, ndarray
 from scipy.ndimage import median_filter
 
 from .util import bin2d
@@ -45,7 +46,8 @@ class TSData:
         2D Array of error values with a shape ``(nwl, npt)``, where ``nwl`` is the number of wavelengths and ``npt`` the
         number of exposures.
     """
-    def __init__(self, time, wavelength, fluxes, errors, wl_edges = None):
+    def __init__(self, time: Iterable, wavelength: Iterable, fluxes: Iterable, errors: Iterable,
+                 name: str = "", wl_edges : Iterable | None = None):
         """
         Parameters
         ----------
@@ -62,14 +64,20 @@ class TSData:
         wl_edges : tuple of 1D array-like, optional
             Tuple containing left and right wavelength edges for each wavelength element.
         """
+        time, wavelength, fluxes, errors = asarray(time), asarray(wavelength), asarray(fluxes), asarray(errors)
+
         if fluxes.shape[0] != wavelength.size:
-            raise ValueError()
+            raise ValueError("The size of the flux array's first axis must match the size of the wavelength array.")
+
         m = all(isfinite(fluxes), axis=1)
+        self.name = name
         self.time = time.copy()
         self.wavelength = wavelength[m]
         self.fluxes = fluxes[m]
         self.errors = errors[m]
         self._update()
+        self.groups = [slice(0, self.nwl)]
+
         if wl_edges is None:
             dwl = zeros_like(self.wavelength)
             dwl[:-1] = diff(self.wavelength)
@@ -79,6 +87,12 @@ class TSData:
         else:
             self._wl_l_edges = wl_edges[0]
             self._wl_r_edges = wl_edges[1]
+
+    def _update(self):
+        """Update the internal attributes."""
+        self.nwl = self.wavelength.size
+        self.npt = self.time.size
+        self.wllims = self.wavelength.min(), self.wavelength.max()
 
     def crop_wavelength(self, lmin: float, lmax: float) -> None:
         """Crop the data to include only the wavelength range between lmin and lmax.
@@ -122,13 +136,7 @@ class TSData:
         fe = mad_std(self.fluxes, axis=0)
         self.fluxes = where(abs(self.fluxes - fm) / fe < sigma, self.fluxes, median_filter(self.fluxes, 5))
 
-    def _update(self):
-        """Update the internal attributes."""
-        self.nwl = self.wavelength.size
-        self.npt = self.time.size
-        self.wllims = self.wavelength[[0, -1]]
-
-    def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None, data=None):
+    def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None, data=None) -> Figure:
         """Plot the data as a 2D image.
 
         Plot the data as a 2D image with time on the x-axis, wavelength and light curve index on the y-axis, and the
@@ -165,6 +173,8 @@ class TSData:
         """
         if ax is None:
             fig, ax = subplots(figsize=figsize)
+        else:
+            fig = ax.figure
         tref = floor(self.time.min())
 
         def forward(x):
@@ -178,11 +188,14 @@ class TSData:
         ax.yaxis.set_major_locator(LinearLocator(10))
         ax.yaxis.set_major_formatter('{x:.2f}')
 
+        if self.name != "":
+            ax.set_title(self.name)
+
         ax2 = ax.secondary_yaxis('right', functions=(forward, inverse))
         ax2.set_ylabel('Light curve index')
         ax2.set_yticks(forward(ax.get_yticks()))
         ax2.yaxis.set_major_formatter('{x:.0f}')
-        return ax, ax2
+        return fig
 
     def __add__(self, other):
         """Combine two transmission spectra along the wavelength axis.
@@ -203,14 +216,7 @@ class TSData:
             If the wavelength ranges of the current TSData object and the other TSData object overlap.
 
         """
-        if self.wllims[1] > other.wllims[0]:
-            raise ValueError('The wavelength ranges should not overlap.')
-        fluxes = concatenate([self.fluxes, other.fluxes])
-        errors = concatenate([self.errors, other.errors])
-        wavelength = concatenate([self.wavelength, other.wavelength])
-        wel = concatenate([self._wl_l_edges, other._wl_l_edges])
-        wer = concatenate([self._wl_r_edges, other._wl_r_edges])
-        return TSData(self.time, wavelength, fluxes, errors, wl_edges=(wel, wer))
+        return TSDataSet([self, other])
 
     def bin_wavelength(self, binning: Optional[Union[Binning, CompoundBinning]] = None,
                        nb: Optional[int] = None, bw: Optional[float] = None, r: Optional[float] = None):
@@ -240,4 +246,45 @@ class TSData:
             if binning is None:
                 binning = Binning(self.wllims[0], self.wllims[1], nb=nb, bw=bw, r=r)
             bf, be = bin2d(self.fluxes, self.errors, self._wl_l_edges, self._wl_r_edges, binning.bins)
-            return TSData(self.time, binning.bins.mean(1), bf, be, wl_edges=(binning.bins[:,0], binning.bins[:,1]))
+            return TSData(self.time, binning.bins.mean(1), bf, be, wl_edges=(binning.bins[:,0], binning.bins[:,1]),
+                          name=self.name)
+
+
+class TSDataSet:
+    def __init__(self, data: Iterable[TSData]):
+        self.data = list(data)
+        self.time = data[0].time
+        self.fluxes = concatenate([d.fluxes for d in data])
+        self.errors = concatenate([d.errors for d in data])
+        self.wavelength = concatenate([d.wavelength for d in data])
+        self.ngroups = len(self.data)
+        self.groups = []
+        i = 0
+        for d in data:
+            self.groups.append(slice(i, i+d.nwl))
+            i += d.nwl
+
+    def __repr__(self):
+        return f"TSDataSet with {self.ngroups} groups: {str(self.groups)}"
+
+    def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None, data: ndarray | None = None):
+        if ax is None:
+            fig, ax = subplots(self.ngroups, 1, figsize=figsize, sharex='all')
+        else:
+            fig = ax[0].get_figure()
+
+        if data is None:
+            for i, a in enumerate(ax):
+                self.data[i].plot(ax=a, vmin=vmin, vmax=vmax, cmap=cmap)
+        else:
+            for i, a in enumerate(ax):
+                self.data[i].plot(ax=a, vmin=vmin, vmax=vmax, cmap=cmap, data=data[self.groups[i], :])
+
+        setp(ax[:-1], xlabel='')
+        return fig
+
+    def __add__(self, other):
+        if isinstance(other, TSData):
+            return TSDataSet(self.data + [other])
+        elif isinstance(other, TSDataSet):
+            return TSDataSet(self.data + other.data)

@@ -26,12 +26,9 @@ import astropy.io.fits as pf
 
 from astropy.table import Table
 from celerite2 import GaussianProcess, terms
-from matplotlib.axes import Axes
-from matplotlib.figure import Figure
-from matplotlib.gridspec import GridSpec
-from matplotlib.pyplot import subplots, setp
+from matplotlib.pyplot import subplots, setp, figure, Figure, GridSpec, Axes
 from numpy import (poly1d, polyfit, where, sqrt, clip, percentile, median, squeeze, floor, ndarray,
-                   array, inf, newaxis, r_, arange, tile, log10, sort)
+                   array, inf, newaxis, r_, arange, tile, log10, sort, argsort)
 from numpy.random import normal, permutation
 from pytransit.orbits import fold
 from pytransit.param import ParameterSet
@@ -39,7 +36,7 @@ from pytransit.utils.de import DiffEvol
 from scipy.stats import norm
 
 from .ldtkld import LDTkLD
-from .tsdata import TSData
+from .tsdata import TSData, TSDataSet
 from .tslpf import TSLPF, clean_knots
 from .wlpf import WhiteLPF
 
@@ -126,7 +123,7 @@ class EasyTS:
         The MCMC sampler.
     """
 
-    def __init__(self, name: str, ldmodel, data: TSData, nk: int = None, nldc: int = 10, nthreads: int = 1, tmpars=None,
+    def __init__(self, name: str, ldmodel, data: TSData | TSDataSet, nk: int = None, nldc: int = 10, nthreads: int = 1, tmpars=None,
                  noise_model: str = 'white'):
         """
         Parameters
@@ -148,7 +145,7 @@ class EasyTS:
         tmpars : object, optional
             Additional parameters.
         """
-        self.data = data
+        self.data = TSDataSet([data]) if isinstance(data, TSData) else data
         self._tsa = TSLPF(name, ldmodel, data.time, data.wavelength, data.fluxes, data.errors, nk=nk, nldc=nldc,
                           nthreads=nthreads, tmpars=tmpars, noise_model=noise_model)
         self._wa = None
