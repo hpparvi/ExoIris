@@ -14,7 +14,7 @@ transit models.
 
 A full posterior solution for a low-resolution transmission spectrum with a data resolution of R=100 
 takes 3-5 minutes to estimate assuming white noise, or 5-15 minutes if using a Gaussian process-based likelihood
-model powered by the celerite2 package. A high-resolution spectrum of the JWST NIRISS WAPS-39 b observations 
+model powered by the celerite2 package. A high-resolution spectrum of the JWST NIRISS WASP-39 b observations 
 by [Feinstein et al. (2023)](https://ui.adsabs.harvard.edu/abs/2023Natur.614..670F/abstract) with ~3800
 spectroscopic light curves (as shown below) takes about 1.5 hours to optimise and sample on a three-year-old 
 AMD Ryzen 7 5800X with 8 cores.
