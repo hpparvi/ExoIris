@@ -1,4 +1,4 @@
-# EasyTS
+# Easy Transmission Spectroscopy (EasyTS)
 
 [![Docs](https://readthedocs.org/projects/easyts/badge/)](https://easyts.readthedocs.io)
 ![Python package](https://github.com/hpparvi/EasyTS/actions/workflows/python-package.yml/badge.svg)
