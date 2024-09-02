@@ -14,9 +14,8 @@ transit models. A full posterior solution for a low-resolution transmission spec
 takes 3-5 minutes to estimate assuming white noise, or 5-15 minutes if using a Gaussian process-based likelihood
 model powered by the celerite2 package.
 
-<!---
 ![](doc/source/examples/e01/example1.png)
--->
+
 
 ## Documentation
 
