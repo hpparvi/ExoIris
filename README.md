@@ -9,8 +9,8 @@
 Fast, flexible, and easy exoplanet transmission spectroscopy in Python. 
 
 EasyTS uses a transit model that is specially optimised for transmission spectroscopy and allows for simultaneous 
-modelling of hundreds to thousands of spectroscopic light curves 20-30 times faster than when using non-optimised
-transit models. 
+modelling of hundreds to thousands of spectroscopic light curves 20-30 times faster than when using standard 
+transit models not specifically designed for transmission spectroscopy. 
 
 A full posterior solution for a low-resolution transmission spectrum with a data resolution of R=100 
 takes 3-5 minutes to estimate assuming white noise, or 5-15 minutes if using a Gaussian process-based likelihood
