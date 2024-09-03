@@ -545,8 +545,9 @@ class EasyTS:
             fig, axs = subplots(self.data.ngroups, 2, figsize=(13, 4), squeeze=False, constrained_layout=True)
         else:
             fig = axs[0,0].figure
-        self.original_data.plot(ax=axs[:, 0])
-        self.data.plot(ax=axs[:, 1])
+
+        self.original_data.plot(ax=axs[:, 0], data=where(self.ootmask, self.original_data.fluxes, 1))
+        self.data.plot(ax=axs[:, 1], data=where(self.ootmask, self.data.fluxes, 1))
         return fig
 
     def fit(self, niter: int = 200, npop: Optional[int] = None, pool: Optional[Any] = None, lnpost: Optional[Callable]=None,
