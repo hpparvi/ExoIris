@@ -13,7 +13,7 @@
 #
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
+from copy import deepcopy
 from typing import Optional
 
 from ldtk import BoxcarFilter, LDPSetCreator
@@ -29,6 +29,8 @@ from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
 from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_pkaiews, epoch
 from pytransit.param import ParameterSet, UniformPrior as UP, NormalPrior as NP, GParameter
 from scipy.interpolate import splev, splrep
+
+from .tsdata import TSDataSet
 
 NM_WHITE = 0
 NM_GP_FIXED = 1
@@ -95,17 +97,13 @@ def clean_knots(knots, min_distance, lmin=0, lmax=inf):
 
 
 class TSLPF(LogPosteriorFunction):
-    def __init__(self, name: str, ldmodel, time: ndarray, wavelength: ndarray, fluxes: ndarray, errors: ndarray,
-                 nk: int = None, nldc: int = 10, nthreads: int = 1, tmpars = None, noise_model: str = 'white'):
+    def __init__(self, name: str, ldmodel, data: TSDataSet, nk: int = None, nldc: int = 10, nthreads: int = 1,
+                 tmpars = None, noise_model: str = 'white'):
         super().__init__(name)
-        self.time = None
-        self.wavelength = None
-        self.flux = None
-        self.ferr = None
-        self.npb = None
-        self.npt = None
-        self.ndim = None
-        self._original_flux = None
+        self.data: TSDataSet | None = None
+        self.npb: int | None= None
+        self.npt: int | None = None
+        self.ndim: int | None = None
 
         self._gp: Optional[GP] = None
         self._gp_time: Optional[ndarray] = None
@@ -116,7 +114,7 @@ class TSLPF(LogPosteriorFunction):
 
         self.ldmodel = ldmodel
         self.tm = TSModel(ldmodel, nthreads=nthreads, **(tmpars or {}))
-        self.set_data(time, wavelength, fluxes, errors)
+        self.set_data(data)
 
         if isinstance(ldmodel, LDTkLD):
             self.ldmodel._init_interpolation(self.tm.mu)
@@ -125,12 +123,12 @@ class TSLPF(LogPosteriorFunction):
         self.nldc = nldc
         self.nk = self.npb if nk is None else min(nk, self.npb)
 
-        self.k_knots = linspace(wavelength[0], wavelength[-1], self.nk)
+        self.k_knots = linspace(data.wavelength[0], data.wavelength[-1], self.nk)
 
         if isinstance(ldmodel, LDTkLD):
             self.ld_knots = array([])
         else:
-            self.ld_knots = linspace(wavelength[0], wavelength[-1], self.nldc)
+            self.ld_knots = linspace(data.wavelength[0], data.wavelength[-1], self.nldc)
 
         self._ootmask = None
         self._npv = 1
@@ -140,14 +138,27 @@ class TSLPF(LogPosteriorFunction):
 
         self._init_parameters()
 
-    def set_data(self, time: ndarray, wavelength: ndarray, fluxes: ndarray, errors: ndarray):
-        self.time = time.copy()
-        self.wavelength = wavelength.copy()
-        self.flux = fluxes.copy()
-        self.ferr = errors.copy()
-        self._original_flux = fluxes.copy()
-        self.npb = fluxes.shape[0]
-        self.npt = fluxes.shape[1]
+    @property
+    def flux(self) -> ndarray:
+        return self.data.fluxes
+
+    @property
+    def time(self) -> ndarray:
+        return self.data.time
+
+    @property
+    def wavelength(self) -> ndarray:
+        return self.data.wavelength
+
+    @property
+    def ferr(self) -> ndarray:
+        return self.data.errors
+
+    def set_data(self, data: TSDataSet):
+        self._original_data = deepcopy(data)
+        self.data = data
+        self.npb: int = self.flux.shape[0]
+        self.npt = self.flux.shape[1]
         self.tm.set_data(self.time)
         if self._nm in (NM_GP_FIXED, NM_GP_FREE):
             self._init_gp()

@@ -151,9 +151,8 @@ class EasyTS:
         tmpars : object, optional
             Additional parameters.
         """
-        self.data = TSDataSet([data]) if isinstance(data, TSData) else data
-        self._tsa = TSLPF(name, ldmodel, data.time, data.wavelength, data.fluxes, data.errors, nk=nk, nldc=nldc,
-                          nthreads=nthreads, tmpars=tmpars, noise_model=noise_model)
+        data = TSDataSet([data]) if isinstance(data, TSData) else data
+        self._tsa = TSLPF(name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars, noise_model=noise_model)
         self._wa = None
         self.nthreads = nthreads
         self.ootmask = None
@@ -196,7 +195,7 @@ class EasyTS:
         """
         self._tsa.set_noise_model(noise_model)
 
-    def set_data(self, data: TSData) -> None:
+    def set_data(self, data: TSData | TSDataSet) -> None:
         """Set the model data.
 
         Parameters
@@ -204,8 +203,8 @@ class EasyTS:
         data : TSData
            The time-series data object.
         """
-        self.data = data
-        self._tsa.set_data(data.time, data.wavelength, data.fluxes, data.errors)
+        data = TSDataSet([data]) if isinstance(data, TSData) else data
+        self._tsa.set_data(data)
 
     def set_prior(self, parameter, prior, *nargs) -> None:
         """Set a prior on a model parameter.
@@ -298,20 +297,28 @@ class EasyTS:
         self._tsa.name = name
 
     @property
-    def time(self):
+    def data(self) -> TSDataSet:
+        return self._tsa.data
+
+    @property
+    def original_data(self) -> TSDataSet:
+        return self._tsa._original_data
+
+    @property
+    def time(self) -> ndarray:
         return self._tsa.time
 
     @property
-    def wavelength(self):
+    def wavelength(self) -> ndarray:
         return self._tsa.wavelength
 
     @property
-    def fluxes(self):
+    def fluxes(self) -> ndarray:
         return self._tsa.flux
 
     @property
-    def original_fluxes(self):
-        return self._tsa._original_flux
+    def errors(self) -> ndarray:
+        return self._tsa.ferr
 
     @property
     def k_knots(self) -> ndarray:
@@ -514,32 +521,33 @@ class EasyTS:
         if deg > 1:
             raise ValueError("The degree of the fitted polynomial ('deg') should be 0 or 1. Higher degrees are not allowed because they could affect the transit depths.")
         for ipb in range(self.npb):
-            pl = poly1d(polyfit(self.time[self.ootmask], self.fluxes[ipb, self.ootmask], deg=deg))
-            self.fluxes[ipb, :] /= pl(self.time)
+            pl = poly1d(polyfit(self.time[self.ootmask], self.fluxes[ipb, self.ootmask], deg=deg))(self.time)
+            self.fluxes[ipb, :] /= pl
+            self.errors[ipb, :] /= pl
+            for i, sl in enumerate(self.data.groups):
+                self.data.data[i].fluxes[:, :] = self.fluxes[sl, :]
+                self.data.data[i].errors[:, :] = self.errors[sl, :]
 
-    def plot_baseline(self, axs: Optional[Axes] = None) -> Axes:
+    def plot_baseline(self, axs: Optional[Iterable[Axes]] = None) -> Figure:
         """Plot the out-of-transit spectroscopic light curves before and after the normalization.
 
         Parameters
         ----------
-        axs : matplotlib.axes.Axes object or None, optional
+        axs : Optional[Iterable[Axes]], optional
+            Array of axes to plot on. If None, new axes will be created.
 
         Returns
         -------
-        axs : matplotlib.axes.Axes object
+        Figure
+            The figure containing the subplots.
         """
         if axs is None:
-            fig, axs = subplots(1, 2, figsize=(13, 4), sharey='all')
+            fig, axs = subplots(self.data.ngroups, 2, figsize=(13, 4), squeeze=False, constrained_layout=True)
         else:
-            fig = None
-        axs[0].imshow(where(self.ootmask, self.original_fluxes, 1), aspect='auto', origin='lower', extent=self._extent)
-        axs[1].imshow(where(self.ootmask, self.fluxes, 1), aspect='auto', origin='lower', extent=self._extent)
-        setp(axs, xlabel=f'Time - {self._tref:.0f} [BJD]')
-        setp(axs[0], ylabel=r'Wavelength [$\mu$m]')
-
-        if fig is not None:
-            fig.tight_layout()
-        return axs
+            fig = axs[0,0].figure
+        self.original_data.plot(ax=axs[:, 0])
+        self.data.plot(ax=axs[:, 1])
+        return fig
 
     def fit(self, niter: int = 200, npop: Optional[int] = None, pool: Optional[Any] = None, lnpost: Optional[Callable]=None,
             population: Optional[ndarray] = None, initial_population: Optional[ndarray] = None) -> None:
