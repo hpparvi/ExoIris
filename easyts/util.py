@@ -15,11 +15,11 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from numba import njit
-from numpy import zeros, sum, sqrt, linspace, vstack, concatenate, floor, dot
+from numpy import zeros, sum, sqrt, linspace, vstack, concatenate, floor, dot, ndarray, nan
 
 
 @njit
-def bin2d(v, e, el, er, bins):
+def bin2d(v, e, el, er, bins, estimate_errors: bool = False) -> tuple[ndarray, ndarray]:
     """Bin 2D exoplanet transmission spectrum data with its uncertainties into predefined bins in wavelength.
 
         Parameters
@@ -34,6 +34,8 @@ def bin2d(v, e, el, er, bins):
             A 1D array containing the right wavelength edges of the integration ranges for each spectral data point.
         bins : ndarray
             A 2D array containing the edges of the wavelength bins. These should be sorted in ascending order.
+        estimate_errors: bool, optional.
+            Should the uncertainties be estimated from the data. Default value is False.
 
         Returns
         -------
@@ -51,6 +53,7 @@ def bin2d(v, e, el, er, bins):
     i = 0
     for ibin in range(nbins):
         weights[:] = 0.0
+        npt = 0
         bel, ber = bins[ibin]
         for i in range(i, ndata - 1):
             if el[i + 1] > bel:
@@ -58,18 +61,28 @@ def bin2d(v, e, el, er, bins):
         il = i
         if er[i] > ber:
             weights[i] = ber - bel
+            npt += 1
         else:
             weights[i] = er[i] - bel
+            npt += 1
             for i in range(i + 1, ndata):
                 if er[i] < ber:
                     weights[i] = er[i] - el[i]
+                    npt += 1
                 else:
                     weights[i] = ber - el[i]
+                    npt += 1
                     break
         ir = i
         ws = sum(weights)
-        bv[ibin] = dot(weights[il:ir+1], v[il:ir+1,:]) / ws
-        be[ibin] = sqrt(dot(weights[il:ir+1], e2[il:ir+1,:])) / ws
+        bv[ibin] = vmean = dot(weights[il:ir+1], v[il:ir+1,:]) / ws
+        if estimate_errors:
+            if npt > 1:
+                be[ibin] = sqrt(dot(weights[il:ir+1], (v[il:ir+1,:] - vmean)**2) / ws) / sqrt(npt)
+            else:
+                be[ibin] = nan
+        else:
+            be[ibin] = sqrt(dot(weights[il:ir+1], e2[il:ir+1,:])) / ws
     return bv, be
 
 

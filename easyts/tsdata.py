@@ -219,7 +219,8 @@ class TSData:
         return TSDataSet([self, other])
 
     def bin_wavelength(self, binning: Optional[Union[Binning, CompoundBinning]] = None,
-                       nb: Optional[int] = None, bw: Optional[float] = None, r: Optional[float] = None):
+                       nb: Optional[int] = None, bw: Optional[float] = None, r: Optional[float] = None,
+                       estimate_errors: bool = False):
         """Bin the data along the wavelength axis.
 
         Bin the data along the wavelength axis. If binning is not specified, a Binning object is created using the
@@ -235,6 +236,8 @@ class TSData:
             Bin width. Default value is None.
         r: float, optional
             Bin resolution. Default value is None.
+        estimate_errors: bool, optional.
+            Should the uncertainties be estimated from the data. Default value is False.
 
         Returns
         -------
@@ -245,7 +248,8 @@ class TSData:
             warnings.simplefilter('ignore', numba.NumbaPerformanceWarning)
             if binning is None:
                 binning = Binning(self.wllims[0], self.wllims[1], nb=nb, bw=bw, r=r)
-            bf, be = bin2d(self.fluxes, self.errors, self._wl_l_edges, self._wl_r_edges, binning.bins)
+            bf, be = bin2d(self.fluxes, self.errors, self._wl_l_edges, self._wl_r_edges,
+                           binning.bins, estimate_errors=estimate_errors)
             return TSData(self.time, binning.bins.mean(1), bf, be, wl_edges=(binning.bins[:,0], binning.bins[:,1]),
                           name=self.name)
 
