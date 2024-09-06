@@ -268,6 +268,12 @@ class TSDataSet:
             self.groups.append(slice(i, i+d.nwl))
             i += d.nwl
 
+    def __getitem__(self, index: int) -> TSData:
+        return self.data[index]
+
+    def __len__(self) -> int:
+        return self.ngroups
+
     def __repr__(self):
         return f"TSDataSet with {self.ngroups} groups: {str(self.groups)}"
 
