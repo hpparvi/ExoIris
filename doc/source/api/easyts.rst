@@ -64,6 +64,17 @@ Fitting and sampling
     EasyTS.fit
     EasyTS.sample
 
+Accessing results
+-----------------
+
+.. autosummary::
+    :toctree: api/
+
+    EasyTS.get_transmission_spectrum
+    EasyTS.plot_transmission_spectrum
+    EasyTS.plot_residuals
+    EasyTS.plot_limb_darkening
+
 Noise model
 -----------
 
@@ -75,3 +86,11 @@ Noise model
     EasyTS.set_gp_hyperparameters
     EasyTS.optimize_gp_hyperparameters
     EasyTS.gp
+
+Utility methods
+---------------
+
+.. autosummary::
+    :toctree: api/
+
+    EasyTS.create_initial_population

@@ -13,9 +13,6 @@ Tutorials
    e01/05a_ldtkldm.ipynb
    e01/A2_full_data_resolution.ipynb
 
-How everything works
-====================
-
 .. Model Parametrization
 .. =====================
 
