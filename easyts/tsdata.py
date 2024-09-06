@@ -88,6 +88,9 @@ class TSData:
             self._wl_l_edges = wl_edges[0]
             self._wl_r_edges = wl_edges[1]
 
+    def __repr__(self):
+        return f"TSData Name:'{self.name}' [{self.wavelength[0]:.2f} - {self.wavelength[-1]:.2f}] nwl={self.nwl} npt={self.npt}"
+
     def _update(self):
         """Update the internal attributes."""
         self.nwl = self.wavelength.size
