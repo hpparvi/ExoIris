@@ -4,14 +4,33 @@ Transmission spectroscopy with EasyTS
 =====================================
 .. currentmodule:: easyts
 
-The `EasyTS` class is the main class for transmission spectroscopy.
+The `EasyTS` class is the core class of EasyTS used for transmission spectroscopy. It serves as the primary tool for
+first fitting the white light curve model and subsequently fitting and sampling the spectroscopic light curve model.
 
 Constructor
 -----------
 
-The `EasyTS` class is initialized by giving it a name, limb darkening model to use, and the spectroscopic light
-curves either as a `~easyts.tsdata.TSData` or `~easyts.tsdata.TSDataSet` object. The initializer can also be given
-additional parameters that further define the analysis, but these can also be set later.
+The `EasyTS` class is initialized by providing a name for the analysis, selecting a limb darkening model, and passing the
+spectroscopic light curves as either a `~easyts.tsdata.TSData` or `~easyts.tsdata.TSDataSet` object.
+Additional parameters can also be supplied to the initializer to refine the analysis, although these can be set
+later if preferred.
+
+The transmission spectroscopy transit model used in EasyTS, `pytransit.TSModel`, is based on PyTransit's
+RoadRunner transit model (`pytransit.RRModel`). The RoadRunner model is an advanced transit model that can
+efficiently use any radially symmetric function to model stellar limb darkening, as described in
+`Parviainen (2020) <https://ui.adsabs.harvard.edu/link_gateway/2020MNRAS.499.1633P/PUB_HTML>`_.
+
+Since `TSModel` is based on `RRModel`, it offers the same flexibility for modeling stellar limb darkening.
+The `ldmodel` argument can be one of the following:
+
+- a string representing one of the built-in limb darkening models supported by `RRModel`, such as
+  `power-2` or `quadratic`,
+- an object that is a subclass of the `pytransit.models.ldmodel.LDModel` limb darkening model class,
+- a tuple of two functions, with the first returning the limb darkening profile as a function of
+  :math:`\mu` and the second returning its integral over the stellar disk, or
+- a single function that returns the stellar limb darkening profile as a function of
+  :math:`\mu` , in which case its integral is computed numerically.
+
 
 .. autosummary::
     :toctree: api/
