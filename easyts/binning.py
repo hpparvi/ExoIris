@@ -15,7 +15,6 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from collections.abc import Sequence
-from typing import Self
 
 from numpy import array, floor, linspace, vstack, nan, concatenate, ndarray
 
@@ -158,7 +157,7 @@ class CompoundBinning:
     def __repr__(self):
         return 'CompoundBinning:\n' + '\n'.join([b.__repr__() for b in self.binnings])
 
-    def __add__(self, other: Binning | Self) -> 'CompoundBinning':
+    def __add__(self, other) -> 'CompoundBinning':
         if isinstance(other, CompoundBinning):
             cb = CompoundBinning(self.binnings)
             cb.binnings.extend(other.binnings)
