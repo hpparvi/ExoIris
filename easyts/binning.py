@@ -20,7 +20,14 @@ from numpy import array, floor, linspace, vstack, nan, concatenate, ndarray
 
 
 class Binning:
-    """Class representing a binning of values within a given range.
+    """Class representing a homogeneous binning within a given range.
+
+    The `Binning` is defined by its minimum and maximum values (`xmin` and `xmax`), and either the number
+    of bins (`nb`), bin width (`bw`), or resolving power (`r`). If the `Binning` is
+    initialized giving the number of bins, the range will be divided into `nb` equally
+    wide bins. If the `Binning` is initialized giving the bin width, the range will be
+    divided into bins that are as close as `bw` as possible. Finally, if the `Binning` is
+    initialized with the resolving power, the bin widths aim to follow the x/xv relation.
 
     Parameters
     ----------
@@ -33,7 +40,7 @@ class Binning:
     bw
         The bin width to be used for binning the range of values.
     r
-        The resolution to be used for binning the range of values.
+        The resolving power  to be used for binning the range of values.
 
     Raises
     ------
@@ -42,7 +49,7 @@ class Binning:
 
     Attributes
     ----------
-    xmin : float
+    xmin
         The minimum value of the range of values to be binned.
     xmax
         The maximum value of the range of values to be binned.
@@ -51,7 +58,7 @@ class Binning:
     bw
         The bin width.
     r
-        The resolution.
+        The resolving power.
     bins
         An array of left and right bin edge values.
 
@@ -71,7 +78,9 @@ class Binning:
         self.nb: int | None = nb
         self.bw: float | None = bw
         self.r: float | None = r
+
         self.bins : ndarray | None = None
+        """A (nb, 2) array of left and right bin edge values."""
 
         if r is not None:
             self._bin_r()
@@ -134,7 +143,7 @@ class Binning:
 
 
 class CompoundBinning:
-    """A class for compound binning.
+    """A class representing complex heterogeneous binning.
 
     This class allows for creating a compound binning by combining multiple binning objects.
 
@@ -145,9 +154,9 @@ class CompoundBinning:
 
     Attributes
     ----------
-    binnings : Sequence[Binning]
+    binnings
         List of binning objects.
-    bins : ndarray
+    bins
         Array of bin edges from all binning objects.
     """
     def __init__(self, binnings: Sequence[Binning]) -> None:
@@ -167,5 +176,5 @@ class CompoundBinning:
             cb.binnings.append(other)
             cb.bins = concatenate([cb.bins, other.bins])
         else:
-            raise TypeError(f"Can't concatenate CompoundBinning and {other.__class__.__name__}")
+            raise TypeError(f"Cannot concatenate CompoundBinning and {other.__class__.__name__}")
         return cb
