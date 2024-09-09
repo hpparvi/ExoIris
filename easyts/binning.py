@@ -14,53 +14,65 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing import Optional
+from collections.abc import Sequence
+from typing import Self
 
-from numpy import array, floor, linspace, vstack, nan, concatenate
+from numpy import array, floor, linspace, vstack, nan, concatenate, ndarray
 
 
 class Binning:
     """Class representing a binning of values within a given range.
 
-    Parameters:
-        xmin (float): The minimum value of the binning range.
-        xmax (float): The maximum value of the binning range.
-        nb (float, optional): The number of bins. Default is None, in which case the binning will be determined by bin width or resolution.
-        bw (float, optional): The bin width. Default is None, in which case the binning will be determined by the number of bins or resolution.
-        r (float, optional): The resolution. Default is None, in which case the binning will be determined by the number of bins or bin width.
+    Parameters
+    ----------
+    xmin
+        The minimum value of the range of values to be binned.
+    xmax
+        The maximum value of the range of values to be binned.
+    nb
+        The number of bins to be used for binning the range of values.
+    bw
+        The bin width to be used for binning the range of values.
+    r
+        The resolution to be used for binning the range of values.
 
-    Raises:
-        ValueError: If the binning is not initialized properly.
+    Raises
+    ------
+    ValueError
+        When none or more than one of `nb`, `bw`, and `r` are provided.
 
-    Attributes:
-        xmin (float): The minimum value of the binning range.
-        xmax (float): The maximum value of the binning range.
-        nb (int|Optional): The number of bins in the binning.
-        bw (float|Optional): The width of each bin in the binning.
-        r (float|Optional): The resolution of the binning.
-        bins (numpy.ndarray|None): The array representing the bins in the binning.
-
-    Methods:
-        _bin_r(): Method to calculate the binning using the resolution.
-        _bin_bw(): Method to calculate the binning using the bin width.
-        _bin_nb(): Method to calculate the binning using the number of bins.
-
-    Magic Methods:
-        __repr__(): Returns a string representation of the Binning object.
-        __add__(): Defines the concatenation behavior when adding a Binning object with another object.
+    Attributes
+    ----------
+    xmin : float
+        The minimum value of the range of values to be binned.
+    xmax
+        The maximum value of the range of values to be binned.
+    nb
+        The number of bins.
+    bw
+        The bin width.
+    r
+        The resolution.
+    bins
+        An array of left and right bin edge values.
 
     """
-    def __init__(self, xmin: float, xmax: float, nb: Optional[float] = None, bw: Optional[float] = None, r: Optional[float] = None):
+
+    def __init__(self, xmin: float, xmax: float,
+                 nb: float | None = None,
+                 bw: float | None = None,
+                 r: float | None = None) -> None:
+
         if (nb is not None) + (bw is not None) + (r is not None) != 1:
             raise ValueError(
                 'A binning needs to be initialized either with the number of bins (nb), bin width (bw), or resolution (r)')
 
         self.xmin: float = xmin
         self.xmax: float = xmax
-        self.nb: Optional[int] = nb
-        self.bw: Optional[float] = bw
-        self.r: Optional[float] = r
-        self.bins = None
+        self.nb: int | None = nb
+        self.bw: float | None = bw
+        self.r: float | None = r
+        self.bins : ndarray | None = None
 
         if r is not None:
             self._bin_r()
@@ -70,13 +82,7 @@ class Binning:
             self._bin_nb()
 
     def _bin_r(self) -> None:
-        """Create bins for a given range using the resolution.
-
-        Description:
-            This method creates bins for a given range using the value of r. It calculates the start and end values of each bin
-            based on the current xmin, xmax, and r values. The bins are then stored in the 'bins' attribute of the object instance.
-            The number of bins is stored in the 'nb' attribute.
-        """
+        """Create bins for a given range using the resolution."""
         bins = []
         x0 = self.xmin
         while True:
@@ -91,8 +97,10 @@ class Binning:
     def _bin_bw(self) -> None:
         """Create bins for a given range based on the bin width `bw` and the range limits (xmin, xmax).
 
-        Raises:
-            ValueError: If the bin width (bw) is greater than or equal to the binning span.
+        Raises
+        ------
+        ValueError
+            If the bin width (bw) is greater than or equal to the binning span.
         """
         if self.xmax - self.xmin <= self.bw:
             raise ValueError("The bin width (bw) should be smaller than the binning span.")
@@ -103,8 +111,10 @@ class Binning:
     def _bin_nb(self) -> None:
         """Create bins for a given range based on the number of bins `nb` and the range limits (xmin, xmax).
 
-        Raises:
-            ValueError: If the number of bins (nb) is less than or equal to zero.
+        Raises
+        ------
+        ValueError
+            If the number of bins (nb) is less than or equal to zero.
         """
         if self.nb <= 0:
             raise ValueError("The number of bins (nb) should be larger than zero.")
@@ -112,10 +122,10 @@ class Binning:
         self.bins = vstack([e[:-1], e[1:]]).T
         self.bw = (self.xmax - self.xmin) / self.nb
 
-    def __repr__(self):
-        return f"BinningRange {self.xmin:0.4f} - {self.xmax:.4f}: dx = {self.bw or nan:6.4f}, n = {self.nb:4d}, R = {self.r}"
+    def __repr__(self) -> str:
+        return f"Binning {self.xmin:0.4f} - {self.xmax:.4f}: dx = {self.bw or nan:6.4f}, n = {self.nb:4d}, R = {self.r}"
 
-    def __add__(self, other):
+    def __add__(self, other: 'Binning') -> 'CompoundBinning':
         if isinstance(other, Binning):
             return CompoundBinning([self, other])
         elif isinstance(other, CompoundBinning):
@@ -125,20 +135,30 @@ class Binning:
 
 
 class CompoundBinning:
-    """Class representing a compound binning.
+    """A class for compound binning.
 
-    Attributes:
-        binnings (list): List of binning objects.
-        bins (ndarray): Concatenated bins from all the binning objects.
+    This class allows for creating a compound binning by combining multiple binning objects.
+
+    Parameters
+    ----------
+    binnings
+        The list of Binning objects used for creating the bins.
+
+    Attributes
+    ----------
+    binnings : Sequence[Binning]
+        List of binning objects.
+    bins : ndarray
+        Array of bin edges from all binning objects.
     """
-    def __init__(self, binnings):
+    def __init__(self, binnings: Sequence[Binning]) -> None:
         self.binnings = binnings
         self.bins = concatenate([b.bins for b in self.binnings])
 
     def __repr__(self):
         return 'CompoundBinning:\n' + '\n'.join([b.__repr__() for b in self.binnings])
 
-    def __add__(self, other):
+    def __add__(self, other: Binning | Self) -> 'CompoundBinning':
         if isinstance(other, CompoundBinning):
             cb = CompoundBinning(self.binnings)
             cb.binnings.extend(other.binnings)

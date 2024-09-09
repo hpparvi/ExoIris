@@ -10,7 +10,8 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+#sys.path.insert(0, os.path.abspath('../src'))
 
 import easyts
 
@@ -45,6 +46,8 @@ numpydoc_show_class_members = False
 
 pygments_style = 'sphinx'
 
+# napoleon_preprocess_types = True
+
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
@@ -62,7 +65,7 @@ html_static_path = ['_static']
 
 
 html_sidebars = {
-    "examples/*/*": []
+    "examples/*/*": [],
 }
 
 default_role = 'py:obj'
@@ -72,4 +75,5 @@ intersphinx_mapping = {'python': ('https://docs.python.org/3/', None),
                        'scipy': ('https://docs.scipy.org/doc/scipy/reference', None),
                        'matplotlib': ('https://matplotlib.org', None),
                        'pandas': ('https://pandas.pydata.org/pandas-docs/stable/', None),
-                       'astropy': ('https://docs.astropy.org/en/stable/', None)}
+                       'astropy': ('https://docs.astropy.org/en/stable/', None),
+                       'uncertainties': ('https://uncertainties.readthedocs.io/en/latest/', None)}

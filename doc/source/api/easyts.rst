@@ -10,8 +10,8 @@ Constructor
 -----------
 
 The `EasyTS` class is initialized by giving it a name, limb darkening model to use, and the spectroscopic light
-curves as a `TSData` object detailed later. The initializer can also be given additional parameters that further
-define the analysis, but these can also be set later.
+curves either as a `~easyts.tsdata.TSData` or `~easyts.tsdata.TSDataSet` object. The initializer can also be given
+additional parameters that further define the analysis, but these can also be set later.
 
 .. autosummary::
     :toctree: api/
@@ -30,7 +30,6 @@ optimiser state, and the MCMC sampler state, so that the model can be recreated 
     EasyTS.save
     load_model
 
-
 Model setup
 -----------
 
@@ -42,6 +41,8 @@ Model setup
     EasyTS.set_ldtk_prior
     EasyTS.set_radius_ratio_prior
     EasyTS.plot_setup
+    EasyTS.print_parameters
+
 
 First steps
 -----------
@@ -71,9 +72,10 @@ Accessing results
     :toctree: api/
 
     EasyTS.get_transmission_spectrum
+    EasyTS.posterior_samples
     EasyTS.plot_transmission_spectrum
     EasyTS.plot_residuals
-    EasyTS.plot_limb_darkening
+    EasyTS.plot_limb_darkening_parameters
 
 Noise model
 -----------
@@ -87,6 +89,29 @@ Noise model
     EasyTS.optimize_gp_hyperparameters
     EasyTS.gp
 
+Model properties
+----------------
+
+.. autosummary::
+    :toctree: api/
+
+    EasyTS.name
+    EasyTS.ps
+    EasyTS.data
+    EasyTS.time
+    EasyTS.wavelength
+    EasyTS.fluxes
+    EasyTS.errors
+    EasyTS.k_knots
+    EasyTS.ndim
+    EasyTS.nk
+    EasyTS.nldp
+    EasyTS.npb
+    EasyTS.ldmodel
+    EasyTS.optimizer_population
+    EasyTS.mcmc_chains
+
+
 Utility methods
 ---------------
 
@@ -94,3 +119,4 @@ Utility methods
     :toctree: api/
 
     EasyTS.create_initial_population
+    EasyTS.reset_sampler

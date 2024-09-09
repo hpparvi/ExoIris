@@ -2,10 +2,11 @@
 
 Spectroscopic light curves
 ==========================
-.. currentmodule:: easyts
+.. currentmodule:: easyts.tsdata
 
-The spectroscopic light curves are given to `EasyTS` as a `TSData` (Transmission Spectroscopy Data)  object. `TSData`
-is a utility class that provides methods for data cleanup, binning, cropping, and concatenation of multiple data sets.
+The spectroscopic light curves are given to `EasyTS` as a `TSData` (Transmission Spectroscopy Data) or `TSDataSet`
+object. `TSData` is a utility class that provides methods for data cleanup, binning, and cropping, while `TSDataSet`
+is a container class that can contain many `TSData` objects.
 
 Constructor
 -----------
@@ -14,6 +15,7 @@ Constructor
     :toctree: api/
 
     TSData
+    TSDataSet
 
 Data wrangling
 --------------
@@ -32,3 +34,4 @@ Plotting
     :toctree: api/
 
     TSData.plot
+    TSDataSet.plot

@@ -15,8 +15,8 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from .easyts import EasyTS, load_model, clean_knots
-from .tsdata import TSData
+from .tsdata import TSData, TSDataSet
 from .binning import Binning
 from .ldtkld import LDTkLD
 
-__version__ = '0.9.4'
+__version__ = '0.9.5'

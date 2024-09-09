@@ -17,8 +17,10 @@
 import codecs
 import json
 import pickle
+from multiprocessing import Pool
 from pathlib import Path
-from typing import Optional, Callable, Any, Iterable
+from collections.abc import Sequence
+from typing import Optional, Callable, Any
 
 import pandas as pd
 import seaborn as sb
@@ -34,6 +36,7 @@ from pytransit.orbits import fold
 from pytransit.param import ParameterSet
 from pytransit.utils.de import DiffEvol
 from scipy.stats import norm
+from uncertainties import ufloat, UFloat
 
 from .ldtkld import LDTkLD
 from .tsdata import TSData, TSDataSet
@@ -41,21 +44,20 @@ from .tslpf import TSLPF, clean_knots
 from .wlpf import WhiteLPF
 
 
-def load_model(fname, name: str | None = None):
-    """Loads an EasyTS analysis from a FITS file.
+def load_model(fname: Path | str, name: str | None = None):
+    """Load an EasyTS analysis from a FITS file.
 
     Parameters
     ----------
-    fname : str
+    fname
         The name of the savefile.
-
-    name : str, optional
+    name
         The name of the new EasyTS model. If not provided, the original analysis name will be used.
 
     Returns
     -------
-    a : EasyTS
-        An EasyTS analysis.
+    EasyTS
+        The saved EasyTS analysis.
 
     Raises
     ------
@@ -129,27 +131,29 @@ class EasyTS:
         The MCMC sampler.
     """
 
-    def __init__(self, name: str, ldmodel, data: TSData | TSDataSet, nk: int = None, nldc: int = 10, nthreads: int = 1, tmpars=None,
-                 noise_model: str = 'white'):
+    def __init__(self, name: str, ldmodel, data: TSDataSet | TSData, nk: int = None, nldc: int = 10, nthreads: int = 1,
+                 tmpars: dict | None = None, noise_model: str = 'white'):
         """
         Parameters
         ----------
-        name : str
+        name
             The name of the instance.
-        ldmodel : object
+        ldmodel
             The model for the limb darkening.
-        data : TSData
+        data
             The time-series data object.
-        nk : int, optional
+        nk
             The number of kernel samples.
-        nbl : int, optional
+        nbl
             The number of bins for the light curve.
-        nldc : int, optional
+        nldc
             The number of limb darkening coefficients.
-        nthreads : int, optional
+        nthreads
             The number of threads to use for computation.
-        tmpars : object, optional
-            Additional parameters.
+        tmpars
+            Additional transit model parameters.
+        noise_model
+            The noise model to use. Should be either "white" for white noise or "fixed_gp" for Gaussian Process.
         """
         data = TSDataSet([data]) if isinstance(data, TSData) else data
         self._tsa = TSLPF(name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars, noise_model=noise_model)
@@ -165,17 +169,17 @@ class EasyTS:
         self._tref = floor(self.time.min())
         self._extent = (self.time[0] - self._tref, self.time[-1] - self._tref, self.wavelength[0], self.wavelength[-1])
 
-    def lnposterior(self, pvp):
+    def lnposterior(self, pvp: ndarray) -> ndarray:
         """Calculate the log posterior probability for a single parameter vector or an array of parameter vectors.
 
         Parameters
         ----------
-        pvp : array_like
+        pvp
             The vector of parameter values or an array of parameter vectors with a shape [npv, np].
 
         Returns
         -------
-        array_like
+        ndarray
             The natural logarithm of the posterior probability.
         """
         return squeeze(self._tsa.lnposterior(pvp))
@@ -185,7 +189,7 @@ class EasyTS:
 
         Parameters
         ----------
-        noise_model : str
+        noise_model
             The noise model to be used. Must be one of the following: white, fixed_gp, free_gp.
 
         Raises
@@ -200,80 +204,81 @@ class EasyTS:
 
         Parameters
         ----------
-        data : TSData
-           The time-series data object.
+        data
+           The spectroscopic transit light curve.
         """
         data = TSDataSet([data]) if isinstance(data, TSData) else data
         self._tsa.set_data(data)
 
-    def set_prior(self, parameter, prior, *nargs) -> None:
+    def set_prior(self, parameter: str, prior: str | Any, *nargs) -> None:
         """Set a prior on a model parameter.
 
         Parameters
         ----------
-        parameter : str
+        parameter
             The name of the parameter to set prior for.
 
-        prior : str or Object
+        prior
             The prior distribution to set for the parameter. This can be "NP" for a normal prior, "UP" for a
             uniform prior, or an object with .logpdf(x) method.
 
-        *nargs : tuple
+        *nargs
             Additional arguments to be passed to the prior: (mean, std) for the normal prior and (min, max)
             for the uniform prior.
         """
         self._tsa.set_prior(parameter, prior, *nargs)
 
-    def set_radius_ratio_prior(self, prior, *nargs) -> None:
+    def set_radius_ratio_prior(self, prior: float, *nargs) -> None:
         """Set an identical prior on all radius ratio (k) knots.
 
         Parameters
         ----------
-        prior : float
+        prior
             The prior for the radius ratios.
-        *nargs : float
+        *nargs
             Additional arguments for the prior.
         """
         for l in self._tsa.k_knots:
             self.set_prior(f'k_{l:08.5f}', prior, *nargs)
 
-    def set_ldtk_prior(self, teff, logg, metal, dataset: str = 'visir-lowres', width: float = 50, uncertainty_multiplier: float = 10):
+    def set_ldtk_prior(self,
+                       teff: UFloat | tuple[float, float],
+                       logg: UFloat | tuple[float, float],
+                       metal: UFloat | tuple[float, float],
+                       dataset: str = 'visir-lowres', width: float = 50.0, uncertainty_multiplier: float = 10.0):
         """Set priors on the limb darkening parameters using LDTk.
 
         Sets priors on the limb darkening parameters based on theoretical stellar models using LDTk.
 
         Parameters
         ----------
-        teff : float
-            The effective temperature in Kelvin.
-
-        logg : float
-            The surface gravity in cm/s^2.
-
-        metal : float
-            The metallicity.
-
-        dataset : str, optional
+        teff
+            The effective temperature and its uncertainty in Kelvin.
+        logg
+            The surface gravity and its uncertainty in cm/s^2.
+        metal
+            The metallicity and its uncertainty.
+        dataset
             The name of the dataset. Default is 'visir-lowres'.
-
-        width : float, optional
+        width
             The passband width in nanometers. Default is 50.
-
-        uncertainty_multiplier : float, optional
+        uncertainty_multiplier
             The uncertainty multiplier to adjust the width of the prior. Default is 10.
 
         """
+        teff = (teff.n, teff.s) if isinstance(teff, UFloat) else teff
+        logg = (logg.n, logg.s) if isinstance(logg, UFloat) else logg
+        metal = (metal.n, metal.s) if isinstance(metal, UFloat) else metal
         self._tsa.set_ldtk_prior(teff, logg, metal, dataset, width, uncertainty_multiplier)
 
     def set_gp_hyperparameters(self, sigma: float, rho: float) -> None:
-        """Set Gaussian Process (GP) hyperparameters assuming a Matern-3/2 kernel..
+        """Set Gaussian Process (GP) hyperparameters assuming a Matern-3/2 kernel.
 
         Parameters
         ----------
-        sigma : float
+        sigma
             The kernel amplitude parameter.
-
-        rho : float
+        rho
             The length scale parameter.
         """
         self._tsa.set_gp_hyperparameters(sigma, rho)
@@ -283,13 +288,14 @@ class EasyTS:
 
         Parameters
         ----------
-        kernel : terms.Term
+        kernel
             The kernel to set for the GP.
         """
         self._tsa.set_gp_kernel(kernel)
 
     @property
     def name(self) -> str:
+        """Get the name of the analysis."""
         return self._tsa.name
 
     @name.setter
@@ -298,26 +304,27 @@ class EasyTS:
 
     @property
     def data(self) -> TSDataSet:
+        """Get the analysis dataset."""
         return self._tsa.data
 
     @property
-    def original_data(self) -> TSDataSet:
-        return self._tsa._original_data
-
-    @property
     def time(self) -> ndarray:
+        """Get the concatenated time array."""
         return self._tsa.time
 
     @property
     def wavelength(self) -> ndarray:
+        """Get the concatenated wavelength array."""
         return self._tsa.wavelength
 
     @property
     def fluxes(self) -> ndarray:
+        """Get the concatenated flux array."""
         return self._tsa.flux
 
     @property
     def errors(self) -> ndarray:
+        """Get the concatenated flux uncertainty array."""
         return self._tsa.ferr
 
     @property
@@ -370,42 +377,42 @@ class EasyTS:
         """Get the posterior samples from the MCMC sampler."""
         return pd.DataFrame(self._tsa._mc_chains.reshape([-1, self.ndim]), columns=self.ps.names)
 
-    def add_radius_ratio_knots(self, knot_wavelengths) -> None:
+    def add_radius_ratio_knots(self, knot_wavelengths: Sequence) -> None:
         """Add radius ratio (k) knots.
 
         Parameters
         ----------
-        knot_wavelengths : array-like
+        knot_wavelengths
             List or array of knot wavelengths to be added.
         """
         self._tsa.add_k_knots(knot_wavelengths)
 
-    def set_radius_ratio_knots(self, knot_wavelengths) -> None:
+    def set_radius_ratio_knots(self, knot_wavelengths: Sequence) -> None:
         """Set the radius ratio (k) knots.
 
         Parameters
         ----------
-        knot_wavelengths : array-like
+        knot_wavelengths
             List or array of knot wavelengths.
         """
         self._tsa.set_k_knots(knot_wavelengths)
 
-    def add_limb_darkening_knots(self, knot_wavelengths) -> None:
+    def add_limb_darkening_knots(self, knot_wavelengths: Sequence) -> None:
         """Add limb darkening knots.
 
         Parameters
         ----------
-        knot_wavelengths : array-like
+        knot_wavelengths
             List or array of knot wavelengths to be added.
         """
         self._tsa.add_limb_darkening_knots(knot_wavelengths)
 
-    def set_limb_darkening_knots(self, knot_wavelengths) -> None:
+    def set_limb_darkening_knots(self, knot_wavelengths: Sequence) -> None:
         """Set the limb darkening knots.
 
         Parameters
         ----------
-        knot_wavelengths : array-like
+        knot_wavelengths
             List or array of knot wavelengths.
         """
         self._tsa.set_ld_knots(knot_wavelengths)
@@ -415,21 +422,28 @@ class EasyTS:
         """Get the model parameterization."""
         return self._tsa.ps
 
-    def print_parameters(self):
+    def print_parameters(self) -> None:
         """Print the model parameterization."""
         self._tsa.print_parameters(1)
 
-    def plot_setup(self, figsize=None, xscale=None, xticks=None) -> Figure:
+    def plot_setup(self, figsize: tuple[float, float] | None =None, xscale: str | None = None, xticks: Sequence | None = None) -> Figure:
         """Plot the model setup with limb darkening knots, radius ratio knots, and data binning.
 
         Parameters
         ----------
-        figsize : tuple, optional
-            The size of the figure. Default is (13, 4).
+        figsize
+            The size of the figure in inches.
+        xscale
+            The scale of the x-axis. If provided, the x-axis scale of all the subplots will be set to this value.
+        xticks
+            The list of x-axis tick values for all the subplots. If provided, the x-axis ticks of all the subplots will
+            be set to these values.
 
         Returns
         -------
         Figure
+            The matplotlib Figure object that contains the created subplots.
+
         """
         using_ldtk = isinstance(self._tsa.ldmodel, LDTkLD)
 
@@ -492,20 +506,16 @@ class EasyTS:
         return self._wa.plot()
 
     def normalize_baseline(self, deg: int = 1) -> None:
-        """Nortmalize the baseline flux for each spectroscopic light curve.
+        """Normalize the baseline flux for each spectroscopic light curve.
 
         Normalize the baseline flux using a low-order polynomial fitted to the out-of-transit
         data for each spectroscopic light curve.
 
         Parameters
         ----------
-        deg : int
+        deg
             The degree of the fitted polynomial. Should be 0 or 1. Higher degrees are not allowed
             because they could affect the transit depths.
-
-        Returns
-        -------
-        None
 
         Raises
         ------
@@ -528,12 +538,12 @@ class EasyTS:
                 self.data.data[i].fluxes[:, :] = self.fluxes[sl, :]
                 self.data.data[i].errors[:, :] = self.errors[sl, :]
 
-    def plot_baseline(self, axs: Optional[Iterable[Axes]] = None) -> Figure:
+    def plot_baseline(self, axs: Optional[Sequence[Axes]] = None) -> Figure:
         """Plot the out-of-transit spectroscopic light curves before and after the normalization.
 
         Parameters
         ----------
-        axs : Optional[Iterable[Axes]], optional
+        axs
             Array of axes to plot on. If None, new axes will be created.
 
         Returns
@@ -550,7 +560,7 @@ class EasyTS:
         self.data.plot(ax=axs[:, 1], data=where(self.ootmask, self.data.fluxes, 1))
         return fig
 
-    def fit(self, niter: int = 200, npop: Optional[int] = None, pool: Optional[Any] = None, lnpost: Optional[Callable]=None,
+    def fit(self, niter: int = 200, npop: Optional[int] = None, pool: Optional[Pool] = None, lnpost: Optional[Callable]=None,
             population: Optional[ndarray] = None, initial_population: Optional[ndarray] = None) -> None:
         """Fit the spectroscopic light curves jointly using Differential Evolution.
 
@@ -558,13 +568,13 @@ class EasyTS:
 
         Parameters
         ----------
-        niter : int, optional
+        niter
             Number of iterations for optimization. Default is 200.
-        npop : int, optional
+        npop
             Population size for optimization. Default is 150.
-        pool : multiprocessing.Pool, optional
+        pool
             Multiprocessing pool for parallel optimization. Default is None.
-        lnpost : callable, optional
+        lnpost
             Log posterior function for optimization. Default is None.
         """
         if population is not None:
@@ -600,22 +610,22 @@ class EasyTS:
 
         Parameters
         ----------
-        niter : int, optional
+        niter
             Number of iterations in the MCMC sampling. Default is 500.
-        thin : int, optional
+        thin
             Thinning factor for the MCMC samples. Default is 10.
-        repeats : int, optional
+        repeats
             Number of repeated iterations in the MCMC sampling. Default is 1.
-        pool : object, optional
+        pool
             Parallel processing pool object to use for parallelization. Default is None.
-        lnpost : function, optional
+        lnpost
             Log posterior function that takes a parameter vector as input and returns the log posterior probability.
             Default is None.
-        leave : bool, optional
+        leave
             Whether to leave the progress bar visible after sampling is finished. Default is True.
-        save : bool, optional
+        save
             Whether to save the MCMC samples to disk. Default is False.
-        use_tqdm : bool, optional
+        use_tqdm
             Whether to use tqdm progress bar during sampling. Default is True.
 
         """
@@ -637,25 +647,25 @@ class EasyTS:
 
         Parameters
         ----------
-        result : Optional[str]
+        result
             The type of result to plot. Can be 'fit', 'mcmc', or None. If None, the default behavior is to use 'mcmc' if
             the MCMC sampler has been run, otherwise 'fit'. Default is None.
-        ax : Axes
+        ax
             The matplotlib Axes object to plot on. If None, a new figure and axes will be created. Default is None.
-        xscale : Optional[str]
+        xscale
             The scale of the x-axis. Can be 'linear', 'log', 'symlog', 'logit', or None. If None, the default behavior is to
             use the scale of the current axes. Default is None.
         xticks
             The tick locations for the x-axis. If None, the default behavior is to use the tick locations of the current axes.
         ylim
             The limits for the y-axis. If None, the default behavior is to use the limits of the current axes.
-        plot_resolution : bool
+        plot_resolution
             Whether to plot the resolution of the transmission spectrum as vertical lines. Default is True.
 
         Returns
         -------
         Figure
-            The matplotlib Figure object of the plotted transmission spectrum.
+            The matplotlib Figure of the plotted transmission spectrum.
 
         """
         if result is None:
@@ -691,21 +701,21 @@ class EasyTS:
             ax.set_xticks(xticks, labels=xticks)
         return ax.get_figure()
 
-    def plot_limb_darkening_parameters(self, result: Optional[str] = None, axs: Optional[tuple[Axes, Axes]] = None) -> Figure | None:
+    def plot_limb_darkening_parameters(self, result: Optional[str] = None, axs: Optional[tuple[Axes, Axes]] = None) -> Figure:
         """Plot the limb darkening parameters.
 
         Parameters
         ----------
-        result : str, optional
+        result
             The type of result to plot. Can be 'fit', 'mcmc', or None. If None, the default behavior is to use 'mcmc' if
             the MCMC sampler has been run, otherwise 'fit'. Default is None.
-        axs : Array-like of matplotlib.axes.Axes with a shape [2], optional
+        axs
             The axes to plot the limb darkening parameters on. If None, a new figure with subplots will be created.
             Default is None.
 
         Returns
         -------
-        fig : matplotlib.figure.Figure
+        Figure
             The figure containing the plot of the limb darkening parameters.
 
         Raises
@@ -778,20 +788,20 @@ class EasyTS:
         setp(axs[1], ylabel='Limb darkening coefficient 2')
         return fig
 
-    def plot_residuals(self, result: Optional[str] = None, ax: None | Axes | Iterable[Axes] = None,
+    def plot_residuals(self, result: Optional[str] = None, ax: None | Axes | Sequence[Axes] = None,
                        pmin: float = 1, pmax: float = 99,
                        show_names: bool = False, cmap = None) -> Figure:
         """Plot the model residuals.
 
         Parameters
         ----------
-        result : Optional[str], default=None
+        result
             The result type to plot. Must be either 'fit', 'mcmc', or None.
-        ax : Axes, default=None
+        ax
             The axes object to plot on. If None, a new figure and axes will be created.
-        pmin : float, default=1
+        pmin
             The lower percentile to use when setting the color scale of the residuals image.
-        pmax : float, default=99
+        pmax
             The upper percentile to use when setting the color scale of the residuals image.
 
         Returns
@@ -864,13 +874,13 @@ class EasyTS:
 
         Parameters
         ----------
-        result : Optional[str]
+        result
             Should be "fit", "mcmc", or None. Default is None.
-        figsize : Optional[Tuple[float, float]]
+        figsize
             The size of the figure in inches. Default is None.
-        res_args : Optional[Dict[str, Any]]
+        res_args
             Additional arguments for plotting residuals. Default is None.
-        trs_args : Optional[Dict[str, Any]]
+        trs_args
             Additional arguments for plotting transmission spectrum. Default is None.
 
         Returns
@@ -907,11 +917,15 @@ class EasyTS:
     def get_transmission_spectrum(self) -> pd.DataFrame:
         """Get the posterior transmission spectrum.
 
-        Returns:
-            pd.DataFrame: A DataFrame containing the transmission spectrum with its uncertainties.
+        Returns
+        -------
+        DataFrame
+            A DataFrame containing the transmission spectrum with its uncertainties.
 
-        Raises:
-            ValueError: If the MCMC sampler has not been run before calculating the transmission spectrum.
+        Raises
+        ------
+        ValueError
+            If the MCMC sampler has not been run before calculating the transmission spectrum.
         """
         if self._tsa._mc_chains is None:
             raise ValueError("Cannot calculate posterior transmission spectrum before running the MCMC sampler.")
@@ -923,11 +937,11 @@ class EasyTS:
                             index=pd.Index(self.wavelength, name='wavelength'))
 
     def save(self, overwrite: bool = False) -> None:
-        """Saves the EasyTS analysis to a FITS file.
+        """Save the EasyTS analysis to a FITS file.
 
         Parameters
         ----------
-        overwrite : bool, optional
+        overwrite
             Flag indicating whether to overwrite an existing file with the same name.
         """
         pri = pf.PrimaryHDU()
@@ -980,16 +994,16 @@ class EasyTS:
 
         Parameters
         ----------
-        n : int
+        n
             Number of parameter vectors in the population.
-        source : str
+        source
             Source of the initial population. Must be either 'fit' or 'mcmc'.
-        add_noise : bool, optional
+        add_noise
             Flag indicating whether to add noise to the initial population. Default is True.
 
         Returns
         -------
-        numpy.ndarray
+        ndarray
             The initial population.
 
         Raises
@@ -1008,7 +1022,7 @@ class EasyTS:
 
         Parameters
         ----------
-        result : str, optional
+        result
             Determines which result to add noise to. Default is 'fit'.
 
         Raises
@@ -1044,23 +1058,23 @@ class EasyTS:
 
         Parameters
         ----------
-        log10_sigma_bounds : float or tuple[float, float], optional
+        log10_sigma_bounds
             The bounds for the log10 of the sigma hyperparameter. If float is provided, the parameter will be
             fixed to the given value. Default is (-5, -2).
-        log10_rho_bounds : float or tuple[float, float], optional
+        log10_rho_bounds
             The bounds for the log10 of the rho hyperparameter. If float is provided, the parameter will be fixed
             to the given value. Default is (-5, 0).
-        log10_sigma_prior : object or iterable, optional
+        log10_sigma_prior
             The prior distribution for the sigma hyperparameter expressed as an object with a `logpdf` method
             or as an iterable containing the mean and standard deviation of the prior distribution. Default is None.
-        log10_rho_prior : object or iterable, optional
+        log10_rho_prior
             The prior distribution for the rho hyperparameter expressed as an object with a `logpdf` method
             or as an iterable containing the mean and standard deviation of the prior distribution. Default is None.
-        npop : int, optional
+        npop
             The population size for the differential evolution optimizer. Default is 10.
-        niter : int, optional
+        niter
             The number of iterations for the differential evolution optimization process. Default is 100.
-        subset : iterable or float, optional
+        subset
             The subset used for the optimization process. If `subset` is a float, a random subset of size
             `0.5 * self.npb` is used. If `subset` is an iterable, it must contain the indices of the subset.
             Default is None.
@@ -1089,14 +1103,14 @@ class EasyTS:
         if self._tsa.noise_model != 'fixed_gp':
             raise ValueError("The noise model must be set to 'fixed_gp' before the hyperparameter optimization.")
 
-        sb = log10_sigma_bounds if isinstance(log10_sigma_bounds, Iterable) else [log10_sigma_bounds-1, log10_sigma_bounds+1]
-        rb = log10_rho_bounds if isinstance(log10_rho_bounds, Iterable) else [log10_rho_bounds-1, log10_rho_bounds+1]
+        sb = log10_sigma_bounds if isinstance(log10_sigma_bounds, Sequence) else [log10_sigma_bounds-1, log10_sigma_bounds+1]
+        rb = log10_rho_bounds if isinstance(log10_rho_bounds, Sequence) else [log10_rho_bounds-1, log10_rho_bounds+1]
         bounds = array([sb, rb])
 
         if subset is not None:
             if isinstance(subset, float):
                 ids = sort(permutation(self.npb)[:int(0.5*self.npb)])
-            elif isinstance(subset, Iterable):
+            elif isinstance(subset, Sequence):
                 ids = array(subset, int)
             else:
                 raise ValueError("subset must be either an iterable or a float.")
@@ -1108,7 +1122,7 @@ class EasyTS:
                 return 0.0
 
         if log10_sigma_prior is not None:
-            if isinstance(log10_sigma_prior, Iterable):
+            if isinstance(log10_sigma_prior, Sequence):
                 sp = norm(*log10_sigma_prior)
             elif hasattr(log10_sigma_prior, 'logpdf'):
                 sp = log10_sigma_prior
@@ -1118,7 +1132,7 @@ class EasyTS:
             sp = DummyPrior()
 
         if log10_rho_prior is not None:
-            if isinstance(log10_rho_prior, Iterable):
+            if isinstance(log10_rho_prior, Sequence):
                 rp = norm(*log10_rho_prior)
             elif hasattr(log10_rho_prior, 'logpdf'):
                 rp = log10_rho_prior

@@ -16,7 +16,10 @@
 
 import warnings
 import numba
-from typing import Union, Optional, Iterable
+
+from collections.abc import Sequence
+
+from typing import Union, Optional
 
 from astropy.stats import mad_std
 from matplotlib.figure import Figure
@@ -46,22 +49,22 @@ class TSData:
         2D Array of error values with a shape ``(nwl, npt)``, where ``nwl`` is the number of wavelengths and ``npt`` the
         number of exposures.
     """
-    def __init__(self, time: Iterable, wavelength: Iterable, fluxes: Iterable, errors: Iterable,
-                 name: str = "", wl_edges : Iterable | None = None):
+    def __init__(self, time: Sequence, wavelength: Sequence, fluxes: Sequence, errors: Sequence,
+                 name: str = "", wl_edges : Sequence | None = None):
         """
         Parameters
         ----------
-        time : 1D array-like
+        time
             Array of time values.
-        wavelength : 1D array-like
+        wavelength
             Array of wavelength values.
-        fluxes : 2D array-like
+        fluxes
             2D array of flux values with a shape ``(nwl, npt)``, where ``nwl`` is the number of wavelengths and ``npt`` the
             number of exposures.
-        errors : 2D array-like
+        errors
             2D Array of error values with a shape ``(nwl, npt)``, where ``nwl`` is the number of wavelengths and ``npt`` the
             number of exposures.
-        wl_edges : tuple of 1D array-like, optional
+        wl_edges
             Tuple containing left and right wavelength edges for each wavelength element.
         """
         time, wavelength, fluxes, errors = asarray(time), asarray(wavelength), asarray(fluxes), asarray(errors)
@@ -88,10 +91,10 @@ class TSData:
             self._wl_l_edges = wl_edges[0]
             self._wl_r_edges = wl_edges[1]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"TSData Name:'{self.name}' [{self.wavelength[0]:.2f} - {self.wavelength[-1]:.2f}] nwl={self.nwl} npt={self.npt}"
 
-    def _update(self):
+    def _update(self) -> None:
         """Update the internal attributes."""
         self.nwl = self.wavelength.size
         self.npt = self.time.size
@@ -102,9 +105,9 @@ class TSData:
 
         Parameters
         ----------
-        lmin : float
+        lmin
             The minimum wavelength value to crop.
-        lmax : float
+        lmax
             The maximum wavelength value to crop.
 
         Note
@@ -128,7 +131,7 @@ class TSData:
 
         Parameters
         ----------
-        sigma : float, default = 5.0
+        sigma
             The number of standard deviations to use as the threshold for outliers.
 
         Note
@@ -140,38 +143,34 @@ class TSData:
         self.fluxes = where(abs(self.fluxes - fm) / fe < sigma, self.fluxes, median_filter(self.fluxes, 5))
 
     def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None, data=None) -> Figure:
-        """Plot the data as a 2D image.
+        """Plot the spectroscopic light curves as a 2D image.
 
-        Plot the data as a 2D image with time on the x-axis, wavelength and light curve index on the y-axis, and the
-        flux as a color.
+        Plot the spectroscopic light curves as a 2D image with time on the x-axis, wavelength and light curve index
+        on the y-axis, and the flux as a color.
 
         Parameters
         ----------
-        ax : Axes, optional
+        ax
             The subplot axes on which to plot. If None, a new figure and axes will be created.
 
-        vmin : float, optional
+        vmin
             The minimum value of the color scale.
 
-        vmax : float, optional
+        vmax
             The maximum value of the color scale.
 
-        cmap : str or colormap, optional
+        cmap
             The colormap to be used.
 
-        figsize : tuple, optional
+        figsize
             The size of the figure in inches (width, height).
 
-        data : ndarray, optional
+        data
             Dataset to plot instead of self.fluxes.
 
         Returns
         -------
-        ax : Axes
-            The subplot axes on which the plot was made.
-
-        ax2 : SecondaryAxis
-            The secondary y-axis used for the light curve index.
+        Figure
 
         """
         if ax is None:
@@ -200,23 +199,18 @@ class TSData:
         ax2.yaxis.set_major_formatter('{x:.0f}')
         return fig
 
-    def __add__(self, other):
+    def __add__(self, other: 'TSData') -> 'TSDataSet':
         """Combine two transmission spectra along the wavelength axis.
 
         Parameters
         ----------
-        other : TSData
+        other
             The TSData object to be added to the current TSData object.
 
         Returns
         -------
-        TSData
-            The resulting TSData object after adding the other TSData object.
-
-        Raises
-        ------
-        ValueError
-            If the wavelength ranges of the current TSData object and the other TSData object overlap.
+        TSDataSet
+            The resulting TSDataSet object combining the two TSData objects.
 
         """
         return TSDataSet([self, other])
@@ -231,15 +225,15 @@ class TSData:
 
         Parameters
         ----------
-        binning: Optional[Union[Binning, CompoundBinning]], optional
+        binning
             The binning method to use. Default value is None.
-        nb: int, optional
+        nb
             Number of bins. Default value is None.
-        bw: float, optional
+        bw
             Bin width. Default value is None.
-        r: float, optional
+        r
             Bin resolution. Default value is None.
-        estimate_errors: bool, optional.
+        estimate_errors
             Should the uncertainties be estimated from the data. Default value is False.
 
         Returns
@@ -258,14 +252,15 @@ class TSData:
 
 
 class TSDataSet:
-    def __init__(self, data: Iterable[TSData]):
-        self.data = list(data)
-        self.time = data[0].time
-        self.fluxes = concatenate([d.fluxes for d in data])
-        self.errors = concatenate([d.errors for d in data])
-        self.wavelength = concatenate([d.wavelength for d in data])
-        self.ngroups = len(self.data)
-        self.groups = []
+    """A high-level data storage class that can contain multiple TSData objects."""
+    def __init__(self, data: Sequence[TSData]):
+        self.data: list[TSData] = list(data)
+        self.time: ndarray = self.data[0].time
+        self.fluxes: ndarray = concatenate([d.fluxes for d in data])
+        self.errors: ndarray = concatenate([d.errors for d in data])
+        self.wavelength: ndarray = concatenate([d.wavelength for d in data])
+        self.ngroups: int = len(self.data)
+        self.groups: list = []
         i = 0
         for d in data:
             self.groups.append(slice(i, i+d.nwl))
@@ -281,6 +276,29 @@ class TSDataSet:
         return f"TSDataSet with {self.ngroups} groups: {str(self.groups)}"
 
     def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None, data: ndarray | None = None):
+        """Plot all the data sets.
+
+        Parameters
+        ----------
+        ax
+            The Axes object used for plotting. If None, a new set of subplots will be created.
+        vmin
+            The minimum value for the color mapping. Default is None.
+        vmax
+            The maximum value for the color mapping. Default is None.
+        cmap
+            The colormap used for mapping the data values to colors. Default is None.
+        figsize
+            The size of the figure created if `ax` is None. Default is None.
+        data
+            The data to be plotted. If None, the `self.data` attribute will be used.
+
+        Returns
+        -------
+        Figure
+            The Figure object that contains the subplots.
+
+        """
         if ax is None:
             fig, ax = subplots(self.ngroups, 1, figsize=figsize, sharex='all')
         else:
