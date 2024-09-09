@@ -109,52 +109,30 @@ class EasyTS:
     EasyTS is a class providing the tools for easy and fast exoplanet transit spectroscopy. It provides methods
     for modelling spectroscopic transit light curves and inferring posterior densities for the model parameters.
 
-    Attributes
+    Parameters
     ----------
-    name : str
-        The name of the analysis.
-    data : TSData
+    name
+        The name of the instance.
+    ldmodel
+        The model for the limb darkening.
+    data
         The time-series data object.
-    time : ndarray
-        The array of time values.
-    wavelength : ndarray
-        The array of wavelength values.
-    fluxes : ndarray
-        The array of flux values.
-    npb : int
-        The number of wavelength bins.
-    nthreads : int
+    nk
+        The number of kernel samples.
+    nbl
+        The number of bins for the light curve.
+    nldc
+        The number of limb darkening coefficients.
+    nthreads
         The number of threads to use for computation.
-    de : None
-        The Differential Evolution global optimizer.
-    sampler : None
-        The MCMC sampler.
+    tmpars
+        Additional transit model parameters.
+    noise_model
+        The noise model to use. Should be either "white" for white noise or "fixed_gp" for Gaussian Process.
     """
 
     def __init__(self, name: str, ldmodel, data: TSDataSet | TSData, nk: int = None, nldc: int = 10, nthreads: int = 1,
                  tmpars: dict | None = None, noise_model: str = 'white'):
-        """
-        Parameters
-        ----------
-        name
-            The name of the instance.
-        ldmodel
-            The model for the limb darkening.
-        data
-            The time-series data object.
-        nk
-            The number of kernel samples.
-        nbl
-            The number of bins for the light curve.
-        nldc
-            The number of limb darkening coefficients.
-        nthreads
-            The number of threads to use for computation.
-        tmpars
-            Additional transit model parameters.
-        noise_model
-            The noise model to use. Should be either "white" for white noise or "fixed_gp" for Gaussian Process.
-        """
         data = TSDataSet([data]) if isinstance(data, TSData) else data
         self._tsa = TSLPF(name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars, noise_model=noise_model)
         self._wa = None
