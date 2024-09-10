@@ -104,10 +104,7 @@ def load_model(fname: Path | str, name: str | None = None):
 
 
 class EasyTS:
-    """A class providing tools for easy and fast exoplanet transit spectroscopy.
-
-    EasyTS is a class providing the tools for easy and fast exoplanet transit spectroscopy. It provides methods
-    for modelling spectroscopic transit light curves and inferring posterior densities for the model parameters.
+    """The core EasyTS class providing tools for exoplanet transit spectroscopy.
 
     Parameters
     ----------
@@ -326,7 +323,7 @@ class EasyTS:
         return self._tsa.nldc
 
     @property
-    def npb(self):
+    def npb(self) -> int:
         """Get the number of passbands."""
         return self._tsa.npb
 
@@ -341,17 +338,17 @@ class EasyTS:
         return self._tsa._gp
 
     @property
-    def optimizer_population(self):
+    def optimizer_population(self) -> ndarray:
         """Get the current population of the optimizer."""
         return self._tsa._de_population
 
     @property
-    def mcmc_chains(self):
+    def mcmc_chains(self) -> ndarray:
         """Get the current emcee MCMC chains."""
         return self._tsa._mc_chains
 
     @property
-    def posterior_samples(self):
+    def posterior_samples(self) -> pd.DataFrame:
         """Get the posterior samples from the MCMC sampler."""
         return pd.DataFrame(self._tsa._mc_chains.reshape([-1, self.ndim]), columns=self.ps.names)
 
@@ -892,13 +889,9 @@ class EasyTS:
         fig.align_labels()
         return fig
 
-    def get_transmission_spectrum(self) -> pd.DataFrame:
-        """Get the posterior transmission spectrum.
-
-        Returns
-        -------
-        DataFrame
-            A DataFrame containing the transmission spectrum with its uncertainties.
+    @property
+    def transmission_spectrum(self) -> pd.DataFrame:
+        """Get the posterior transmission spectrum as a Pandas DataFrame.
 
         Raises
         ------

@@ -66,6 +66,8 @@ html_static_path = ['_static']
 
 html_sidebars = {
     "examples/*/*": [],
+    "examples/index": [],
+    "install": []
 }
 
 default_role = 'py:obj'

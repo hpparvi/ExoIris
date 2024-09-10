@@ -40,8 +40,10 @@ The `ldmodel` argument can be one of the following:
 Model saving and loading
 ------------------------
 
-An `EasyTS` instance can be saved into a fits file using the `EasyTS.save` method. This saves the model setup,
-optimiser state, and the MCMC sampler state, so that the model can be recreated using the `load_model` function.
+An `EasyTS` instance can be saved to a FITS file using the `EasyTS.save` method. This stores the model setup,
+optimiser state, and MCMC sampler state, allowing the model to be fully recreated later using the `load_model`
+function.
+
 
 .. autosummary::
     :toctree: api/
@@ -49,12 +51,19 @@ optimiser state, and the MCMC sampler state, so that the model can be recreated 
     EasyTS.save
     load_model
 
-Model setup
------------
+Light curve model setup
+-----------------------
+
+All parts of an EasyTS analysis can be modified after initialisation. This enables iterative analysis approaches
+where a saved low-resolution analysis can be loaded as a new analysis using the `load_model` function. Parameters
+like the radius ratio and limb darkening knots can be adjusted to increase the resolution of the estimated
+transmission spectrum, and even the observational data can be changed to improve the data resolution.
+
 
 .. autosummary::
     :toctree: api/
 
+    EasyTS.set_data
     EasyTS.set_radius_ratio_knots
     EasyTS.add_radius_ratio_knots
     EasyTS.set_ldtk_prior
@@ -63,41 +72,14 @@ Model setup
     EasyTS.print_parameters
 
 
-First steps
------------
-
-.. autosummary::
-    :toctree: api/
-
-    EasyTS.fit_white
-    EasyTS.plot_white
-    EasyTS.plot_residuals
-    EasyTS.normalize_baseline
-    EasyTS.plot_baseline
-
-Fitting and sampling
---------------------
-
-.. autosummary::
-    :toctree: api/
-
-    EasyTS.fit
-    EasyTS.sample
-
-Accessing results
+Noise model setup
 -----------------
 
-.. autosummary::
-    :toctree: api/
-
-    EasyTS.get_transmission_spectrum
-    EasyTS.posterior_samples
-    EasyTS.plot_transmission_spectrum
-    EasyTS.plot_residuals
-    EasyTS.plot_limb_darkening_parameters
-
-Noise model
------------
+The noise in the spectroscopic light curves can be modeled as either white noise or time-correlated noise
+(using a Gaussian process, GP). The noise model is chosen with the `EasyTS.noise_model` method, and can be
+set to either "white" or "fixed_gp." Selecting "fixed_gp" models the noise as a time-correlated Gaussian process
+using the `celerite2` package. The corresponding `celerite2.GaussianProcess` object can be accessed directly
+via the `EasyTS.gp` attribute.
 
 .. autosummary::
     :toctree: api/
@@ -107,6 +89,69 @@ Noise model
     EasyTS.set_gp_hyperparameters
     EasyTS.optimize_gp_hyperparameters
     EasyTS.gp
+
+
+First steps
+-----------
+
+The first steps of a transmission spectroscopy analysis include fitting a white light curve and normalising the
+spectroscopic light curves. `EasyTS` offers utility methods for both of these tasks, as well as for visualising the
+results.
+
+.. autosummary::
+    :toctree: api/
+
+    EasyTS.fit_white
+    EasyTS.normalize_baseline
+    EasyTS.plot_white
+    EasyTS.plot_residuals
+    EasyTS.plot_baseline
+
+
+Fitting and sampling
+--------------------
+
+The main tasks of `EasyTS` are to fit a spectroscopic light curve model to the observations and then sample its parameter
+posterior to obtain a posterior transmission spectrum estimate. The fitting is carried out using a Differential Evolution
+global optimiser and the sampling with the `emcee` affine invariant ensemble sampler.
+
+The DE optimiser works by clumping a population of `npop` parameter vectors near the global posterior mode over `niter`
+iterations. The optimisation can be stopped when the ptp width of the population's log posterior distribution has
+decreased below a desired threshold (by default 2), after which the MCMC sampling phase can be started.
+
+Both of these methods can be called iteratively, in which case they start from the state they finished in the previous
+call. At the first `EasyTS.sample` call, the sampler will start from the current DE optimiser population. Note that
+loading a previous analysis with `load_model` also loads the sampler state, so calling `EasyTS.sample` after loading
+a model continues the sampler from the saved sampler state. `EasyTS.reset_sampler` should be called after loading a
+saved model if you want to change the setup, optimise the new setup, and then sample the posterior.
+
+.. autosummary::
+    :toctree: api/
+
+    EasyTS.fit
+    EasyTS.sample
+    EasyTS.reset_sampler
+
+
+Accessing the results
+---------------------
+
+The main results from an EasyTS analysis are the model parameter posterior samples and the transmission spectrum.
+The transmission spectrum, represented as the planet-to-star area ratio as a function of wavelength, can be
+retrieved as a Pandas `~pandas.DataFrame` using the `EasyTS.transmission_spectrum` attribute. Similarly, the
+model posterior samples can be accessed using the `EasyTS.posterior_samples` attribute, also in the form of a
+Pandas `~pandas.DataFrame`.
+
+
+.. autosummary::
+    :toctree: api/
+
+    EasyTS.transmission_spectrum
+    EasyTS.posterior_samples
+    EasyTS.plot_fit
+    EasyTS.plot_transmission_spectrum
+    EasyTS.plot_residuals
+    EasyTS.plot_limb_darkening_parameters
 
 Model properties
 ----------------
@@ -138,4 +183,3 @@ Utility methods
     :toctree: api/
 
     EasyTS.create_initial_population
-    EasyTS.reset_sampler
