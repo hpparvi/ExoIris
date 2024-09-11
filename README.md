@@ -1,16 +1,41 @@
-# Easy Transmission Spectroscopy (EasyTS)
+# EasyTS: Transmission Spectroscopy Made Easy
 
 [![Docs](https://readthedocs.org/projects/easyts/badge/)](https://easyts.readthedocs.io)
 ![Python package](https://github.com/hpparvi/EasyTS/actions/workflows/python-package.yml/badge.svg)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](CODE_OF_CONDUCT.md)
 [![Licence](http://img.shields.io/badge/license-GPLv3-blue.svg?style=flat)](http://www.gnu.org/licenses/gpl-3.0.html)
-[![PyPI version](https://badge.fury.io/py/easyts.svg)](https://badge.fury.io/py/easyts)
+[![PyPI version](https://badge.fury.io/py/easyts.svg)](https://pypi.org/project/EasyTS/)
 
-Fast, flexible, and easy exoplanet transmission spectroscopy in Python. 
+**EasyTS** is a user-friendly Python package designed to simplify and accelerate the analysis of transmission 
+spectroscopy data for exoplanets. The package can estimate a self-consistent medium-resolution transmission spectrum 
+with uncertainties from JWST NIRISS data in a matter of minutes, even when using a Gaussian Process-based noise model.
 
-EasyTS uses a transit model that is specially optimised for transmission spectroscopy and allows for simultaneous 
-modelling of hundreds to thousands of spectroscopic light curves 20-30 times faster than when using standard 
-transit models not specifically designed for transmission spectroscopy. 
+![](doc/source/examples/e01/example1.png)
+
+## Documentation
+
+Read the docs at [easyts.readthedocs.io](https://easyts.readthedocs.io).
+
+## Key Features
+
+- **Fast modeling of spectroscopic transit time series**: EasyTS uses PyTransit's advanced `TSModel` transit 
+  model that is specially tailored for fast and efficient modeling of spectroscopic transit (or eclipse) time series.
+- **Flexible handling of limb darkening**: The stellar limb darkening can be modelled freely either by any of the standard 
+  limb darkening laws (quadratic, power-2, non-linear, etc.), by numerical stellar intensity profiles obtained
+  directly from stellar atmosphere models, or by an arbitrary ser-defined radially symmetric function.
+- **Handling of Correlated noise**: The noise model can be chosen between white or time-correlated noise, where the
+  time-correlated noise is modelled as a Gaussian process.
+- **Model saving and loading**: Seamless model saving and loading allows one to create a high-resolution analysis starting
+  from a saved low-resolution analysis.
+- **Full control of resolution**: EasyTS represents the transmission spectrum as a cubic spline, with full 
+  flexibility to set and modify the number and placement of spline knots, allowing variable resolution throughout the 
+  analysis.
+
+## Details
+
+EasyTS uses PyTransit's `TSModel`, a transit model that is specially optimised for transmission spectroscopy and allows
+for simultaneous modelling of hundreds to thousands of spectroscopic light curves 20-30 times faster than when using 
+standard transit models not specifically designed for transmission spectroscopy. 
 
 A full posterior solution for a low-resolution transmission spectrum with a data resolution of R=100 
 takes 3-5 minutes to estimate assuming white noise, or 5-15 minutes if using a Gaussian process-based likelihood
@@ -19,15 +44,5 @@ by [Feinstein et al. (2023)](https://ui.adsabs.harvard.edu/abs/2023Natur.614..67
 spectroscopic light curves (as shown below) takes about 1.5 hours to optimise and sample on a three-year-old 
 AMD Ryzen 7 5800X with 8 cores.
 
-![](doc/source/examples/e01/example1.png)
-
-
-## Documentation
-
-Read the docs at [easyts.readthedocs.io](https://easyts.readthedocs.io).
-
-## Installation
-
-    pip install easyts
-
+---
 &copy; 2024 Hannu Parviainen
