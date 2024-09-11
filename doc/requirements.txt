@@ -1,8 +1,8 @@
 ipykernel
 nbsphinx
-sphinx-book-theme
+furo
 numpydoc
-pydata-sphinx-theme
+sphinx-copybutton
 pytransit
 ldtk
 numpy
