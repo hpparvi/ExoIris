@@ -4,14 +4,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import easyts
 
 project = 'EasyTS'
-copyright = '2024, Hannu Parviainen'
 author = 'Hannu Parviainen'
+copyright = '2024, Hannu Parviainen'
 
 version = ".".join(easyts.__version__.split('.')[:2])
 release = easyts.__version__
-
-# -- General configuration ---------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
     'sphinx.ext.autodoc',
@@ -36,16 +33,11 @@ numpydoc_show_class_members = False
 
 pygments_style = 'sphinx'
 
-# -- Options for HTML output -------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
-
 html_theme = 'furo'
 html_title = f'EasyTS v{version}'
-
 html_theme_options = {
     'sidebar_hide_name': False,
 }
-
 html_static_path = ['_static']
 
 default_role = 'py:obj'
