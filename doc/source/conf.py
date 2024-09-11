@@ -1,18 +1,6 @@
-# Configuration file for the Sphinx documentation builder.
-#
-# For the full list of built-in configuration values, see the documentation:
-# https://www.sphinx-doc.org/en/master/usage/configuration.html
-
-# -- Project information -----------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
-
-import os
 import sys
 from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-#sys.path.insert(0, os.path.abspath('../src'))
-
 import easyts
 
 project = 'EasyTS'
@@ -34,6 +22,8 @@ extensions = [
     'sphinx.ext.viewcode',
     'sphinx.ext.githubpages',
     'sphinx.ext.napoleon',
+    'sphinx.ext.autosectionlabel',
+    'sphinx_copybutton',
     'nbsphinx',
     'numpydoc'
 ]
@@ -46,29 +36,17 @@ numpydoc_show_class_members = False
 
 pygments_style = 'sphinx'
 
-# napoleon_preprocess_types = True
-
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'pydata_sphinx_theme'
-#html_title = "EasyTS"
+html_theme = 'furo'
 html_title = f'EasyTS v{version}'
+
 html_theme_options = {
-    "external_links": [],
-    "github_url": "https://github.com/hpparvi/EasyTS"
+    'sidebar_hide_name': False,
 }
+
 html_static_path = ['_static']
-#html_css_files = [
-#    'css/custom.css',
-#]
-
-
-html_sidebars = {
-    "examples/*/*": [],
-    "examples/index": [],
-    "install": []
-}
 
 default_role = 'py:obj'
 
