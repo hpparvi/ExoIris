@@ -2,39 +2,65 @@
 
 .. rst-class:: frontpage
 
-EasyTS
-======
+Easy Exoplanet Transmission Spectroscopy
+========================================
 
-EasyTS is a Python package for fast, flexible, and easy exoplanet transmission spectroscopy.
+.. image:: http://img.shields.io/badge/license-GPLv3-blue.svg?style=flat
+   :target: https://www.gnu.org/licenses/gpl-3.0.en.html
 
-.. note::
-   The EasyTS documentation is work-in-progress, but the tutorials and the API should help you to get started. Technical
-   details on how everything works behind the surface will be added later.
+.. image:: https://badge.fury.io/py/easyts.svg
+   :target: https://pypi.org/project/EasyTS/
+
+.. image:: https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg
+   :target: https://github.com/hpparvi/EasyTS/blob/main/CODE_OF_CONDUCT.md
+
+Overview
+--------
+
+**EasyTS** is a user-friendly Python package designed to simplify and accelerate the analysis of transmission
+spectroscopy data for exoplanets. The package can estimate a self-consistent medium-resolution transmission spectrum
+with uncertainties from JWST NIRISS data in a matter of minutes, even when using a Gaussian Process-based noise model.
+
+EasyTS uses PyTransit's `TSModel`, a transit model that is specially optimised for transmission spectroscopy and allows
+for simultaneous modelling of hundreds to thousands of spectroscopic light curves 20-30 times faster than when using
+standard transit models not specifically designed for transmission spectroscopy.
+
+A full posterior solution for a low-resolution transmission spectrum with a data resolution of R=100
+takes 3-5 minutes to estimate assuming white noise, or 5-15 minutes if using a Gaussian process-based likelihood
+model powered by the celerite2 package. A high-resolution spectrum of the JWST NIRISS WASP-39 b observations
+by `Feinstein et al. (2023) <https://ui.adsabs.harvard.edu/abs/2023Natur.614..670F/abstract>`_ with ~3800
+spectroscopic light curves (as shown below) takes about 1.5 hours to optimise and sample on a three-year-old
+AMD Ryzen 7 5800X with 8 cores.
 
 .. image:: examples/e01/example1.png
 
-
-Getting started
----------------
+Documentation
+-------------
 
 .. toctree::
    :maxdepth: 2
+   :caption: Getting Started
 
    install
    examples/index
 
-API
----
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
+   :caption: API Documentation
 
-   api/index
+   api/easyts
+   api/tsdata
+   api/binning
 
+Support
+-------
 
-Indices and tables
-------------------
+If you experience any difficulties with EasyTS, please submit an issue on the EasyTS
+`GitHub <https://github.com/hpparvi/easyts/issues>`_ repository. You are also encouraged to share suggestions or
+feature requests either through the same method or by reaching out to the authors directly.
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+License
+-------
+
+EasyTS is licensed under the `GPLv3 <https://www.gnu.org/licenses/gpl-3.0.en.html>`_ license.
