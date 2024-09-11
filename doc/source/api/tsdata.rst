@@ -1,8 +1,11 @@
 .. _api.tsdata:
 
-Spectroscopic light curves
-==========================
+Data handling
+=============
 .. currentmodule:: easyts.tsdata
+
+.. Here you can find the details of the main EasyTS classes and their methods. However, you probably want to take a look
+at the :ref:`tutorials and examples <tutorials>` first.
 
 The spectroscopic light curves are given to `EasyTS` as a `TSData` (Transmission Spectroscopy Data) or `TSDataSet`
 object. `TSData` is a utility class that provides methods for data cleanup, binning, and cropping, while `TSDataSet`

@@ -1,7 +1,7 @@
 .. _api.easyts:
 
-Transmission spectroscopy with EasyTS
-=====================================
+Transmission spectroscopy
+=========================
 .. currentmodule:: easyts
 
 The `EasyTS` class is the core class of EasyTS used for transmission spectroscopy. It serves as the primary tool for
