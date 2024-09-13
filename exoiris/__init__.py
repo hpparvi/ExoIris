@@ -1,4 +1,4 @@
-#  EasyTS: fast, flexible, and easy exoplanet transmission spectroscopy in Python.
+#  ExoIris: fast, flexible, and easy exoplanet transmission spectroscopy in Python.
 #  Copyright (C) 2024 Hannu Parviainen
 #
 #   This program is free software: you can redistribute it and/or modify
@@ -14,9 +14,9 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from .easyts import EasyTS, load_model, clean_knots
+from .exoiris import ExoIris, load_model, clean_knots
 from .tsdata import TSData, TSDataSet
 from .binning import Binning
 from .ldtkld import LDTkLD
 
-__version__ = '0.9.6'
+__version__ = '0.9.7'

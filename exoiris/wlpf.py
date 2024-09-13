@@ -1,4 +1,4 @@
-#  EasyTS: fast, flexible, and easy exoplanet transmission spectroscopy in Python.
+#  ExoIris: fast, flexible, and easy exoplanet transmission spectroscopy in Python.
 #  Copyright (C) 2024 Hannu Parviainen
 #
 #   This program is free software: you can redistribute it and/or modify

@@ -1,14 +1,14 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-import easyts
+import exoiris
 
 project = 'EasyTS'
 author = 'Hannu Parviainen'
 copyright = '2024, Hannu Parviainen'
 
-version = ".".join(easyts.__version__.split('.')[:2])
-release = easyts.__version__
+version = ".".join(exoiris.__version__.split('.')[:2])
+release = exoiris.__version__
 
 extensions = [
     'sphinx.ext.autodoc',

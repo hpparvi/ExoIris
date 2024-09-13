@@ -1,4 +1,4 @@
-#  EasyTS: fast, flexible, and easy exoplanet transmission spectroscopy in Python.
+#  ExoIris: fast, flexible, and easy exoplanet transmission spectroscopy in Python.
 #  Copyright (C) 2024 Hannu Parviainen
 #
 #   This program is free software: you can redistribute it and/or modify
@@ -45,19 +45,19 @@ from .wlpf import WhiteLPF
 
 
 def load_model(fname: Path | str, name: str | None = None):
-    """Load an EasyTS analysis from a FITS file.
+    """Load an ExoIris analysis from a FITS file.
 
     Parameters
     ----------
     fname
         The name of the savefile.
     name
-        The name of the new EasyTS model. If not provided, the original analysis name will be used.
+        The name of the new ExoIris model. If not provided, the original analysis name will be used.
 
     Returns
     -------
-    EasyTS
-        The saved EasyTS analysis.
+    ExoIris
+        The saved ExoIris analysis.
 
     Raises
     ------
@@ -81,7 +81,7 @@ def load_model(fname: Path | str, name: str | None = None):
         else:
             ldm =  hdul[0].header['LDMODEL']
 
-        a = EasyTS(name or hdul[0].header['NAME'], ldmodel=ldm, data=data)
+        a = ExoIris(name or hdul[0].header['NAME'], ldmodel=ldm, data=data)
         a.set_radius_ratio_knots(hdul['K_KNOTS'].data.astype('d'))
         a.set_limb_darkening_knots(hdul['LD_KNOTS'].data.astype('d'))
         a.transit_center = hdul[0].header['T0']
@@ -103,8 +103,8 @@ def load_model(fname: Path | str, name: str | None = None):
         return a
 
 
-class EasyTS:
-    """The core EasyTS class providing tools for exoplanet transit spectroscopy.
+class ExoIris:
+    """The core ExoIris class providing tools for exoplanet transit spectroscopy.
 
     Parameters
     ----------
@@ -908,7 +908,7 @@ class EasyTS:
                             index=pd.Index(self.wavelength, name='wavelength'))
 
     def save(self, overwrite: bool = False) -> None:
-        """Save the EasyTS analysis to a FITS file.
+        """Save the ExoIris analysis to a FITS file.
 
         Parameters
         ----------

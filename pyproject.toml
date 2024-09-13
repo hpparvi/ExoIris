@@ -1,5 +1,5 @@
 [project]
-name = "EasyTS"
+name = "ExoIris"
 description = 'Easy and robust exoplanet transmission spectroscopy.'
 authors=[{name='Hannu Parviainen', email='hannu@iac.es'}]
 classifiers=[
@@ -18,7 +18,7 @@ license = {text = "GPLv3"}
 dynamic = ["version", "dependencies"]
 
 [project.urls]
-homepage = 'https://github.com/hpparvi/EasyTS'
+homepage = 'https://github.com/hpparvi/ExoIris'
 
 [build-system]
 requires = ["setuptools"]
@@ -29,8 +29,8 @@ include-package-data = true
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
-version = {attr = "easyts.__version__"}
+version = {attr = "exoiris.__version__"}
 
 [tool.setuptools.packages.find]
-include = ["easyts"]
+include = ["exoiris"]
 namespaces = true

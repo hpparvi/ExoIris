@@ -23,14 +23,14 @@ with uncertainties from JWST NIRISS data in a matter of minutes, even when using
 
 EasyTS uses PyTransit's `TSModel`, a transit model that is specially optimised for transmission spectroscopy and allows
 for simultaneous modelling of hundreds to thousands of spectroscopic light curves 20-30 times faster than when using
-standard transit models not specifically designed for transmission spectroscopy.
+standard transit models not explicitly designed for transmission spectroscopy.
 
-A full posterior solution for a low-resolution transmission spectrum with a data resolution of R=100
+A complete posterior solution for a low-resolution transmission spectrum with a data resolution of R=100
 takes 3-5 minutes to estimate assuming white noise, or 5-15 minutes if using a Gaussian process-based likelihood
 model powered by the celerite2 package. A high-resolution spectrum of the JWST NIRISS WASP-39 b observations
 by `Feinstein et al. (2023) <https://ui.adsabs.harvard.edu/abs/2023Natur.614..670F/abstract>`_ with ~3800
-spectroscopic light curves (as shown below) takes about 1.5 hours to optimise and sample on a three-year-old
-AMD Ryzen 7 5800X with 8 cores.
+spectroscopic light curves (as shown above) takes about 1.5 hours to optimise and sample on a three-year-old
+AMD Ryzen 7 5800X with eight cores.
 
 .. image:: examples/e01/example1.png
 

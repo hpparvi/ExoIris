@@ -1,5 +1,5 @@
 import pytest
-from easyts.binning import Binning, CompoundBinning
+from exoiris.binning import Binning, CompoundBinning
 
 
 def test_binning_nb():
