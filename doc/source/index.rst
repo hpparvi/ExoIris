@@ -1,4 +1,4 @@
-.. title:: EasyTS docs
+.. title:: ExoIris docs
 
 .. rst-class:: frontpage
 
@@ -9,19 +9,19 @@ Easy Exoplanet Transmission Spectroscopy
    :target: https://www.gnu.org/licenses/gpl-3.0.en.html
 
 .. image:: https://badge.fury.io/py/easyts.svg
-   :target: https://pypi.org/project/EasyTS/
+   :target: https://pypi.org/project/ExoIris/
 
 .. image:: https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg
-   :target: https://github.com/hpparvi/EasyTS/blob/main/CODE_OF_CONDUCT.md
+   :target: https://github.com/hpparvi/ExoIris/blob/main/CODE_OF_CONDUCT.md
 
 Overview
 --------
 
-**EasyTS** is a user-friendly Python package designed to simplify and accelerate the analysis of transmission
+**ExoIris** is a user-friendly Python package designed to simplify and accelerate the analysis of transmission
 spectroscopy data for exoplanets. The package can estimate a self-consistent medium-resolution transmission spectrum
 with uncertainties from JWST NIRISS data in a matter of minutes, even when using a Gaussian Process-based noise model.
 
-EasyTS uses PyTransit's `TSModel`, a transit model that is specially optimised for transmission spectroscopy and allows
+ExoIris uses PyTransit's `TSModel`, a transit model that is specially optimised for transmission spectroscopy and allows
 for simultaneous modelling of hundreds to thousands of spectroscopic light curves 20-30 times faster than when using
 standard transit models not explicitly designed for transmission spectroscopy.
 
@@ -56,11 +56,11 @@ Documentation
 Support
 -------
 
-If you experience any difficulties with EasyTS, please submit an issue on the EasyTS
+If you experience any difficulties with ExoIris, please submit an issue on the ExoIris
 `GitHub <https://github.com/hpparvi/easyts/issues>`_ repository. You are also encouraged to share suggestions or
 feature requests either through the same method or by reaching out to the authors directly.
 
 License
 -------
 
-EasyTS is licensed under the `GPLv3 <https://www.gnu.org/licenses/gpl-3.0.en.html>`_ license.
+ExoIris is licensed under the `GPLv3 <https://www.gnu.org/licenses/gpl-3.0.en.html>`_ license.

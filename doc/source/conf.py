@@ -3,7 +3,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import exoiris
 
-project = 'EasyTS'
+project = 'ExoIris'
 author = 'Hannu Parviainen'
 copyright = '2024, Hannu Parviainen'
 
@@ -34,7 +34,7 @@ numpydoc_show_class_members = False
 pygments_style = 'sphinx'
 
 html_theme = 'furo'
-html_title = f'EasyTS v{version}'
+html_title = f'ExoIris v{version}'
 html_theme_options = {
     'sidebar_hide_name': False,
 }
