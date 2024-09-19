@@ -1,6 +1,6 @@
 # ExoIris: Transmission Spectroscopy Made Easy
 
-[![Docs](https://readthedocs.org/projects/easyts/badge/)](https://easyts.readthedocs.io)
+[![Docs](https://readthedocs.org/projects/exoiris/badge/)](https://exoiris.readthedocs.io)
 ![Python package](https://github.com/hpparvi/EasyTS/actions/workflows/python-package.yml/badge.svg)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](CODE_OF_CONDUCT.md)
 [![Licence](http://img.shields.io/badge/license-GPLv3-blue.svg?style=flat)](http://www.gnu.org/licenses/gpl-3.0.html)
@@ -14,7 +14,7 @@ with uncertainties from JWST NIRISS data in minutes, even when using a Gaussian 
 
 ## Documentation
 
-Read the docs at [easyts.readthedocs.io](https://easyts.readthedocs.io).
+Read the docs at [exoiris.readthedocs.io](https://exoiris.readthedocs.io).
 
 ## Key Features
 
