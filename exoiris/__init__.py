@@ -14,9 +14,9 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from .exoiris import ExoIris, load_model, clean_knots
+from .exoiris import ExoIris, load_model
 from .tsdata import TSData, TSDataSet
 from .binning import Binning
 from .ldtkld import LDTkLD
 
-__version__ = '0.9.8'
+__version__ = '0.9.9'
