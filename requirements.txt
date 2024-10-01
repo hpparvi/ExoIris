@@ -1,4 +1,4 @@
-pytransit
+pytransit >= 2.6.9
 ldtk
 numpy
 scipy

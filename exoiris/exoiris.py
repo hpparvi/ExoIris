@@ -40,7 +40,7 @@ from uncertainties import ufloat, UFloat
 
 from .ldtkld import LDTkLD
 from .tsdata import TSData, TSDataSet
-from .tslpf import TSLPF, clean_knots
+from .tslpf import TSLPF
 from .wlpf import WhiteLPF
 
 
@@ -116,8 +116,6 @@ class ExoIris:
         The time-series data object.
     nk
         The number of kernel samples.
-    nbl
-        The number of bins for the light curve.
     nldc
         The number of limb darkening coefficients.
     nthreads
@@ -380,6 +378,7 @@ class ExoIris:
         knot_wavelengths
             List or array of knot wavelengths to be added.
         """
+        raise NotImplementedError()
         self._tsa.add_limb_darkening_knots(knot_wavelengths)
 
     def set_limb_darkening_knots(self, knot_wavelengths: Sequence) -> None:
@@ -531,7 +530,7 @@ class ExoIris:
         else:
             fig = axs[0,0].figure
 
-        self.original_data.plot(ax=axs[:, 0], data=where(self.ootmask, self.original_data.fluxes, 1))
+        self._tsa._original_data.plot(ax=axs[:, 0], data=where(self.ootmask, self._tsa._original_data.fluxes, 1))
         self.data.plot(ax=axs[:, 1], data=where(self.ootmask, self.data.fluxes, 1))
         return fig
 
@@ -676,7 +675,7 @@ class ExoIris:
             ax.set_xticks(xticks, labels=xticks)
         return ax.get_figure()
 
-    def plot_limb_darkening_parameters(self, result: Optional[str] = None, axs: Optional[tuple[Axes, Axes]] = None) -> Figure:
+    def plot_limb_darkening_parameters(self, result: Optional[str] = None, axs: Optional[tuple[Axes, Axes]] = None) -> None | Figure:
         """Plot the limb darkening parameters.
 
         Parameters
@@ -809,7 +808,7 @@ class ExoIris:
             nrows = self.data.ngroups
 
         if ax is None:
-            fig, axs = subplots(nrows, 1, sharex='all', squeeze=False) if ax is None else (ax.figure, ax)
+            fig, axs = subplots(nrows, 1, sharex='all', squeeze=False)
             axs = axs[:, 0]
         else:
             axs = [ax] if isinstance(ax, Axes) else ax
