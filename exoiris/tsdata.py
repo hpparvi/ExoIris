@@ -50,7 +50,7 @@ class TSData:
         number of exposures.
     """
     def __init__(self, time: Sequence, wavelength: Sequence, fluxes: Sequence, errors: Sequence,
-                 name: str = "", wl_edges : Sequence | None = None):
+                 name: str = "", wl_edges : Sequence | None = None, tm_edges : Sequence | None = None):
         """
         Parameters
         ----------
@@ -90,6 +90,16 @@ class TSData:
         else:
             self._wl_l_edges = wl_edges[0]
             self._wl_r_edges = wl_edges[1]
+
+        if tm_edges is None:
+            dt = zeros_like(self.time)
+            dt[:-1] = diff(self.time)
+            dt[-1] = dt[-2]
+            self._tm_l_edges = self.time - 0.5 * dt
+            self._tm_r_edges = self.time + 0.5 * dt
+        else:
+            self._tm_l_edges = tm_edges[0]
+            self._tm_r_edges = tm_edges[1]
 
     def __repr__(self) -> str:
         return f"TSData Name:'{self.name}' [{self.wavelength[0]:.2f} - {self.wavelength[-1]:.2f}] nwl={self.nwl} npt={self.npt}"
@@ -248,6 +258,44 @@ class TSData:
             bf, be = bin2d(self.fluxes, self.errors, self._wl_l_edges, self._wl_r_edges,
                            binning.bins, estimate_errors=estimate_errors)
             return TSData(self.time, binning.bins.mean(1), bf, be, wl_edges=(binning.bins[:,0], binning.bins[:,1]),
+                          name=self.name, tm_edges=(self._tm_l_edges, self._tm_r_edges))
+
+
+    def bin_time(self, binning: Optional[Union[Binning, CompoundBinning]] = None,
+                       nb: Optional[int] = None, bw: Optional[float] = None, r: Optional[float] = None,
+                       estimate_errors: bool = False):
+        """Bin the data along the time axis.
+
+        Bin the data along the time axis. If binning is not specified, a Binning object is created using the
+        minimum and maximum time values.
+
+        Parameters
+        ----------
+        binning
+            The binning method to use. Default value is None.
+        nb
+            Number of bins. Default value is None.
+        bw
+            Bin width. Default value is None.
+        r
+            Bin resolution. Default value is None.
+        estimate_errors
+            Should the uncertainties be estimated from the data. Default value is False.
+
+        Returns
+        -------
+        TSData
+            The binned data.
+        """
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', numba.NumbaPerformanceWarning)
+            if binning is None:
+                binning = Binning(self.time.min(), self.time.max(), nb=nb, bw=bw, r=r)
+            bf, be = bin2d(self.fluxes.T, self.errors.T, self._tm_l_edges, self._tm_r_edges,
+                           binning.bins, estimate_errors=estimate_errors)
+            return TSData(binning.bins.mean(1), self.wavelength, bf.T, be.T,
+                          wl_edges=(self._wl_l_edges, self._wl_r_edges),
+                          tm_edges=(binning.bins[:,0], binning.bins[:,1]),
                           name=self.name)
 
 
