@@ -26,6 +26,7 @@ from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import LinearLocator
 from numpy import isfinite, median, where, concatenate, all, zeros_like, diff, asarray, interp, arange, floor, ndarray
+from pytransit.orbits import fold
 from scipy.ndimage import median_filter
 
 from .util import bin2d
@@ -78,6 +79,7 @@ class TSData:
         self.wavelength = wavelength[m]
         self.fluxes = fluxes[m]
         self.errors = errors[m]
+        self.ootmask = None
         self._update()
         self.groups = [slice(0, self.nwl)]
 
@@ -103,6 +105,10 @@ class TSData:
 
     def __repr__(self) -> str:
         return f"TSData Name:'{self.name}' [{self.wavelength[0]:.2f} - {self.wavelength[-1]:.2f}] nwl={self.nwl} npt={self.npt}"
+
+    def calculate_ootmask(self, tc: float, p: float, t14: float):
+        phase = fold(self.time, p, tc)
+        self.ootmask = abs(phase) > 0.502 * t14
 
     def _update(self) -> None:
         """Update the internal attributes."""
@@ -303,16 +309,22 @@ class TSDataSet:
     """A high-level data storage class that can contain multiple TSData objects."""
     def __init__(self, data: Sequence[TSData]):
         self.data: list[TSData] = list(data)
-        self.time: ndarray = self.data[0].time
-        self.fluxes: ndarray = concatenate([d.fluxes for d in data])
-        self.errors: ndarray = concatenate([d.errors for d in data])
-        self.wavelength: ndarray = concatenate([d.wavelength for d in data])
+        self.time: list[ndarray] = [d.time for d in data]
+        self.fluxes: list[ndarray] = [d.fluxes for d in data]
+        self.errors: list[ndarray] = [d.errors for d in data]
+        self.wavelength: list[ndarray] = [d.wavelength for d in data]
+        self.wlmin = concatenate(self.wavelength).min()
+        self.wlmax = concatenate(self.wavelength).max()
         self.ngroups: int = len(self.data)
         self.groups: list = []
         i = 0
         for d in data:
             self.groups.append(slice(i, i+d.nwl))
             i += d.nwl
+
+    def calculate_ootmask(self, tc: float, p: float, t14: float):
+        for d in self.data:
+            d.calculate_ootmask(tc, p, t14)
 
     def __getitem__(self, index: int) -> TSData:
         return self.data[index]

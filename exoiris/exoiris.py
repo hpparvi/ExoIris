@@ -25,14 +25,15 @@ from typing import Optional, Callable, Any
 import pandas as pd
 import seaborn as sb
 import astropy.io.fits as pf
+import astropy.units as u
 
 from astropy.table import Table
 from celerite2 import GaussianProcess, terms
 from matplotlib.pyplot import subplots, setp, figure, Figure, GridSpec, Axes
 from numpy import (poly1d, polyfit, where, sqrt, clip, percentile, median, squeeze, floor, ndarray,
-                   array, inf, newaxis, r_, arange, tile, log10, sort, argsort)
+                   array, inf, newaxis, r_, arange, tile, log10, sort, argsort, concatenate)
 from numpy.random import normal, permutation
-from pytransit.orbits import fold
+from pytransit.orbits import fold, epoch
 from pytransit.param import ParameterSet
 from pytransit.utils.de import DiffEvol
 from scipy.stats import norm
@@ -132,15 +133,13 @@ class ExoIris:
         self._tsa = TSLPF(name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars, noise_model=noise_model)
         self._wa = None
         self.nthreads = nthreads
-        self.ootmask = None
-        self.de: Optional[DiffEvol] = None
+        self.de: DiffEvol | None = None
         self.sampler = None
 
-        self.transit_center: Optional[float] = None
-        self.transit_duration: Optional[float] = None
+        self.transit_center: float | None = None
+        self.transit_duration: float | None= None
 
-        self._tref = floor(self.time.min())
-        self._extent = (self.time[0] - self._tref, self.time[-1] - self._tref, self.wavelength[0], self.wavelength[-1])
+        self._tref = floor(concatenate(self.time).min())
 
     def lnposterior(self, pvp: ndarray) -> ndarray:
         """Calculate the log posterior probability for a single parameter vector or an array of parameter vectors.
@@ -436,7 +435,8 @@ class ExoIris:
 
         axk.vlines(self._tsa.k_knots, 0.1, 0.5, ec='k')
         axk.text(0.01, 0.90, 'Radius ratio knots', va='top', transform=axk.transAxes)
-        axw.vlines(self.wavelength, 0.1, 0.5, ec='k')
+        for ds in self.data:
+            axw.vlines(ds.wavelength, 0.1, 0.5, ec='k')
         axw.text(0.01, 0.90, 'Wavelength bins', va='top', transform=axw.transAxes)
 
         if not using_ldtk:
@@ -446,7 +446,7 @@ class ExoIris:
             sb.despine(ax=axk, top=False, bottom=True, right=False)
 
         sb.despine(ax=axw, top=True, bottom=False, right=False)
-        setp(axs, xlim=(self.wavelength[0]-0.02, self.wavelength[-1]+0.02), yticks=[], ylim=(0, 0.9))
+        setp(axs, xlim=(self.data.wlmin-0.02, self.data.wlmax+0.02), yticks=[], ylim=(0, 0.9))
         setp(axw, xlabel=r'Wavelength [$\mu$m]')
         setp(axs[0].get_xticklines(), visible=False)
         setp(axs[0].get_xticklabels(), visible=False)
@@ -467,17 +467,21 @@ class ExoIris:
         pv = self._wa._local_minimization.x
         self.transit_center = self._wa.transit_center
         self.transit_duration = self._wa.transit_duration
-        phase = fold(self.time, pv[1], pv[0])
-        self.ootmask = abs(phase) > 0.502 * self.transit_duration
+        self.data.calculate_ootmask(pv[0], pv[1], self.transit_duration)
 
-    def plot_white(self) -> Figure:
+    def plot_white(self, axs=None, figsize=None, ncols=2) -> Figure:
         """Plot the white light curve data with the best-fit model.
 
-        Returns
-        -------
-        Figure
+        Parameters
+        ----------
+        axs : Axes, optional
+            Matplotlib axis object on which to plot. If None, a new figure and axis will be created.
+        figsize : tuple of float, optional
+            Tuple representing the figure size in inches. Default is None.
+        ncols : int, optional
+            Number of columns in the plot layout. Default is 2.
         """
-        return self._wa.plot()
+        return self._wa.plot(axs=axs, figsize=figsize, ncols=ncols)
 
     def normalize_baseline(self, deg: int = 1) -> None:
         """Normalize the baseline flux for each spectroscopic light curve.
@@ -504,15 +508,13 @@ class ExoIris:
         """
         if deg > 1:
             raise ValueError("The degree of the fitted polynomial ('deg') should be 0 or 1. Higher degrees are not allowed because they could affect the transit depths.")
-        for ipb in range(self.npb):
-            pl = poly1d(polyfit(self.time[self.ootmask], self.fluxes[ipb, self.ootmask], deg=deg))(self.time)
-            self.fluxes[ipb, :] /= pl
-            self.errors[ipb, :] /= pl
-            for i, sl in enumerate(self.data.groups):
-                self.data.data[i].fluxes[:, :] = self.fluxes[sl, :]
-                self.data.data[i].errors[:, :] = self.errors[sl, :]
+        for d in self.data:
+            for ipb in range(d.nwl):
+                pl = poly1d(polyfit(d.time[d.ootmask], d.fluxes[ipb, d.ootmask], deg=deg))(d.time)
+                d.fluxes[ipb, :] /= pl
+                d.errors[ipb, :] /= pl
 
-    def plot_baseline(self, axs: Optional[Sequence[Axes]] = None) -> Figure:
+    def plot_baseline(self, axs: Optional[Sequence[Axes]] = None, figsize=None) -> Figure:
         """Plot the out-of-transit spectroscopic light curves before and after the normalization.
 
         Parameters
@@ -526,12 +528,13 @@ class ExoIris:
             The figure containing the subplots.
         """
         if axs is None:
-            fig, axs = subplots(self.data.ngroups, 2, figsize=(13, 4), squeeze=False, constrained_layout=True)
+            fig, axs = subplots(self.data.ngroups, 2, figsize=figsize, squeeze=False, constrained_layout=True)
         else:
             fig = axs[0,0].figure
 
-        self._tsa._original_data.plot(ax=axs[:, 0], data=where(self.ootmask, self._tsa._original_data.fluxes, 1))
-        self.data.plot(ax=axs[:, 1], data=where(self.ootmask, self.data.fluxes, 1))
+        for i in range(self.data.ngroups):
+            self._tsa._original_data[i].plot(ax=axs[i, 0], data=where(self.data[i].ootmask, self._tsa._original_data[i].fluxes, 1))
+            self.data[i].plot(ax=axs[i, 1], data=where(self.data[i].ootmask, self.data[i].fluxes, 1))
         return fig
 
     def fit(self, niter: int = 200, npop: Optional[int] = None, pool: Optional[Pool] = None, lnpost: Optional[Callable]=None,
@@ -651,24 +654,27 @@ class ExoIris:
 
         fig, ax = subplots() if ax is None else (ax.get_figure(), ax)
 
-        ix = argsort(self.wavelength)
+        wavelength = concatenate(self.wavelength)
+        ix = argsort(wavelength)
 
         if result == 'fit':
             pv = self._tsa._de_population[self._tsa._de_imin]
-            ar = 1e2 * squeeze(self._tsa._eval_k(pv[self._tsa._sl_rratios])) ** 2
-            ax.plot(self.wavelength[ix], ar[ix], c='k')
+            ks = self._tsa._eval_k(pv[self._tsa._sl_rratios])
+            ar = 1e2 * concatenate([squeeze(k) for k in ks]) ** 2
+            ax.plot(wavelength[ix], ar[ix], c='k')
             ax.plot(self._tsa.k_knots, 1e2 * pv[self._tsa._sl_rratios] ** 2, 'k.')
         else:
             df = pd.DataFrame(self._tsa._mc_chains.reshape([-1, self._tsa.ndim]), columns=self._tsa.ps.names)
-            ar = 1e2 * self._tsa._eval_k(df.iloc[:, self._tsa._sl_rratios]) ** 2
-            ax.fill_between(self.wavelength[ix], *percentile(ar[:, ix], [16, 84], axis=0), alpha=0.25)
-            ax.plot(self.wavelength[ix], median(ar, 0)[ix], c='k')
+            ks = self._tsa._eval_k(df.iloc[:, self._tsa._sl_rratios])
+            ar = 1e2 * concatenate(ks, axis=1) ** 2
+            ax.fill_between(wavelength[ix], *percentile(ar[:, ix], [16, 84], axis=0), alpha=0.25)
+            ax.plot(wavelength[ix], median(ar, 0)[ix], c='k')
             ax.plot(self.k_knots, 1e2*median(df.iloc[:, self._tsa._sl_rratios].values, 0)**2, 'k.')
-        setp(ax, ylabel='Transit depth [%]', xlabel=r'Wavelength [$\mu$m]', xlim=self.wavelength[[0, -1]], ylim=ylim)
+        setp(ax, ylabel='Transit depth [%]', xlabel=r'Wavelength [$\mu$m]', xlim=(self.data.wlmin, self.data.wlmax), ylim=ylim)
 
         if plot_resolution:
             yl = ax.get_ylim()
-            ax.vlines(self.wavelength, yl[0], yl[0]+0.02*(yl[1]-yl[0]), ec='k')
+            ax.vlines(wavelength, yl[0], yl[0]+0.02*(yl[1]-yl[0]), ec='k')
         if xscale is not None:
             ax.set_xscale(xscale)
         if xticks is not None:
@@ -722,32 +728,33 @@ class ExoIris:
         if result == 'mcmc' and self._tsa.sampler is None:
             raise ValueError("Cannot plot posterior solution before running the MCMC sampler.")
 
-        ix = argsort(self.wavelength)
+        wavelength = concatenate(self.wavelength)
+        ix = argsort(wavelength)
 
         if result == 'fit':
             pv = self._tsa._de_population[self._tsa._de_imin]
-            ldc = self._tsa._eval_ldc(pv)[0]
+            ldc = squeeze(concatenate(self._tsa._eval_ldc(pv), axis=1))
             axs[0].plot(self._tsa.ld_knots, pv[self._tsa._sl_ld][0::2], 'ok')
-            axs[0].plot(self.wavelength[ix], ldc[:,0][ix])
+            axs[0].plot(wavelength[ix], ldc[:,0][ix])
             axs[1].plot(self._tsa.ld_knots, pv[self._tsa._sl_ld][1::2], 'ok')
-            axs[1].plot(self.wavelength[ix], ldc[:,1][ix])
+            axs[1].plot(wavelength[ix], ldc[:,1][ix])
         else:
-            df = pd.DataFrame(self._tsa._mc_chains.reshape([-1, self._tsa.ndim]), columns=self.ps.names)
-            ldc = df.iloc[:,self._tsa._sl_ld]
+            pvp = self._tsa._mc_chains.reshape([-1, self._tsa.ndim])
+            ldc = pvp[:,self._tsa._sl_ld]
 
-            ld1m = median(ldc.values[:,::2], 0)
-            ld1e = ldc.values[:,::2].std(0)
-            ld2m = median(ldc.values[:,1::2], 0)
-            ld2e = ldc.values[:,1::2].std(0)
+            ld1m = median(ldc[:,::2], 0)
+            ld1e = ldc[:,::2].std(0)
+            ld2m = median(ldc[:,1::2], 0)
+            ld2e = ldc[:,1::2].std(0)
 
-            ldc = self._tsa._eval_ldc(df.values)
+            ldc = concatenate(self._tsa._eval_ldc(pvp), axis=1)
             ld1p = percentile(ldc[:,:,0], [50, 16, 84], axis=0)
             ld2p = percentile(ldc[:,:,1], [50, 16, 84], axis=0)
 
-            axs[0].fill_between(self.wavelength[ix], ld1p[1, ix], ld1p[2, ix], alpha=0.5)
-            axs[0].plot(self.wavelength[ix], ld1p[0][ix], 'k')
-            axs[1].fill_between(self.wavelength[ix], ld2p[1, ix], ld2p[2, ix], alpha=0.5)
-            axs[1].plot(self.wavelength[ix], ld2p[0][ix], 'k')
+            axs[0].fill_between(wavelength[ix], ld1p[1, ix], ld1p[2, ix], alpha=0.5)
+            axs[0].plot(wavelength[ix], ld1p[0][ix], 'k')
+            axs[1].fill_between(wavelength[ix], ld2p[1, ix], ld2p[2, ix], alpha=0.5)
+            axs[1].plot(wavelength[ix], ld2p[0][ix], 'k')
 
             axs[0].errorbar(self._tsa.ld_knots, ld1m, ld1e, fmt='ok')
             axs[1].errorbar(self._tsa.ld_knots, ld2m, ld2e, fmt='ok')
@@ -757,7 +764,7 @@ class ExoIris:
         axs[1].plot(self._tsa.ld_knots, ldp2[:,0] + ldp2[:,1], ':', c='C0')
         axs[1].plot(self._tsa.ld_knots, ldp2[:,0] - ldp2[:,1], ':', c='C0')
 
-        setp(axs, xlim=self.wavelength[[0,-1]], xlabel=r'Wavelength [$\mu$m]')
+        setp(axs, xlim=(wavelength.min(), wavelength.max()), xlabel=r'Wavelength [$\mu$m]')
         setp(axs[0], ylabel='Limb darkening coefficient 1')
         setp(axs[1], ylabel='Limb darkening coefficient 2')
         return fig
@@ -808,7 +815,7 @@ class ExoIris:
             nrows = self.data.ngroups
 
         if ax is None:
-            fig, axs = subplots(nrows, 1, sharex='all', squeeze=False)
+            fig, axs = subplots(nrows, 1, squeeze=False)
             axs = axs[:, 0]
         else:
             axs = [ax] if isinstance(ax, Axes) else ax
@@ -821,21 +828,21 @@ class ExoIris:
         else:
             pv = median(self._tsa._mc_chains.reshape([-1, self._tsa.ndim]), 0)
 
-        fmodel = squeeze(self._tsa.flux_model(pv))
-        residuals = self.fluxes - fmodel
-        pp = percentile(residuals, [pmin, pmax])
-        self.data.plot(ax = axs if isinstance(self.data, TSDataSet) else axs[0],
-                       data=residuals, vmin=pp[0], vmax=pp[1], cmap=cmap)
+        fmodel = self._tsa.flux_model(pv)
+        for ids, data in enumerate(self.data):
+            ax = axs[ids]
+            residuals = data.fluxes - fmodel[ids]
+            pp = percentile(residuals, [pmin, pmax])
+            data.plot(ax=ax, data=residuals, vmin=pp[0], vmax=pp[1], cmap=cmap)
 
-        tc = self.transit_center
-        td = self.transit_duration
+            tc = pv[1] + pv[2]*epoch(data.time.mean(), pv[1], pv[2])
+            td = self.transit_duration
 
-        for ax in axs:
-            for i in range(2):
-                ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='w', ymax=0.05, lw=5)
-                ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='w', ymin=0.95, lw=5)
-                ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='k', ymax=0.05, lw=1)
-                ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='k', ymin=0.95, lw=1)
+            #for i in range(2):
+            #    ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='w', ymax=0.05, lw=5)
+            #    ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='w', ymin=0.95, lw=5)
+            #    ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='k', ymax=0.05, lw=1)
+            #    ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='k', ymin=0.95, lw=1)
             if not show_names:
                 ax.set_title("")
 
@@ -889,7 +896,7 @@ class ExoIris:
         return fig
 
     @property
-    def transmission_spectrum(self) -> pd.DataFrame:
+    def transmission_spectrum(self) -> Table:
         """Get the posterior transmission spectrum as a Pandas DataFrame.
 
         Raises
@@ -899,12 +906,16 @@ class ExoIris:
         """
         if self._tsa._mc_chains is None:
             raise ValueError("Cannot calculate posterior transmission spectrum before running the MCMC sampler.")
-        df = pd.DataFrame(self._tsa._mc_chains.reshape([-1, self._tsa.ndim]), columns=self._tsa.ps.names)
-        ar = self._tsa._eval_k(df.iloc[:, self._tsa._sl_rratios])**2
-        pt = percentile(ar, [50, 16, 84], 0)
-        return pd.DataFrame(r_[pt[0:1], abs(pt[1:]-pt[0]).mean(0)[newaxis, :], pt[1:]-pt[0]].T,
-                            columns='depth depth_e depth_eneg depth_epos'.split(),
-                            index=pd.Index(self.wavelength, name='wavelength'))
+
+        pvp = self.posterior_samples
+        wls = concatenate(self.data.wavelength)
+        ks = concatenate(self._tsa._eval_k(pvp.values[:, self._tsa._sl_rratios]), axis=1)
+        ar = ks**2
+        ix = argsort(wls)
+        return Table(data=[wls[ix]*u.micrometer,
+                           median(ks, 0)[ix], ks.std(0)[ix],
+                           median(ar, 0)[ix], ar.std(0)[ix]],
+                     names = ['wavelength', 'radius_ratio', 'radius_ratio_e', 'area_ratio', 'area_ratio_e'])
 
     def save(self, overwrite: bool = False) -> None:
         """Save the ExoIris analysis to a FITS file.

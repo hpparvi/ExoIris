@@ -19,7 +19,7 @@ from typing import Optional
 from ldtk import BoxcarFilter, LDPSetCreator
 from numba import njit, prange
 from numpy import zeros, log, pi, linspace, inf, atleast_2d, newaxis, clip, arctan2, ones, floor, sum, concatenate, \
-    sort, ndarray, zeros_like, array, tile, arange
+    sort, ndarray, zeros_like, array, tile, arange, squeeze
 from numpy.random import default_rng
 from celerite2 import GaussianProcess as GP, terms
 
@@ -97,12 +97,13 @@ def clean_knots(knots, min_distance, lmin=0, lmax=inf):
 
 
 class TSLPF(LogPosteriorFunction):
-    def __init__(self, name: str, ldmodel, data: TSDataSet, nk: int = None, nldc: int = 10, nthreads: int = 1,
+    def __init__(self, name: str, ldmodel, data: TSDataSet, nk: int = 50, nldc: int = 10, nthreads: int = 1,
                  tmpars = None, noise_model: str = 'white'):
         super().__init__(name)
+        self._original_data: TSDataSet | None = None
         self.data: TSDataSet | None = None
-        self.npb: int | None= None
-        self.npt: int | None = None
+        self.npb: list[int] | None= None
+        self.npt: list[int] | None = None
         self.ndim: int | None = None
 
         self._gp: Optional[GP] = None
@@ -113,22 +114,22 @@ class TSLPF(LogPosteriorFunction):
         self.set_noise_model(noise_model)
 
         self.ldmodel = ldmodel
-        self.tm = TSModel(ldmodel, nthreads=nthreads, **(tmpars or {}))
+        self.tms = [TSModel(ldmodel, nthreads=nthreads, **(tmpars or {})) for i in range(len(data))]
         self.set_data(data)
 
         if isinstance(ldmodel, LDTkLD):
-            self.ldmodel._init_interpolation(self.tm.mu)
+            self.ldmodel._init_interpolation(self.tms[0].mu)
 
         self.nthreads = nthreads
         self.nldc = nldc
-        self.nk = self.npb if nk is None else min(nk, self.npb)
+        self.nk = nk
 
-        self.k_knots = linspace(data.wavelength[0], data.wavelength[-1], self.nk)
+        self.k_knots = linspace(data.wlmin, data.wlmax, self.nk)
 
         if isinstance(ldmodel, LDTkLD):
             self.ld_knots = array([])
         else:
-            self.ld_knots = linspace(data.wavelength[0], data.wavelength[-1], self.nldc)
+            self.ld_knots = linspace(data.wlmin, data.wlmax, self.nldc)
 
         self._ootmask = None
         self._npv = 1
@@ -139,27 +140,28 @@ class TSLPF(LogPosteriorFunction):
         self._init_parameters()
 
     @property
-    def flux(self) -> ndarray:
+    def flux(self) -> list[ndarray]:
         return self.data.fluxes
 
     @property
-    def time(self) -> ndarray:
+    def time(self) -> list[ndarray]:
         return self.data.time
 
     @property
-    def wavelength(self) -> ndarray:
+    def wavelength(self) -> list[ndarray]:
         return self.data.wavelength
 
     @property
-    def ferr(self) -> ndarray:
+    def ferr(self) -> list[ndarray]:
         return self.data.errors
 
     def set_data(self, data: TSDataSet):
         self._original_data = deepcopy(data)
         self.data = data
-        self.npb: int = self.flux.shape[0]
-        self.npt = self.flux.shape[1]
-        self.tm.set_data(self.time)
+        self.npb: list[int] = [f.shape[0] for f in self.flux]
+        self.npt: list[int] = [f.shape[1] for f in self.flux]
+        for i, time in enumerate(self.time):
+            self.tms[i].set_data(time)
         if self._nm in (NM_GP_FIXED, NM_GP_FREE):
             self._init_gp()
 
@@ -441,14 +443,12 @@ class TSLPF(LogPosteriorFunction):
         ks : ndarray
             The radius ratios of shape (npv, npb), where npb is the number of passbands.
         """
-        if self.nk == self.npb:
-            return pvp
-        else:
-            pvp = atleast_2d(pvp)
-            ks = zeros((pvp.shape[0], self.npb))
+        pvp = atleast_2d(pvp)
+        ks = [zeros((pvp.shape[0], npb)) for npb in self.npb]
+        for ids in range(self.data.ngroups):
             for ipv in range(pvp.shape[0]):
-                ks[ipv,:] =  splev(self.wavelength, splrep(self.k_knots, pvp[ipv], s=0.0))
-            return ks
+                ks[ids][ipv,:] =  splev(self.wavelength[ids], splrep(self.k_knots, pvp[ipv], s=0.0))
+        return ks
 
     def _eval_ldc(self, pvp):
         if isinstance(self.ldmodel, LDTkLD):
@@ -460,10 +460,11 @@ class TSLPF(LogPosteriorFunction):
         else:
             pvp = atleast_2d(pvp)
             ldk = pvp[:, self._sl_ld].reshape([pvp.shape[0], self.nldc, 2])
-            ldp = zeros((pvp.shape[0], self.npb, 2))
-            for ipv in range(pvp.shape[0]):
-                ldp[ipv, :, 0] = splev(self.wavelength, splrep(self.ld_knots, ldk[ipv, :, 0], s=0.0))
-                ldp[ipv, :, 1] = splev(self.wavelength, splrep(self.ld_knots, ldk[ipv, :, 1], s=0.0))
+            ldp = [zeros((pvp.shape[0], npb, 2)) for npb in self.npb]
+            for ids in range(self.data.ngroups):
+                for ipv in range(pvp.shape[0]):
+                    ldp[ids][ipv, :, 0] = splev(self.wavelength[ids], splrep(self.ld_knots, ldk[ipv, :, 0], s=0.0))
+                    ldp[ids][ipv, :, 1] = splev(self.wavelength[ids], splrep(self.ld_knots, ldk[ipv, :, 1], s=0.0))
             return ldp
 
     def transit_model(self, pv, copy=True):
@@ -500,7 +501,7 @@ class TSLPF(LogPosteriorFunction):
         inc = i_from_ba(pv[:, 3], aor)
         ecc = pv[:, 4] ** 2 + pv[:, 5] ** 2
         w = arctan2(pv[:, 5], pv[:, 4])
-        return self.tm.evaluate(k, ldp, t0, p, aor, inc, ecc, w, copy)
+        return [tm.evaluate(k[i], ldp[i], t0, p, aor, inc, ecc, w, copy) for i,tm in enumerate(self.tms)]
 
     def flux_model(self, pv):
         return self.transit_model(pv)
@@ -539,7 +540,10 @@ class TSLPF(LogPosteriorFunction):
         """
         fmod = self.flux_model(pv)
         if self._nm == NM_WHITE:
-            return lnlike_normal(self.flux, fmod, self.ferr)
+            lnl = zeros(fmod[0].shape[0]) if fmod[0].ndim == 3 else 0.0
+            for ids in range(self.data.ngroups):
+                lnl += lnlike_normal(self.flux[ids], fmod[ids], self.ferr[ids])
+            return lnl
         elif self._nm == NM_GP_FIXED:
             return self._gp.log_likelihood(self._gp_flux - fmod.ravel())
         else:

@@ -16,7 +16,7 @@
 
 from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
-from numpy import array, log10, diff, sqrt, floor
+from numpy import array, log10, diff, sqrt, floor, ceil, arange, newaxis
 from scipy.optimize import minimize
 
 from pytransit import BaseLPF, LinearModelBaseline
@@ -26,7 +26,12 @@ from .tslpf import TSLPF
 
 class WhiteLPF(BaseLPF):
     def __init__(self, tsa: TSLPF):
-        super().__init__('white', ['white'], tsa.time, tsa.flux.mean(0), covariates=[array([[]])])
+        times = tsa.time
+        fluxes = [f.mean(0) for f in tsa.flux]
+        covs = [(t-t.mean())[:, newaxis] for t in times]
+        wnids = arange(len(fluxes))
+
+        super().__init__('white', ['white'], times, fluxes, covariates=covs, wnids=wnids)
         self.set_prior('tc', tsa.ps[tsa.ps.find_pid('tc')].prior)
         self.set_prior('p', tsa.ps[tsa.ps.find_pid('p')].prior)
         self.set_prior('rho', tsa.ps[tsa.ps.find_pid('rho')].prior)
@@ -53,7 +58,7 @@ class WhiteLPF(BaseLPF):
     @property
     def transit_center(self):
         pv = self._local_minimization.x
-        return pv[0] + pv[1]*epoch(self.timea.mean(), pv[0], pv[1])
+        return pv[0] + pv[1]*epoch(self.times[0].mean(), pv[0], pv[1])
 
     @property
     def transit_duration(self):
@@ -63,21 +68,26 @@ class WhiteLPF(BaseLPF):
         t14 = d_from_pkaiews(pv[1], sqrt(pv[4]), a, i, 0., 0., 1, 14)
         return t14
 
-    def plot(self, ax=None) -> Figure:
-        if ax is None:
-            fig, ax = subplots()
+    def plot(self, axs=None, figsize=None, ncols=2) -> Figure:
+        if axs is None:
+            nrows = int(ceil(self.nlc / ncols))
+            fig, axs = subplots(nrows, ncols, figsize=figsize, sharey='all', squeeze=False)
         else:
-            fig = ax.get_figure()
+            fig = axs[0].get_figure()
 
         tref = floor(self.timea.min())
         fm = self.flux_model(self._local_minimization.x)
-        ax.plot(self.timea - tref, self.ofluxa, '.k', alpha=0.25)
-        ax.plot(self.timea - tref, fm, 'k')
-
-        tc = self.transit_center
         t14 = self.transit_duration
-        ax.axvline(tc - tref, ls='--', c='0.5')
-        ax.axvline(tc - tref - 0.5*t14, ls='--', c='0.5')
-        ax.axvline(tc - tref + 0.5*t14, ls='--', c='0.5')
-        setp(ax, xlabel=f'Time - {tref:.0f} [BJD]', ylabel='Normalized flux', xlim=(self.timea.min()-tref, self.timea.max()-tref))
+        pv = self._local_minimization.x
+
+        for i, sl in enumerate(self.lcslices):
+            ax = axs.flat[i]
+            tc = pv[0] + pv[1]*epoch(self.times[i].mean(), pv[0], pv[1])
+            ax.plot(self.timea[sl] - tref, self.ofluxa[sl], '.k', alpha=0.25)
+            ax.plot(self.timea[sl] - tref, fm[sl], 'k')
+            ax.axvline(tc - tref, ls='--', c='0.5')
+            ax.axvline(tc - tref - 0.5*t14, ls='--', c='0.5')
+            ax.axvline(tc - tref + 0.5*t14, ls='--', c='0.5')
+            setp(ax, xlabel=f'Time - {tref:.0f} [BJD]', xlim=(self.times[i].min()-tref, self.times[i].max()-tref))
+        setp(axs[:,0], ylabel='Normalized flux')
         return fig
