@@ -831,7 +831,7 @@ class ExoIris:
         fmodel = self._tsa.flux_model(pv)
         for ids, data in enumerate(self.data):
             ax = axs[ids]
-            residuals = data.fluxes - fmodel[ids]
+            residuals = data.fluxes - squeeze(fmodel[ids])
             pp = percentile(residuals, [pmin, pmax])
             data.plot(ax=ax, data=residuals, vmin=pp[0], vmax=pp[1], cmap=cmap)
 
@@ -1088,15 +1088,16 @@ class ExoIris:
         rb = log10_rho_bounds if isinstance(log10_rho_bounds, Sequence) else [log10_rho_bounds-1, log10_rho_bounds+1]
         bounds = array([sb, rb])
 
+        data = self.data[0]
         if subset is not None:
             if isinstance(subset, float):
-                ids = sort(permutation(self.npb)[:int(0.5*self.npb)])
+                ids = sort(permutation(data.nwl)[:int(subset*data.nwl)])
             elif isinstance(subset, Sequence):
                 ids = array(subset, int)
             else:
                 raise ValueError("subset must be either an iterable or a float.")
         else:
-            ids = arange(self.npb)
+            ids = arange(data.nwl)
 
         class DummyPrior:
             def logpdf(self, x):
@@ -1123,9 +1124,9 @@ class ExoIris:
             rp = DummyPrior()
 
         npb = ids.size
-        time = (tile(self.time[newaxis, self.ootmask], (npb, 1)) + arange(npb)[:, newaxis]).ravel()
-        flux = (self.fluxes[ids, :][:, self.ootmask]).ravel() - 1
-        ferr = (self._tsa.ferr[ids, :][:, self.ootmask]).ravel()
+        time = (tile(data.time[newaxis, data.ootmask], (npb, 1)) + arange(npb)[:, newaxis]).ravel()
+        flux = (data.fluxes[ids, :][:, data.ootmask]).ravel() - 1
+        ferr = (data.errors[ids, :][:, data.ootmask]).ravel()
         gp = GaussianProcess(terms.Matern32Term(sigma=flux.std(), rho=0.1))
 
         def nll(log10x):
@@ -1143,9 +1144,6 @@ class ExoIris:
             de.population[:, 1] = log10_rho_bounds
 
         de.optimize(niter)
-
         x = de.minimum_location
-        gp.kernel = terms.Matern32Term(sigma=10**x[0], rho=10**x[1])
-        gp.compute(self._tsa._gp_time, yerr=self._tsa._gp_ferr, quiet=True)
-        self._tsa._gp = gp
+        self._tsa.set_gp_hyperparameters(10**x[0], 10**x[1])
         return 10**x, de._fitness.ptp()

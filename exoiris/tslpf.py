@@ -106,10 +106,9 @@ class TSLPF(LogPosteriorFunction):
         self.npt: list[int] | None = None
         self.ndim: int | None = None
 
-        self._gp: Optional[GP] = None
-        self._gp_time: Optional[ndarray] = None
-        self._gp_flux: Optional[ndarray] = None
-        self._gp_time: Optional[ndarray] = None
+        self._gp: Optional[list[GP]] = None
+        self._gp_time: Optional[list[ndarray]] = None
+        self._gp_flux: Optional[list[ndarray]] = None
 
         self.set_noise_model(noise_model)
 
@@ -199,11 +198,16 @@ class TSLPF(LogPosteriorFunction):
 
         This method initializes the necessary variables and sets up the GP for the given data.
         """
-        self._gp_time = (tile(self.time[newaxis, :], (self.npb, 1)) + arange(self.npb)[:, newaxis]).ravel()
-        self._gp_flux = self.flux.ravel()
-        self._gp_ferr = self.ferr.ravel()
-        self._gp = GP(terms.Matern32Term(sigma=self._gp_flux.std(), rho=0.1))
-        self._gp.compute(self._gp_time, yerr=self._gp_ferr, quiet=True)
+        self._gp_time = []
+        self._gp_flux = []
+        self._gp_ferr = []
+        self._gp = []
+        for d in self.data:
+            self._gp_time.append((tile(d.time[newaxis, :], (d.nwl, 1)) + arange(d.nwl)[:, newaxis]).ravel())
+            self._gp_flux.append(d.fluxes.ravel())
+            self._gp_ferr.append(d.errors.ravel())
+            self._gp.append(GP(terms.Matern32Term(sigma=self._gp_flux[-1].std(), rho=0.1)))
+            self._gp[-1].compute(self._gp_time[-1], yerr=self._gp_ferr[-1], quiet=True)
 
     def set_gp_hyperparameters(self, sigma: float, rho: float) -> None:
         """Sets the Gaussian Process hyperparameters assuming a Matern32 kernel.
@@ -223,8 +227,9 @@ class TSLPF(LogPosteriorFunction):
         """
         if self._gp is None:
             raise RuntimeError('The GP needs to be initialized before setting hyperparameters.')
-        self._gp.kernel = terms.Matern32Term(sigma=sigma, rho=rho)
-        self._gp.compute(self._gp_time, yerr=self._gp_ferr, quiet=True)
+        for i, gp in enumerate(self._gp):
+            gp.kernel = terms.Matern32Term(sigma=sigma, rho=rho)
+            gp.compute(self._gp_time[i], yerr=self._gp_ferr[i], quiet=True)
 
     def set_gp_kernel(self, kernel: terms.Term) -> None:
         """Sets the kernel for the Gaussian Process (GP) model and recomputes the GP.
@@ -234,8 +239,9 @@ class TSLPF(LogPosteriorFunction):
         kernel : terms.Term
             The kernel to be set for the GP.
         """
-        self._gp.kernel = kernel
-        self._gp.compute(self._gp_time, yerr=self._gp_ferr, quiet=True)
+        for i, gp in enumerate(self._gp):
+            gp.kernel = kernel
+            gp.compute(self._gp_time[i], yerr=self._gp_ferr[i], quiet=True)
 
     def _init_p_star(self) -> None:
         pstar = [GParameter('rho', 'stellar density', 'g/cm^3', UP(0.1, 25.0), (0, inf))]
@@ -538,16 +544,20 @@ class TSLPF(LogPosteriorFunction):
             The logarithm of the likelihood value calculated using the normal distribution.
 
         """
+        pv = atleast_2d(pv)
+        npv = pv.shape[0]
         fmod = self.flux_model(pv)
+        lnl = zeros(npv)
         if self._nm == NM_WHITE:
-            lnl = zeros(fmod[0].shape[0]) if fmod[0].ndim == 3 else 0.0
-            for ids in range(self.data.ngroups):
-                lnl += lnlike_normal(self.flux[ids], fmod[ids], self.ferr[ids])
-            return lnl
+            for i in range(self.data.ngroups):
+                lnl += lnlike_normal(self.flux[i], fmod[i], self.ferr[i])
         elif self._nm == NM_GP_FIXED:
-            return self._gp.log_likelihood(self._gp_flux - fmod.ravel())
+            for j in range(npv):
+                for i in range(self.data.ngroups):
+                    lnl[j] += self._gp[i].log_likelihood(self._gp_flux[i] - fmod[i][j].ravel())
         else:
             raise NotImplementedError("The free GP noise model hasn't been implemented yet.")
+        return lnl if npv > 1 else lnl[0]
 
     def create_initial_population(self, n: int, source: str, add_noise: bool = True) -> ndarray:
         """Create an initial parameter vector population for DE.
