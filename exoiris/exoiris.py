@@ -85,11 +85,14 @@ def load_model(fname: Path | str, name: str | None = None):
         a = ExoIris(name or hdul[0].header['NAME'], ldmodel=ldm, data=data)
         a.set_radius_ratio_knots(hdul['K_KNOTS'].data.astype('d'))
         a.set_limb_darkening_knots(hdul['LD_KNOTS'].data.astype('d'))
-        a.transit_center = hdul[0].header['T0']
-        a.transit_duration = hdul[0].header['T14']
 
-        if a.transit_duration is not None:
-            a.ootmask = abs(a.time - a.transit_center) > 0.502 * a.transit_duration
+        try:
+            a.period = hdul[0].header['P']
+            a.zero_epoch = hdul[0].header['T0']
+            a.transit_duration = hdul[0].header['T14']
+            [d.calculate_ootmask(a.zero_epoch, a.period, a.transit_duration) for d in a.data]
+        except KeyError:
+            pass
 
         priors = pickle.loads(codecs.decode(json.loads(hdul['PRIORS'].header['PRIORS']).encode(), "base64"))
         a._tsa.ps = ParameterSet([pickle.loads(p) for p in priors])
@@ -127,7 +130,7 @@ class ExoIris:
         The noise model to use. Should be either "white" for white noise or "fixed_gp" for Gaussian Process.
     """
 
-    def __init__(self, name: str, ldmodel, data: TSDataSet | TSData, nk: int = None, nldc: int = 10, nthreads: int = 1,
+    def __init__(self, name: str, ldmodel, data: TSDataSet | TSData, nk: int = 50, nldc: int = 10, nthreads: int = 1,
                  tmpars: dict | None = None, noise_model: str = 'white'):
         data = TSDataSet([data]) if isinstance(data, TSData) else data
         self._tsa = TSLPF(name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars, noise_model=noise_model)
@@ -136,7 +139,8 @@ class ExoIris:
         self.de: DiffEvol | None = None
         self.sampler = None
 
-        self.transit_center: float | None = None
+        self.period: float | None = None
+        self.zero_epoch: float | None = None
         self.transit_duration: float | None= None
 
         self._tref = floor(concatenate(self.time).min())
@@ -465,7 +469,8 @@ class ExoIris:
         self._wa = WhiteLPF(self._tsa)
         self._wa.optimize()
         pv = self._wa._local_minimization.x
-        self.transit_center = self._wa.transit_center
+        self.period = pv[1]
+        self.zero_epoch = self._wa.transit_center
         self.transit_duration = self._wa.transit_duration
         self.data.calculate_ootmask(pv[0], pv[1], self.transit_duration)
 
@@ -927,7 +932,8 @@ class ExoIris:
         """
         pri = pf.PrimaryHDU()
         pri.header['name'] = self.name
-        pri.header['t0'] = self.transit_center
+        pri.header['p'] = self.period
+        pri.header['t0'] = self.zero_epoch
         pri.header['t14'] = self.transit_duration
         pri.header['ndgroups'] = self.data.ngroups
 

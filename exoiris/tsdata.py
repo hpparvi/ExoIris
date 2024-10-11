@@ -106,8 +106,8 @@ class TSData:
     def __repr__(self) -> str:
         return f"TSData Name:'{self.name}' [{self.wavelength[0]:.2f} - {self.wavelength[-1]:.2f}] nwl={self.nwl} npt={self.npt}"
 
-    def calculate_ootmask(self, tc: float, p: float, t14: float):
-        phase = fold(self.time, p, tc)
+    def calculate_ootmask(self, t0: float, p: float, t14: float):
+        phase = fold(self.time, p, t0)
         self.ootmask = abs(phase) > 0.502 * t14
 
     def _update(self) -> None:
@@ -263,6 +263,8 @@ class TSData:
                 binning = Binning(self.wllims[0], self.wllims[1], nb=nb, bw=bw, r=r)
             bf, be = bin2d(self.fluxes, self.errors, self._wl_l_edges, self._wl_r_edges,
                            binning.bins, estimate_errors=estimate_errors)
+            if not all(isfinite(be)):
+                warnings.warn('Error estimation failed for some bins, check the error array.')
             return TSData(self.time, binning.bins.mean(1), bf, be, wl_edges=(binning.bins[:,0], binning.bins[:,1]),
                           name=self.name, tm_edges=(self._tm_l_edges, self._tm_r_edges))
 
