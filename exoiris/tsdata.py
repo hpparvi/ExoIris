@@ -22,10 +22,12 @@ from collections.abc import Sequence
 from typing import Union, Optional
 
 from astropy.stats import mad_std
+from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
-from matplotlib.ticker import LinearLocator
-from numpy import isfinite, median, where, concatenate, all, zeros_like, diff, asarray, interp, arange, floor, ndarray
+from matplotlib.ticker import LinearLocator, FuncFormatter
+from numpy import isfinite, median, where, concatenate, all, zeros_like, diff, asarray, interp, arange, floor, ndarray, \
+    ceil, newaxis
 from pytransit.orbits import fold
 from scipy.ndimage import median_filter
 
@@ -115,6 +117,49 @@ class TSData:
         self.nwl = self.wavelength.size
         self.npt = self.time.size
         self.wllims = self.wavelength.min(), self.wavelength.max()
+
+    def normalize(self, s: slice) -> None:
+        """Normalize the light curves to the median flux of the given slice along the time axis.
+
+        Parameters
+        ----------
+        s : slice
+            A slice object representing the portion of the data to normalize.
+        """
+        n = median(self.fluxes[:, s], axis=1)[:, newaxis]
+        self.fluxes[:,:] /= n
+        self.errors[:,:] /= n
+
+    def split_time(self, t: float, b: float) -> 'TSDataSet':
+        """Split the data into two parts: (time < t-b) and (time > t+b).
+
+        Parameters
+        ----------
+        t : float
+            The threshold time value used to split the data.
+        b : float
+            The buffer time around the threshold `t` to exclude from the split range.
+        """
+        m1 = self.time < t-b
+        m2 = self.time > t+b
+        t1 = TSData(time=self.time[m1], wavelength=self.wavelength, fluxes=self.fluxes[:, m1], errors=self.errors[:, m1])
+        t2 = TSData(time=self.time[m2], wavelength=self.wavelength, fluxes=self.fluxes[:, m2], errors=self.errors[:, m2])
+        return t1 + t2
+
+    def partition_time(self, tlims: tuple[tuple[float,float]]) -> 'TSDataSet':
+        """Partition the data into n segments defined by tlims.
+
+        Parameters
+        ----------
+        tlims
+            The lower and upper time limits for each segment.
+        """
+        masks = [(self.time >= l[0]) & (self.time <= l[1]) for l in tlims]
+        m = masks[0]
+        d = TSData(time=self.time[m], wavelength=self.wavelength, fluxes=self.fluxes[:, m], errors=self.errors[:, m])
+        for m in masks[1:]:
+            d = d + TSData(time=self.time[m], wavelength=self.wavelength, fluxes=self.fluxes[:, m], errors=self.errors[:, m])
+        return d
 
     def crop_wavelength(self, lmin: float, lmax: float) -> None:
         """Crop the data to include only the wavelength range between lmin and lmax.
@@ -214,6 +259,18 @@ class TSData:
         ax2.set_yticks(forward(ax.get_yticks()))
         ax2.yaxis.set_major_formatter('{x:.0f}')
         return fig
+
+    def plot_white(self, ax=None, figsize=None) -> Axes:
+        if ax is None:
+            fig, ax = subplots(figsize=figsize)
+        else:
+            fig = ax.figure
+        tref = floor(self.time.min())
+
+        ax.plot(self.time, self.fluxes.mean(0))
+        ax.xaxis.set_major_formatter(FuncFormatter(lambda x,p: f"{x-tref:.3f}"))
+        setp(ax, xlabel=f'Time - {tref:.0f} [d]', ylabel='Normalized flux', xlim=[self.time[0]-0.003, self.time[-1]+0.003])
+        return ax
 
     def __add__(self, other: 'TSData') -> 'TSDataSet':
         """Combine two transmission spectra along the wavelength axis.
@@ -337,7 +394,7 @@ class TSDataSet:
     def __repr__(self):
         return f"TSDataSet with {self.ngroups} groups: {str(self.groups)}"
 
-    def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None, data: ndarray | None = None):
+    def plot(self, ax=None, vmin: float = None, vmax: float = None, ncols: int = 1, cmap=None, figsize=None, data: ndarray | None = None):
         """Plot all the data sets.
 
         Parameters
@@ -362,7 +419,8 @@ class TSDataSet:
 
         """
         if ax is None:
-            fig, ax = subplots(self.ngroups, 1, figsize=figsize, sharex='all')
+            nrows = int(ceil(self.ngroups / ncols))
+            fig, ax = subplots(nrows, ncols=ncols, figsize=figsize)
         else:
             fig = ax[0].get_figure()
 
