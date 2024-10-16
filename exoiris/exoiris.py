@@ -69,12 +69,7 @@ def load_model(fname: Path | str, name: str | None = None):
         If the file format is invalid or does not match the expected format.
     """
     with pf.open(fname) as hdul:
-        d = []
-        for i in range(hdul[0].header['NDGROUPS']):
-            d.append(TSData(hdul[f'TIME_{i}'].data.astype('d'), hdul[f'WAVELENGTH_{i}'].data.astype('d'),
-                            hdul[f'FLUX_{i}'].data.astype('d'), hdul[f'FERR_{i}'].data.astype('d'),
-                            name=hdul[f'FLUX_{i}'].header['NAME']))
-        data = TSDataSet(d)
+        data = TSDataSet.import_fits(hdul)
 
         if hdul[0].header['LDMODEL'] == 'ldtk':
             filters, teff, logg, metal, dataset = pickle.loads(codecs.decode(json.loads(hdul[0].header['LDTKLD']).encode(), "base64"))
@@ -286,22 +281,22 @@ class ExoIris:
     @property
     def time(self) -> ndarray:
         """Get the concatenated time array."""
-        return self._tsa.time
+        return self._tsa.times
 
     @property
     def wavelength(self) -> ndarray:
         """Get the concatenated wavelength array."""
-        return self._tsa.wavelength
+        return self._tsa.wavelengths
 
     @property
     def fluxes(self) -> ndarray:
         """Get the concatenated flux array."""
-        return self._tsa.flux
+        return self._tsa.fluxes
 
     @property
     def errors(self) -> ndarray:
         """Get the concatenated flux uncertainty array."""
-        return self._tsa.ferr
+        return self._tsa.errors
 
     @property
     def k_knots(self) -> ndarray:
@@ -540,11 +535,11 @@ class ExoIris:
             The figure containing the subplots.
         """
         if axs is None:
-            fig, axs = subplots(self.data.ngroups, 2, figsize=figsize, squeeze=False, constrained_layout=True)
+            fig, axs = subplots(self.data.size, 2, figsize=figsize, squeeze=False, constrained_layout=True)
         else:
             fig = axs[0,0].figure
 
-        for i in range(self.data.ngroups):
+        for i in range(self.data.size):
             self._tsa._original_data[i].plot(ax=axs[i, 0], data=where(self.data[i].ootmask, self._tsa._original_data[i].fluxes, 1))
             self.data[i].plot(ax=axs[i, 1], data=where(self.data[i].ootmask, self.data[i].fluxes, 1))
         return fig
@@ -824,14 +819,14 @@ class ExoIris:
         if isinstance(self.data, TSData):
             nrows = 1
         else:
-            nrows = self.data.ngroups
+            nrows = self.data.size
 
         if ax is None:
             fig, axs = subplots(nrows, 1, squeeze=False)
             axs = axs[:, 0]
         else:
             axs = [ax] if isinstance(ax, Axes) else ax
-            if len(axs) != self.data.ngroups:
+            if len(axs) != self.data.size:
                 raise ValueError("The number of axes must match the number of groups in the data.")
             fig = axs[0].figure
 
@@ -890,7 +885,7 @@ class ExoIris:
         fts, fbelow = fig.subfigures(2, 1, hspace=0.07)
         fres, fldc = fbelow.subfigures(1, 2, wspace=0.05, width_ratios=(0.4, 0.6))
         axts = fts.add_subplot()
-        axs_res = [fres.add_subplot(self.data.ngroups, 1, i+1) for i in range(self.data.ngroups)]
+        axs_res = [fres.add_subplot(self.data.size, 1, i + 1) for i in range(self.data.size)]
         axs_ldc = (fldc.add_subplot(2, 1, 1), fldc.add_subplot(2, 1, 2))
 
         self.plot_transmission_spectrum(result=result, ax=axts, **trs_args)
@@ -900,7 +895,7 @@ class ExoIris:
         fres.suptitle('Residuals')
         fldc.suptitle('Limb darkening')
         setp(axs_ldc[0].get_xticklabels(), visible=False)
-        for i in range(self.data.ngroups-1):
+        for i in range(self.data.size - 1):
             setp(axs_res[i].get_xticklabels(), visible=False)
         setp(axs_ldc[0], xlabel="", ylabel='LDC 1', ylim=(0.18, 1.02))
         setp(axs_ldc[1], ylabel='LDC 2', ylim=(0.18, 1.02))
@@ -942,7 +937,7 @@ class ExoIris:
         pri.header['p'] = self.period
         pri.header['t0'] = self.zero_epoch
         pri.header['t14'] = self.transit_duration
-        pri.header['ndgroups'] = self.data.ngroups
+        pri.header['ndgroups'] = self.data.size
 
         pr = pf.ImageHDU(name='priors')
         priors = [pickle.dumps(p) for p in self.ps]
@@ -959,14 +954,7 @@ class ExoIris:
         k_knots = pf.ImageHDU(self._tsa.k_knots, name='k_knots')
         ld_knots = pf.ImageHDU(self._tsa.ld_knots, name='ld_knots')
         hdul = pf.HDUList([pri, k_knots, ld_knots, pr])
-
-        for i, d in enumerate(self.data.data):
-            flux = pf.ImageHDU(d.fluxes, name=f'flux_{i}')
-            flux.header['name'] = d.name
-            ferr = pf.ImageHDU(d.errors, name=f'ferr_{i}')
-            wave = pf.ImageHDU(d.wavelength, name=f'wavelength_{i}')
-            time = pf.ImageHDU(d.time, name=f'time_{i}')
-            hdul.extend([time, wave, flux, ferr])
+        hdul += self.data.export_fits()
 
         if self._tsa.de is not None:
             de = pf.BinTableHDU(Table(self._tsa._de_population, names=self.ps.names), name='DE')

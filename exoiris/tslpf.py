@@ -143,15 +143,15 @@ class TSLPF(LogPosteriorFunction):
         return self.data.fluxes
 
     @property
-    def time(self) -> list[ndarray]:
-        return self.data.time
+    def times(self) -> list[ndarray]:
+        return self.data.times
 
     @property
-    def wavelength(self) -> list[ndarray]:
-        return self.data.wavelength
+    def wavelengths(self) -> list[ndarray]:
+        return self.data.wavelengths
 
     @property
-    def ferr(self) -> list[ndarray]:
+    def errors(self) -> list[ndarray]:
         return self.data.errors
 
     def set_data(self, data: TSDataSet):
@@ -159,7 +159,7 @@ class TSLPF(LogPosteriorFunction):
         self.data = data
         self.npb: list[int] = [f.shape[0] for f in self.flux]
         self.npt: list[int] = [f.shape[1] for f in self.flux]
-        for i, time in enumerate(self.time):
+        for i, time in enumerate(self.times):
             self.tms[i].set_data(time)
         if self._nm in (NM_GP_FIXED, NM_GP_FREE):
             self._init_gp()
@@ -451,7 +451,7 @@ class TSLPF(LogPosteriorFunction):
         """
         pvp = atleast_2d(pvp)
         ks = [zeros((pvp.shape[0], npb)) for npb in self.npb]
-        for ids in range(self.data.ngroups):
+        for ids in range(self.data.size):
             for ipv in range(pvp.shape[0]):
                 ks[ids][ipv,:] =  splev(self.wavelength[ids], splrep(self.k_knots, pvp[ipv], s=0.0))
         return ks
@@ -467,7 +467,7 @@ class TSLPF(LogPosteriorFunction):
             pvp = atleast_2d(pvp)
             ldk = pvp[:, self._sl_ld].reshape([pvp.shape[0], self.nldc, 2])
             ldp = [zeros((pvp.shape[0], npb, 2)) for npb in self.npb]
-            for ids in range(self.data.ngroups):
+            for ids in range(self.data.size):
                 for ipv in range(pvp.shape[0]):
                     ldp[ids][ipv, :, 0] = splev(self.wavelength[ids], splrep(self.ld_knots, ldk[ipv, :, 0], s=0.0))
                     ldp[ids][ipv, :, 1] = splev(self.wavelength[ids], splrep(self.ld_knots, ldk[ipv, :, 1], s=0.0))
@@ -549,11 +549,11 @@ class TSLPF(LogPosteriorFunction):
         fmod = self.flux_model(pv)
         lnl = zeros(npv)
         if self._nm == NM_WHITE:
-            for i in range(self.data.ngroups):
+            for i in range(self.data.size):
                 lnl += lnlike_normal(self.flux[i], fmod[i], self.ferr[i])
         elif self._nm == NM_GP_FIXED:
             for j in range(npv):
-                for i in range(self.data.ngroups):
+                for i in range(self.data.size):
                     lnl[j] += self._gp[i].log_likelihood(self._gp_flux[i] - fmod[i][j].ravel())
         else:
             raise NotImplementedError("The free GP noise model hasn't been implemented yet.")

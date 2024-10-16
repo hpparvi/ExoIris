@@ -16,7 +16,7 @@
 
 from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
-from numpy import array, log10, diff, sqrt, floor, ceil, arange, newaxis
+from numpy import log10, diff, sqrt, floor, ceil, arange, newaxis
 from scipy.optimize import minimize
 
 from pytransit import BaseLPF, LinearModelBaseline
@@ -26,7 +26,7 @@ from .tslpf import TSLPF
 
 class WhiteLPF(BaseLPF):
     def __init__(self, tsa: TSLPF):
-        times = tsa.time
+        times = tsa.times
         fluxes = [f.mean(0) for f in tsa.flux]
         covs = [(t-t.mean())[:, newaxis] for t in times]
         wnids = arange(len(fluxes))

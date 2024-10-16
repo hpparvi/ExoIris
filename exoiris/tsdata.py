@@ -21,13 +21,14 @@ from collections.abc import Sequence
 
 from typing import Union, Optional
 
+from astropy.io import fits as pf
 from astropy.stats import mad_std
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import LinearLocator, FuncFormatter
 from numpy import isfinite, median, where, concatenate, all, zeros_like, diff, asarray, interp, arange, floor, ndarray, \
-    ceil, newaxis
+    ceil, newaxis, inf, array
 from pytransit.orbits import fold
 from scipy.ndimage import median_filter
 
@@ -52,8 +53,8 @@ class TSData:
         2D Array of error values with a shape ``(nwl, npt)``, where ``nwl`` is the number of wavelengths and ``npt`` the
         number of exposures.
     """
-    def __init__(self, time: Sequence, wavelength: Sequence, fluxes: Sequence, errors: Sequence,
-                 name: str = "", wl_edges : Sequence | None = None, tm_edges : Sequence | None = None):
+    def __init__(self, time: Sequence, wavelength: Sequence, fluxes: Sequence, errors: Sequence, name: str,
+                 noise_group: int = 0, wl_edges : Sequence | None = None, tm_edges : Sequence | None = None) -> None:
         """
         Parameters
         ----------
@@ -67,8 +68,14 @@ class TSData:
         errors
             2D Array of error values with a shape ``(nwl, npt)``, where ``nwl`` is the number of wavelengths and ``npt`` the
             number of exposures.
+        name
+            Name for the data set.
+        noise_group
+            Noise group the data belongs to.
         wl_edges
             Tuple containing left and right wavelength edges for each wavelength element.
+        wl_edges
+            Tuple containing left and right time edges for each exposure.
         """
         time, wavelength, fluxes, errors = asarray(time), asarray(wavelength), asarray(fluxes), asarray(errors)
 
@@ -82,8 +89,8 @@ class TSData:
         self.fluxes = fluxes[m]
         self.errors = errors[m]
         self.ootmask = None
+        self.noise_group = noise_group
         self._update()
-        self.groups = [slice(0, self.nwl)]
 
         if wl_edges is None:
             dwl = zeros_like(self.wavelength)
@@ -104,6 +111,21 @@ class TSData:
         else:
             self._tm_l_edges = tm_edges[0]
             self._tm_r_edges = tm_edges[1]
+
+    def export_fits(self) -> pf.HDUList:
+        time = pf.ImageHDU(self.time, name=f'time_{self.name}')
+        wave = pf.ImageHDU(self.wavelength, name=f'wave_{self.name}')
+        data = pf.ImageHDU(array([self.fluxes, self.errors]), name=f'data_{self.name}')
+        data.header['ngroup'] = self.noise_group
+        return pf.HDUList([time, wave, data])
+
+    @staticmethod
+    def import_fits(name: str, hdul: pf.HDUList) -> 'TSData':
+        time = hdul[f'TIME_{name}'].data
+        wave = hdul[f'WAVE_{name}'].data
+        data = hdul[f'DATA_{name}'].data
+        noise_group = hdul[f'DATA_{name}'].header['NGROUP']
+        return TSData(time, wave, data[0], data[1], name=name, noise_group=noise_group)
 
     def __repr__(self) -> str:
         return f"TSData Name:'{self.name}' [{self.wavelength[0]:.2f} - {self.wavelength[-1]:.2f}] nwl={self.nwl} npt={self.npt}"
@@ -156,9 +178,12 @@ class TSData:
         """
         masks = [(self.time >= l[0]) & (self.time <= l[1]) for l in tlims]
         m = masks[0]
-        d = TSData(time=self.time[m], wavelength=self.wavelength, fluxes=self.fluxes[:, m], errors=self.errors[:, m])
-        for m in masks[1:]:
-            d = d + TSData(time=self.time[m], wavelength=self.wavelength, fluxes=self.fluxes[:, m], errors=self.errors[:, m])
+        d = TSData(time=self.time[m], wavelength=self.wavelength, fluxes=self.fluxes[:, m], errors=self.errors[:, m],
+                   name=f'{self.name}_1')
+        for i, m in enumerate(masks[1:]):
+            d = d + TSData(time=self.time[m], wavelength=self.wavelength,
+                           fluxes=self.fluxes[:, m], errors=self.errors[:, m],
+                           name=f'{self.name}_{i+2}')
         return d
 
     def crop_wavelength(self, lmin: float, lmax: float) -> None:
@@ -367,19 +392,62 @@ class TSData:
 class TSDataSet:
     """A high-level data storage class that can contain multiple TSData objects."""
     def __init__(self, data: Sequence[TSData]):
-        self.data: list[TSData] = list(data)
-        self.time: list[ndarray] = [d.time for d in data]
-        self.fluxes: list[ndarray] = [d.fluxes for d in data]
-        self.errors: list[ndarray] = [d.errors for d in data]
-        self.wavelength: list[ndarray] = [d.wavelength for d in data]
-        self.wlmin = concatenate(self.wavelength).min()
-        self.wlmax = concatenate(self.wavelength).max()
-        self.ngroups: int = len(self.data)
-        self.groups: list = []
-        i = 0
+        self.data: list[TSData] = []
+        self.wlmin: float = inf
+        self.wlmax: float = -inf
         for d in data:
-            self.groups.append(slice(i, i+d.nwl))
-            i += d.nwl
+            self._add_tsdata(d)
+
+    def _add_tsdata(self, d: TSData) -> None:
+        if d.name in self.names:
+            raise ValueError('A TSData object with the same name already exists.')
+        self.data.append(d)
+        self.wlmin = min(self.wlmin, d.wavelength.min())
+        self.wlmax = max(self.wlmax, d.wavelength.max())
+
+    @property
+    def names(self) -> list[str]:
+        return [d.name for d in self.data]
+
+    @property
+    def times(self) -> list[ndarray]:
+        return [d.time for d in self.data]
+
+    @property
+    def wavelengths(self) -> list[ndarray]:
+        return [d.wavelength for d in self.data]
+
+    @property
+    def fluxes(self) -> list[ndarray]:
+        return [d.fluxes for d in self.data]
+
+    @property
+    def errors(self) -> list[ndarray]:
+        return [d.errors for d in self.data]
+
+    @property
+    def size(self):
+        return len(self.data)
+
+    def export_fits(self):
+        ds = pf.ImageHDU(name=f'dataset')
+        ds.header['ndata'] = self.size
+        for i,n in enumerate(self.names):
+            ds.header[f'name_{i}'] = n
+
+        hdul = pf.HDUList([ds])
+        for d in self.data:
+            hdul += d.export_fits()
+        return hdul
+
+    @staticmethod
+    def import_fits(hdul):
+        ds = hdul['DATASET']
+        data = []
+        for i in range(ds.header['NDATA']):
+            name = ds.header[f'NAME_{i}']
+            data.append(TSData.import_fits(name, hdul))
+        return TSDataSet(data)
 
     def calculate_ootmask(self, tc: float, p: float, t14: float):
         for d in self.data:
@@ -389,10 +457,10 @@ class TSDataSet:
         return self.data[index]
 
     def __len__(self) -> int:
-        return self.ngroups
+        return self.size
 
     def __repr__(self):
-        return f"TSDataSet with {self.ngroups} groups: {str(self.groups)}"
+        return f"TSDataSet with {self.size} groups"
 
     def plot(self, ax=None, vmin: float = None, vmax: float = None, ncols: int = 1, cmap=None, figsize=None, data: ndarray | None = None):
         """Plot all the data sets.
@@ -419,7 +487,7 @@ class TSDataSet:
 
         """
         if ax is None:
-            nrows = int(ceil(self.ngroups / ncols))
+            nrows = int(ceil(self.size / ncols))
             fig, ax = subplots(nrows, ncols=ncols, figsize=figsize)
         else:
             fig = ax[0].get_figure()
