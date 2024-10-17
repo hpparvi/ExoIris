@@ -9,3 +9,4 @@ pandas
 xarray
 seaborn
 astropy
+uncertainties
