@@ -14,9 +14,9 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from .exoiris import ExoIris, load_model
-from .tsdata import TSData, TSDataSet
-from .binning import Binning
-from .ldtkld import LDTkLD
+from .exoiris import ExoIris, load_model # noqa
+from .tsdata import TSData, TSDataSet # noqa
+from .binning import Binning # noqa
+from .ldtkld import LDTkLD # noqa
 
-__version__ = '0.9.12'
+__version__ = '0.9.13'
