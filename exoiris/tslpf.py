@@ -16,7 +16,7 @@
 from copy import deepcopy
 from typing import Optional
 
-from ldtk import BoxcarFilter, LDPSetCreator
+from ldtk import BoxcarFilter, LDPSetCreator   # noqa
 from numba import njit, prange
 from numpy import zeros, log, pi, linspace, inf, atleast_2d, newaxis, clip, arctan2, ones, floor, sum, concatenate, \
     sort, ndarray, zeros_like, array, tile, arange, squeeze
@@ -39,14 +39,14 @@ NM_GP_FREE = 2
 noise_models = dict(white=NM_WHITE, fixed_gp=NM_GP_FIXED, free_gp=NM_GP_FREE)
 
 @njit(parallel=True, cache=False)
-def lnlike_normal(o, m, e):
+def lnlike_normal(o, m, e, f):
     if m.ndim == 2:
-        return -sum(log(e)) - 0.5 * o.size * log(2. * pi) - 0.5 * sum((o - m) ** 2 / e ** 2)
+        return -sum(log(f[0]*e)) - 0.5 * o.size * log(2. * pi) - 0.5 * sum((o - m) ** 2 / (f[0]*e) ** 2)
     if m.ndim == 3:
         npv = m.shape[0]
         lnlike = zeros(npv)
         for i in prange(npv):
-            lnlike[i] = -sum(log(e)) - 0.5 * o.size * log(2. * pi) - 0.5 * sum((o - m[i]) ** 2 / e ** 2)
+            lnlike[i] = -sum(log(f[i]*e)) - 0.5 * o.size * log(2. * pi) - 0.5 * sum((o - m[i]) ** 2 / (f[i]*e) ** 2)
         return lnlike
 
 
@@ -168,8 +168,9 @@ class TSLPF(LogPosteriorFunction):
         self.ps = ParameterSet([])
         self._init_p_star()
         self._init_p_orbit()
-        self._init_limb_darkening()
+        self._init_p_limb_darkening()
         self._init_p_radius_ratios()
+        self._init_p_noise()
         self.ps.freeze()
         self.ndim = len(self.ps)
 
@@ -247,7 +248,7 @@ class TSLPF(LogPosteriorFunction):
         pstar = [GParameter('rho', 'stellar density', 'g/cm^3', UP(0.1, 25.0), (0, inf))]
         self.ps.add_global_block('star', pstar)
 
-    def _init_limb_darkening(self) -> None:
+    def _init_p_limb_darkening(self) -> None:
         if isinstance(self.ldmodel, LDTkLD):
             pld = [GParameter('teff', 'stellar TEff', 'K', NP(*self.ldmodel.sc.teff), (0, inf)),
                    GParameter('logg', 'stellar log g', '', NP(*self.ldmodel.sc.logg), (0, inf)),
@@ -278,6 +279,14 @@ class TSLPF(LogPosteriorFunction):
         ps.add_global_block('radius_ratios', pp)
         self._start_rratios = ps.blocks[-1].start
         self._sl_rratios = ps.blocks[-1].slice
+
+    def _init_p_noise(self):
+        ps = self.ps
+        pp = [GParameter(f'sigma_m_{i:02d}', f'Noise group {i} sigma multipler', '',
+                         NP(1.0, 0.01), (0, inf)) for i in range(self.data.n_noise_groups)]
+        ps.add_global_block('white_noise_multipliers', pp)
+        self._start_wnm = ps.blocks[-1].start
+        self._sl_wnm = ps.blocks[-1].slice
 
     def set_ldtk_prior(self, teff, logg, metal, dataset: str = 'visir-lowres', width: float = 50,
                        uncertainty_multiplier: float = 10):
@@ -453,7 +462,7 @@ class TSLPF(LogPosteriorFunction):
         ks = [zeros((pvp.shape[0], npb)) for npb in self.npb]
         for ids in range(self.data.size):
             for ipv in range(pvp.shape[0]):
-                ks[ids][ipv,:] =  splev(self.wavelength[ids], splrep(self.k_knots, pvp[ipv], s=0.0))
+                ks[ids][ipv,:] =  splev(self.wavelengths[ids], splrep(self.k_knots, pvp[ipv], s=0.0))
         return ks
 
     def _eval_ldc(self, pvp):
@@ -469,8 +478,8 @@ class TSLPF(LogPosteriorFunction):
             ldp = [zeros((pvp.shape[0], npb, 2)) for npb in self.npb]
             for ids in range(self.data.size):
                 for ipv in range(pvp.shape[0]):
-                    ldp[ids][ipv, :, 0] = splev(self.wavelength[ids], splrep(self.ld_knots, ldk[ipv, :, 0], s=0.0))
-                    ldp[ids][ipv, :, 1] = splev(self.wavelength[ids], splrep(self.ld_knots, ldk[ipv, :, 1], s=0.0))
+                    ldp[ids][ipv, :, 0] = splev(self.wavelengths[ids], splrep(self.ld_knots, ldk[ipv, :, 0], s=0.0))
+                    ldp[ids][ipv, :, 1] = splev(self.wavelengths[ids], splrep(self.ld_knots, ldk[ipv, :, 1], s=0.0))
             return ldp
 
     def transit_model(self, pv, copy=True):
@@ -547,10 +556,11 @@ class TSLPF(LogPosteriorFunction):
         pv = atleast_2d(pv)
         npv = pv.shape[0]
         fmod = self.flux_model(pv)
+        wn_multipliers = pv[:, self._sl_wnm]
         lnl = zeros(npv)
         if self._nm == NM_WHITE:
-            for i in range(self.data.size):
-                lnl += lnlike_normal(self.flux[i], fmod[i], self.ferr[i])
+            for i, d in enumerate(self.data):
+                lnl += lnlike_normal(d.fluxes, fmod[i], d.errors, wn_multipliers[:, d.ngid])
         elif self._nm == NM_GP_FIXED:
             for j in range(npv):
                 for i in range(self.data.size):

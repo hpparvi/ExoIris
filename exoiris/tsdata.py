@@ -17,6 +17,7 @@
 import warnings
 import numba
 
+import pandas as pd
 from collections.abc import Sequence
 
 from typing import Union, Optional
@@ -28,7 +29,7 @@ from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import LinearLocator, FuncFormatter
 from numpy import isfinite, median, where, concatenate, all, zeros_like, diff, asarray, interp, arange, floor, ndarray, \
-    ceil, newaxis, inf, array
+    ceil, newaxis, inf, array, ones, unique
 from pytransit.orbits import fold
 from scipy.ndimage import median_filter
 
@@ -54,7 +55,8 @@ class TSData:
         number of exposures.
     """
     def __init__(self, time: Sequence, wavelength: Sequence, fluxes: Sequence, errors: Sequence, name: str,
-                 noise_group: int = 0, wl_edges : Sequence | None = None, tm_edges : Sequence | None = None) -> None:
+                 noise_group: str = 'a', wl_edges : Sequence | None = None, tm_edges : Sequence | None = None,
+                 ootmask: ndarray | None = None) -> None:
         """
         Parameters
         ----------
@@ -82,14 +84,19 @@ class TSData:
         if fluxes.shape[0] != wavelength.size:
             raise ValueError("The size of the flux array's first axis must match the size of the wavelength array.")
 
+        if ootmask is not None and ootmask.size != time.size:
+            raise ValueError("The size of the out-of-transit mask array must match the size of the time array.")
+
         m = all(isfinite(fluxes), axis=1)
-        self.name = name
-        self.time = time.copy()
-        self.wavelength = wavelength[m]
-        self.fluxes = fluxes[m]
-        self.errors = errors[m]
-        self.ootmask = None
-        self.noise_group = noise_group
+        self.name: str = name
+        self.time: ndarray = time.copy()
+        self.wavelength: ndarray = wavelength[m]
+        self.fluxes: ndarray = fluxes[m]
+        self.errors: ndarray = errors[m]
+        self.ootmask: ndarray = ootmask if ootmask is not None else ones(time.size, dtype=bool)
+        self.ngid: int = 0
+        self._noise_group: str = noise_group
+        self._dataset: 'TSDataSet' | None = None
         self._update()
 
         if wl_edges is None:
@@ -116,19 +123,31 @@ class TSData:
         time = pf.ImageHDU(self.time, name=f'time_{self.name}')
         wave = pf.ImageHDU(self.wavelength, name=f'wave_{self.name}')
         data = pf.ImageHDU(array([self.fluxes, self.errors]), name=f'data_{self.name}')
+        ootm = pf.ImageHDU(self.ootmask.astype(int), name=f'ootm_{self.name}')
         data.header['ngroup'] = self.noise_group
-        return pf.HDUList([time, wave, data])
+        return pf.HDUList([time, wave, data, ootm])
 
     @staticmethod
     def import_fits(name: str, hdul: pf.HDUList) -> 'TSData':
         time = hdul[f'TIME_{name}'].data
         wave = hdul[f'WAVE_{name}'].data
         data = hdul[f'DATA_{name}'].data
+        ootm = hdul[f'OOTM_{name}'].data
         noise_group = hdul[f'DATA_{name}'].header['NGROUP']
-        return TSData(time, wave, data[0], data[1], name=name, noise_group=noise_group)
+        return TSData(time, wave, data[0], data[1], name=name, noise_group=noise_group, ootmask=ootm)
 
     def __repr__(self) -> str:
         return f"TSData Name:'{self.name}' [{self.wavelength[0]:.2f} - {self.wavelength[-1]:.2f}] nwl={self.nwl} npt={self.npt}"
+
+    @property
+    def noise_group(self) -> str:
+        return self._noise_group
+
+    @noise_group.setter
+    def noise_group(self, ng: str) -> None:
+        self._noise_group = ng
+        if self._dataset is not None:
+            self._dataset._update_nids()
 
     def calculate_ootmask(self, t0: float, p: float, t14: float):
         phase = fold(self.time, p, t0)
@@ -395,15 +414,28 @@ class TSDataSet:
         self.data: list[TSData] = []
         self.wlmin: float = inf
         self.wlmax: float = -inf
+        self.tmin: float = inf
+        self.tmax: float = -inf
+        self.ngids: ndarray = array([])
         for d in data:
-            self._add_tsdata(d)
+            self._add_data(d)
 
-    def _add_tsdata(self, d: TSData) -> None:
+    def _add_data(self, d: TSData) -> None:
         if d.name in self.names:
             raise ValueError('A TSData object with the same name already exists.')
+        d._dataset = self
         self.data.append(d)
+        self._update_nids()
         self.wlmin = min(self.wlmin, d.wavelength.min())
         self.wlmax = max(self.wlmax, d.wavelength.max())
+        self.tmin = min(self.tmin, d.time.min())
+        self.tmax = max(self.tmax, d.time.max())
+
+    def _update_nids(self):
+        ngs =  pd.Categorical(self.noise_groups)
+        self.ngids = ngs.codes.astype(int)
+        for i,d in enumerate(self.data):
+            d.ngid = self.ngids[i]
 
     @property
     def names(self) -> list[str]:
@@ -426,10 +458,18 @@ class TSDataSet:
         return [d.errors for d in self.data]
 
     @property
-    def size(self):
+    def noise_groups(self) -> list[str]:
+        return [d.noise_group for d in self.data]
+
+    @property
+    def n_noise_groups(self) -> int:
+        return len(set(self.noise_groups))
+
+    @property
+    def size(self) -> int:
         return len(self.data)
 
-    def export_fits(self):
+    def export_fits(self) -> pf.HDUList:
         ds = pf.ImageHDU(name=f'dataset')
         ds.header['ndata'] = self.size
         for i,n in enumerate(self.names):
@@ -441,7 +481,7 @@ class TSDataSet:
         return hdul
 
     @staticmethod
-    def import_fits(hdul):
+    def import_fits(hdul) -> 'TSDataSet':
         ds = hdul['DATASET']
         data = []
         for i in range(ds.header['NDATA']):

@@ -128,17 +128,16 @@ class ExoIris:
     def __init__(self, name: str, ldmodel, data: TSDataSet | TSData, nk: int = 50, nldc: int = 10, nthreads: int = 1,
                  tmpars: dict | None = None, noise_model: str = 'white'):
         data = TSDataSet([data]) if isinstance(data, TSData) else data
-        self._tsa = TSLPF(name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars, noise_model=noise_model)
-        self._wa = None
-        self.nthreads = nthreads
+        self._tsa: TSLPF = TSLPF(name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars, noise_model=noise_model)
+        self._wa: WhiteLPF | None = None
+        self.nthreads: int = nthreads
         self.de: DiffEvol | None = None
         self.sampler = None
 
         self.period: float | None = None
         self.zero_epoch: float | None = None
         self.transit_duration: float | None= None
-
-        self._tref = floor(concatenate(self.time).min())
+        self._tref = floor(self.data.tmin)
 
     def lnposterior(self, pvp: ndarray) -> ndarray:
         """Calculate the log posterior probability for a single parameter vector or an array of parameter vectors.
@@ -279,26 +278,6 @@ class ExoIris:
         return self._tsa.data
 
     @property
-    def time(self) -> ndarray:
-        """Get the concatenated time array."""
-        return self._tsa.times
-
-    @property
-    def wavelength(self) -> ndarray:
-        """Get the concatenated wavelength array."""
-        return self._tsa.wavelengths
-
-    @property
-    def fluxes(self) -> ndarray:
-        """Get the concatenated flux array."""
-        return self._tsa.fluxes
-
-    @property
-    def errors(self) -> ndarray:
-        """Get the concatenated flux uncertainty array."""
-        return self._tsa.errors
-
-    @property
     def k_knots(self) -> ndarray:
         """Get the radius ratio (k) knots."""
         return self._tsa.k_knots
@@ -319,8 +298,8 @@ class ExoIris:
         return self._tsa.nldc
 
     @property
-    def npb(self) -> int:
-        """Get the number of passbands."""
+    def npb(self) -> list[int]:
+        """Get the number of passbands for each data set."""
         return self._tsa.npb
 
     @property
@@ -329,8 +308,8 @@ class ExoIris:
         return self._tsa.ldmodel
 
     @property
-    def gp(self) -> GaussianProcess:
-        """Get the Gaussian Process (GP) model."""
+    def gp(self) -> list[GaussianProcess]:
+        """Get the Gaussian Process (GP) models."""
         return self._tsa._gp
 
     @property
@@ -537,7 +516,7 @@ class ExoIris:
         if axs is None:
             fig, axs = subplots(self.data.size, 2, figsize=figsize, squeeze=False, constrained_layout=True)
         else:
-            fig = axs[0,0].figure
+            fig = axs[0, 0].figure
 
         for i in range(self.data.size):
             self._tsa._original_data[i].plot(ax=axs[i, 0], data=where(self.data[i].ootmask, self._tsa._original_data[i].fluxes, 1))
@@ -661,7 +640,7 @@ class ExoIris:
 
         fig, ax = subplots() if ax is None else (ax.get_figure(), ax)
 
-        wavelength = concatenate(self.wavelength)
+        wavelength = concatenate(self.data.wavelengths)
         ix = argsort(wavelength)
 
         if result == 'fit':
@@ -735,7 +714,7 @@ class ExoIris:
         if result == 'mcmc' and self._tsa.sampler is None:
             raise ValueError("Cannot plot posterior solution before running the MCMC sampler.")
 
-        wavelength = concatenate(self.wavelength)
+        wavelength = concatenate(self.data.wavelengths)
         ix = argsort(wavelength)
 
         if result == 'fit':
@@ -915,7 +894,7 @@ class ExoIris:
             raise ValueError("Cannot calculate posterior transmission spectrum before running the MCMC sampler.")
 
         pvp = self.posterior_samples
-        wls = concatenate(self.data.wavelength)
+        wls = concatenate(self.data.wavelengths)
         ks = concatenate(self._tsa._eval_k(pvp.values[:, self._tsa._sl_rratios]), axis=1)
         ar = ks**2
         ix = argsort(wls)
