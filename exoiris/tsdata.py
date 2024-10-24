@@ -30,7 +30,7 @@ from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import LinearLocator, FuncFormatter
 from numpy import isfinite, median, where, concatenate, all, zeros_like, diff, asarray, interp, arange, floor, ndarray, \
-    ceil, newaxis, inf, array, ones, unique, poly1d, polyfit
+    ceil, newaxis, inf, array, ones, unique, poly1d, polyfit, nanpercentile
 from numpy.ma.extras import atleast_2d
 from pytransit.orbits import fold
 from scipy.ndimage import median_filter
@@ -341,7 +341,8 @@ class TSData:
         fe = mad_std(self.fluxes, axis=0)
         self.fluxes = where(abs(self.fluxes - fm) / fe < sigma, self.fluxes, median_filter(self.fluxes, 5))
 
-    def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None, data=None) -> Figure:
+    def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None, data=None,
+             plims: tuple[float, float] | None = None) -> Figure:
         """Plot the spectroscopic light curves as a 2D image.
 
         Plot the spectroscopic light curves as a 2D image with time on the x-axis, wavelength and light curve index
@@ -367,6 +368,9 @@ class TSData:
         data
             Dataset to plot instead of self.fluxes.
 
+        plims
+            Percentile flux limits. Overrides vmin and vmax.
+
         Returns
         -------
         Figure
@@ -388,6 +392,9 @@ class TSData:
             return interp(y, arange(self.npt), self.time-tref)
 
         data = data if data is not None else self.fluxes
+        if plims is not None:
+            vmin, vmax = nanpercentile(data, plims)
+
         ax.pcolormesh(self.time - tref, self.wavelength, data, vmin=vmin, vmax=vmax, cmap=cmap)
 
         if self.ephemeris is not None:
