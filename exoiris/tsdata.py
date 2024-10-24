@@ -163,7 +163,7 @@ class TSData:
             self.ootmask = abs(phase) > 0.502 * t14
         elif elims is not None:
             self.ootmask = ones(self.fluxes.shape, bool)
-            self.ootmask[:, *elims] = False
+            self.ootmask[:, elims[0]:elims[1]] = False
         else:
             raise ValueError("Transit masking requires either t0, pp, and t14, or transit limits in exposure indices.")
 
