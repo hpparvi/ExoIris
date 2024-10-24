@@ -836,7 +836,9 @@ class ExoIris:
             fig.tight_layout()
         return fig
 
-    def plot_fit(self, result: Optional[str] = None, figsize: Optional[tuple[float, float]]=None, res_args=None, trs_args=None) -> Figure:
+    def plot_fit(self, result: Optional[str] = None, figsize: Optional[tuple[float, float]]=None,
+                 height_ratios=None,
+                 res_args=None, trs_args=None) -> Figure:
         """Plot either the best-fit model or the posterior model.
 
         Parameters
@@ -861,7 +863,7 @@ class ExoIris:
             res_args = {}
 
         fig = figure(layout='constrained', figsize=figsize)
-        fts, fbelow = fig.subfigures(2, 1, hspace=0.07)
+        fts, fbelow = fig.subfigures(2, 1, hspace=0.07, height_ratios=height_ratios)
         fres, fldc = fbelow.subfigures(1, 2, wspace=0.05, width_ratios=(0.4, 0.6))
         axts = fts.add_subplot()
         axs_res = [fres.add_subplot(self.data.size, 1, i + 1) for i in range(self.data.size)]
