@@ -30,6 +30,7 @@ from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import LinearLocator, FuncFormatter
 from numpy import isfinite, median, where, concatenate, all, zeros_like, diff, asarray, interp, arange, floor, ndarray, \
     ceil, newaxis, inf, array, ones, unique
+from numpy.ma.extras import atleast_2d
 from pytransit.orbits import fold
 from scipy.ndimage import median_filter
 
@@ -183,8 +184,10 @@ class TSData:
         """
         m1 = self.time < t-b
         m2 = self.time > t+b
-        t1 = TSData(time=self.time[m1], wavelength=self.wavelength, fluxes=self.fluxes[:, m1], errors=self.errors[:, m1])
-        t2 = TSData(time=self.time[m2], wavelength=self.wavelength, fluxes=self.fluxes[:, m2], errors=self.errors[:, m2])
+        t1 = TSData(time=self.time[m1], wavelength=self.wavelength, fluxes=self.fluxes[:, m1], errors=self.errors[:, m1],
+                    noise_group=self.noise_group)
+        t2 = TSData(time=self.time[m2], wavelength=self.wavelength, fluxes=self.fluxes[:, m2], errors=self.errors[:, m2],
+                    noise_group=self.noise_group)
         return t1 + t2
 
     def partition_time(self, tlims: tuple[tuple[float,float]]) -> 'TSDataSet':
@@ -198,11 +201,11 @@ class TSData:
         masks = [(self.time >= l[0]) & (self.time <= l[1]) for l in tlims]
         m = masks[0]
         d = TSData(time=self.time[m], wavelength=self.wavelength, fluxes=self.fluxes[:, m], errors=self.errors[:, m],
-                   name=f'{self.name}_1')
+                   name=f'{self.name}_1', noise_group=self.noise_group)
         for i, m in enumerate(masks[1:]):
             d = d + TSData(time=self.time[m], wavelength=self.wavelength,
                            fluxes=self.fluxes[:, m], errors=self.errors[:, m],
-                           name=f'{self.name}_{i+2}')
+                           name=f'{self.name}_{i+2}', noise_group=self.noise_group)
         return d
 
     def crop_wavelength(self, lmin: float, lmax: float) -> None:
@@ -225,6 +228,28 @@ class TSData:
         self.errors = self.errors[m]
         self._wl_l_edges = self._wl_l_edges[m]
         self._wl_r_edges = self._wl_r_edges[m]
+        self._update()
+
+    def crop_time(self, tmin: float, tmax: float) -> None:
+        """Crop the data to include only the time range between lmin and lmax.
+
+        Parameters
+        ----------
+        tmin
+            The minimum time value to crop.
+        tmax
+            The maximum time value to crop.
+
+        Note
+        ----
+        The data will be modified in place.
+        """
+        m = (self.time > tmin) & (self.time < tmax)
+        self.time = self.time[m]
+        self.fluxes = self.fluxes[:, m]
+        self.errors = self.errors[:, m]
+        self._tm_l_edges = self._tm_l_edges[m]
+        self._tm_r_edges = self._tm_r_edges[m]
         self._update()
 
     def remove_outliers(self, sigma: float = 5.0):
@@ -316,7 +341,7 @@ class TSData:
         setp(ax, xlabel=f'Time - {tref:.0f} [d]', ylabel='Normalized flux', xlim=[self.time[0]-0.003, self.time[-1]+0.003])
         return ax
 
-    def __add__(self, other: 'TSData') -> 'TSDataSet':
+    def __add__(self, other: Union['TSData', 'TSDataSet']) -> 'TSDataSet':
         """Combine two transmission spectra along the wavelength axis.
 
         Parameters
@@ -330,7 +355,10 @@ class TSData:
             The resulting TSDataSet object combining the two TSData objects.
 
         """
-        return TSDataSet([self, other])
+        if isinstance(other, TSData):
+            return TSDataSet([self, other])
+        else:
+            return TSDataSet([self]) + other
 
     def bin_wavelength(self, binning: Optional[Union[Binning, CompoundBinning]] = None,
                        nb: Optional[int] = None, bw: Optional[float] = None, r: Optional[float] = None,
@@ -367,7 +395,7 @@ class TSData:
             if not all(isfinite(be)):
                 warnings.warn('Error estimation failed for some bins, check the error array.')
             return TSData(self.time, binning.bins.mean(1), bf, be, wl_edges=(binning.bins[:,0], binning.bins[:,1]),
-                          name=self.name, tm_edges=(self._tm_l_edges, self._tm_r_edges))
+                          name=self.name, tm_edges=(self._tm_l_edges, self._tm_r_edges), noise_group=self.noise_group)
 
 
     def bin_time(self, binning: Optional[Union[Binning, CompoundBinning]] = None,
@@ -405,7 +433,7 @@ class TSData:
             return TSData(binning.bins.mean(1), self.wavelength, bf.T, be.T,
                           wl_edges=(self._wl_l_edges, self._wl_r_edges),
                           tm_edges=(binning.bins[:,0], binning.bins[:,1]),
-                          name=self.name)
+                          name=self.name, noise_group=self.noise_group)
 
 
 class TSDataSet:
@@ -433,6 +461,7 @@ class TSDataSet:
 
     def _update_nids(self):
         ngs =  pd.Categorical(self.noise_groups)
+        self.unique_noise_groups = list(ngs.categories)
         self.ngids = ngs.codes.astype(int)
         for i,d in enumerate(self.data):
             d.ngid = self.ngids[i]
@@ -502,13 +531,13 @@ class TSDataSet:
     def __repr__(self):
         return f"TSDataSet with {self.size} groups"
 
-    def plot(self, ax=None, vmin: float = None, vmax: float = None, ncols: int = 1, cmap=None, figsize=None, data: ndarray | None = None):
+    def plot(self, axs=None, vmin: float = None, vmax: float = None, ncols: int = 1, cmap=None, figsize=None, data: ndarray | None = None):
         """Plot all the data sets.
 
         Parameters
         ----------
-        ax
-            The Axes object used for plotting. If None, a new set of subplots will be created.
+        axs
+            A 2D ndarray of Axes used for plotting. If None, a new set of subplots will be created.
         vmin
             The minimum value for the color mapping. Default is None.
         vmax
@@ -526,20 +555,21 @@ class TSDataSet:
             The Figure object that contains the subplots.
 
         """
-        if ax is None:
+        if axs is None:
             nrows = int(ceil(self.size / ncols))
-            fig, ax = subplots(nrows, ncols=ncols, figsize=figsize)
+            fig, axs = subplots(nrows, ncols=ncols, figsize=figsize, squeeze=False)
         else:
-            fig = ax[0].get_figure()
+            axs = atleast_2d(axs)
+            fig = axs.flat[0].get_figure()
 
         if data is None:
-            for i, a in enumerate(ax):
-                self.data[i].plot(ax=a, vmin=vmin, vmax=vmax, cmap=cmap)
+            for i in range(self.size):
+                self.data[i].plot(ax=axs.flat[i], vmin=vmin, vmax=vmax, cmap=cmap)
         else:
-            for i, a in enumerate(ax):
-                self.data[i].plot(ax=a, vmin=vmin, vmax=vmax, cmap=cmap, data=data[self.groups[i], :])
+            for i in range(self.size):
+                self.data[i].plot(ax=axs.flat[i], vmin=vmin, vmax=vmax, cmap=cmap, data=data[i])
 
-        setp(ax[:-1], xlabel='')
+        setp(axs[:-1, :], xlabel='')
         return fig
 
     def __add__(self, other):

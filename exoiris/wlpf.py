@@ -26,12 +26,13 @@ from .tslpf import TSLPF
 
 class WhiteLPF(BaseLPF):
     def __init__(self, tsa: TSLPF):
-        times = tsa.times
-        fluxes = [f.mean(0) for f in tsa.flux]
+        self.tsa = tsa
+        times = tsa.data.times
+        fluxes = [f.mean(0) for f in tsa.data.fluxes]
         covs = [(t-t.mean())[:, newaxis] for t in times]
-        wnids = arange(len(fluxes))
 
-        super().__init__('white', ['white'], times, fluxes, covariates=covs, wnids=wnids)
+        super().__init__('white', tsa.data.unique_noise_groups, times, fluxes, covariates=covs, wnids=tsa.data.ngids,
+                         pbids=tsa.data.ngids)
         self.set_prior('tc', tsa.ps[tsa.ps.find_pid('tc')].prior)
         self.set_prior('p', tsa.ps[tsa.ps.find_pid('p')].prior)
         self.set_prior('rho', tsa.ps[tsa.ps.find_pid('rho')].prior)
@@ -41,7 +42,9 @@ class WhiteLPF(BaseLPF):
             self.set_prior('k2', 'UP', pr.a**2, pr.b**2)
         if 'Normal' in str(pr.__class__):
             self.set_prior('k2', 'NP', pr.mean**2, pr.std**2)
-        self.set_prior('wn_loge_0', 'NP', log10(diff(self.ofluxa).std() / sqrt(2)), 1e-5)
+        ngids = tsa.data.ngids[self.lcids]
+        for i in range(tsa.data.n_noise_groups):
+            self.set_prior(f'wn_loge_{i}', 'NP', log10(diff(self.ofluxa[ngids==i]).std() / sqrt(2)), 0.1)
 
     def _init_baseline(self):
         self._add_baseline_model(LinearModelBaseline(self))
