@@ -492,13 +492,8 @@ class ExoIris:
         `deg` to the out-of-transit data points and divides the fluxes by the fitted polynomial evaluated
         at each time point.
         """
-        if deg > 1:
-            raise ValueError("The degree of the fitted polynomial ('deg') should be 0 or 1. Higher degrees are not allowed because they could affect the transit depths.")
         for d in self.data:
-            for ipb in range(d.nwl):
-                pl = poly1d(polyfit(d.time[d.ootmask], d.fluxes[ipb, d.ootmask], deg=deg))(d.time)
-                d.fluxes[ipb, :] /= pl
-                d.errors[ipb, :] /= pl
+            d.normalize_to_poly(deg)
 
     def plot_baseline(self, axs: Optional[Sequence[Axes]] = None, figsize=None) -> Figure:
         """Plot the out-of-transit spectroscopic light curves before and after the normalization.
