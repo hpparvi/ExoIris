@@ -156,18 +156,37 @@ class TSData:
             self._dataset._update_nids()
 
     def mask_transit(self, t0: float | None = None, p: float | None = None, t14: float | None = None,
-                     elims: tuple[int, int] | None = None) -> None:
-        if t0 and p and t14:
-            self.ephemeris = Ephemeris(t0, p, t14)
-            phase = fold(self.time, p, t0)
-            self.ootmask = abs(phase) > 0.502 * t14
+                     ephemeris : Ephemeris | None = None, elims: tuple[int, int] | None = None) -> None:
+        """Create a transit mask.
+
+        Parameters
+        ----------
+        t0 : float | None
+            The zero-epoch time. Default is None.
+        p : float | None
+            The orbital period of the planet. Default is None.
+        t14 : float | None
+            The duration of the full transit in days. Default is None.
+        ephemeris : Ephemeris | None
+            The ephemeris object containing transit timing information. Default is None.
+        elims : tuple[int, int] | None
+            The limits of the region to mask in exposure indices. Default is None.
+        """
+        if (t0 and p and t14) or ephemeris is not None:
+            if ephemeris is not None:
+                self.ephemeris = ephemeris
+            else:
+                self.ephemeris = Ephemeris(t0, p, t14)
+            phase = fold(self.time, self.ephemeris.period, self.ephemeris.zero_epoch)
+            self.ootmask = abs(phase) > 0.502 * self.ephemeris.duration
         elif elims is not None:
             self.ootmask = ones(self.fluxes.shape, bool)
             self.ootmask[:, elims[0]:elims[1]] = False
         else:
-            raise ValueError("Transit masking requires either t0, pp, and t14, or transit limits in exposure indices.")
+            raise ValueError("Transit masking requires either t0, pp, and t14, ephemeris, or transit limits in exposure indices.")
 
-    def calculate_ootmask(self, t0: float, p: float, t14: float):
+    def calculate_ootmask(self, t0: float | None = None, p: float | None = None, t14: float | None = None):
+        self.ephemeris = Ephemeris(t0, p, t14)
         phase = fold(self.time, p, t0)
         self.ootmask = abs(phase) > 0.502 * t14
 
@@ -252,10 +271,10 @@ class TSData:
         """
         m1 = self.time < t-b
         m2 = self.time > t+b
-        t1 = TSData(time=self.time[m1], wavelength=self.wavelength, fluxes=self.fluxes[:, m1], errors=self.errors[:, m1],
-                    noise_group=self.noise_group, ootmask=self.ootmask, ephemeris=self.ephemeris)
-        t2 = TSData(time=self.time[m2], wavelength=self.wavelength, fluxes=self.fluxes[:, m2], errors=self.errors[:, m2],
-                    noise_group=self.noise_group, ootmask=self.ootmask, ephemeris=self.ephemeris)
+        t1 = TSData(name=f'{self.name}_a', time=self.time[m1], wavelength=self.wavelength, fluxes=self.fluxes[:, m1], errors=self.errors[:, m1],
+                    noise_group=self.noise_group, ootmask=self.ootmask[m1], ephemeris=self.ephemeris)
+        t2 = TSData(name=f'{self.name}_b', time=self.time[m2], wavelength=self.wavelength, fluxes=self.fluxes[:, m2], errors=self.errors[:, m2],
+                    noise_group=self.noise_group, ootmask=self.ootmask[m2], ephemeris=self.ephemeris)
         return t1 + t2
 
     def partition_time(self, tlims: tuple[tuple[float,float]]) -> 'TSDataSet':
@@ -268,13 +287,13 @@ class TSData:
         """
         masks = [(self.time >= l[0]) & (self.time <= l[1]) for l in tlims]
         m = masks[0]
-        d = TSData(time=self.time[m], wavelength=self.wavelength, fluxes=self.fluxes[:, m], errors=self.errors[:, m],
-                   name=f'{self.name}_1', noise_group=self.noise_group, ootmask=self.ootmask, ephemeris=self.ephemeris)
+        d = TSData(name=f'{self.name}_1', time=self.time[m], wavelength=self.wavelength, fluxes=self.fluxes[:, m],
+                   errors=self.errors[:, m], noise_group=self.noise_group, ootmask=self.ootmask[m], ephemeris=self.ephemeris)
         for i, m in enumerate(masks[1:]):
-            d = d + TSData(time=self.time[m], wavelength=self.wavelength,
+            d = d + TSData(name=f'{self.name}_{i+2}', time=self.time[m], wavelength=self.wavelength,
                            fluxes=self.fluxes[:, m], errors=self.errors[:, m],
-                           name=f'{self.name}_{i+2}', noise_group=self.noise_group,
-                           ootmask=self.ootmask, ephemeris=self.ephemeris)
+                           noise_group=self.noise_group,
+                           ootmask=self.ootmask[m], ephemeris=self.ephemeris)
         return d
 
     def crop_wavelength(self, lmin: float, lmax: float) -> None:
@@ -490,7 +509,7 @@ class TSData:
 
 
     def bin_time(self, binning: Optional[Union[Binning, CompoundBinning]] = None,
-                       nb: Optional[int] = None, bw: Optional[float] = None, r: Optional[float] = None,
+                       nb: Optional[int] = None, bw: Optional[float] = None,
                        estimate_errors: bool = False):
         """Bin the data along the time axis.
 
@@ -504,7 +523,7 @@ class TSData:
         nb
             Number of bins. Default value is None.
         bw
-            Bin width. Default value is None.
+            Bin width in seconds. Default value is None.
         r
             Bin resolution. Default value is None.
         estimate_errors
@@ -518,15 +537,17 @@ class TSData:
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', numba.NumbaPerformanceWarning)
             if binning is None:
-                binning = Binning(self.time.min(), self.time.max(), nb=nb, bw=bw, r=r)
+                binning = Binning(self.time.min(), self.time.max(), nb=nb, bw=bw/(24*60*60) if bw is not None else None)
             bf, be = bin2d(self.fluxes.T, self.errors.T, self._tm_l_edges, self._tm_r_edges,
                            binning.bins, estimate_errors=estimate_errors)
-            return TSData(binning.bins.mean(1), self.wavelength, bf.T, be.T,
+            d = TSData(binning.bins.mean(1), self.wavelength, bf.T, be.T,
                           wl_edges=(self._wl_l_edges, self._wl_r_edges),
                           tm_edges=(binning.bins[:,0], binning.bins[:,1]),
                           name=self.name, noise_group=self.noise_group,
-                          ootmask=self.ootmask, ephemeris=self.ephemeris)
-
+                          ephemeris=self.ephemeris)
+            if self.ephemeris is not None:
+                d.mask_transit(ephemeris=self.ephemeris)
+            return d
 
 class TSDataSet:
     """A high-level data storage class that can contain multiple TSData objects."""
