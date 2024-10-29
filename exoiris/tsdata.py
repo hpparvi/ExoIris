@@ -29,8 +29,8 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import LinearLocator, FuncFormatter
-from numpy import isfinite, median, where, concatenate, all, zeros_like, diff, asarray, interp, arange, floor, ndarray, \
-    ceil, newaxis, inf, array, ones, unique, poly1d, polyfit, nanpercentile
+from numpy import isfinite, median, where, all, zeros_like, diff, asarray, interp, arange, floor, ndarray, \
+    ceil, newaxis, inf, array, ones, poly1d, polyfit, nanpercentile
 from numpy.ma.extras import atleast_2d
 from pytransit.orbits import fold
 from scipy.ndimage import median_filter
@@ -100,7 +100,7 @@ class TSData:
         self.ngid: int = 0
         self.ephemeris: Ephemeris | None = ephemeris
         self._noise_group: str = noise_group
-        self._dataset: 'TSDataSet' | None = None
+        self._dataset: Optional['TSDataSet'] = None
         self._update()
 
         if wl_edges is None:
@@ -124,6 +124,13 @@ class TSData:
             self._tm_r_edges = tm_edges[1]
 
     def export_fits(self) -> pf.HDUList:
+        """Generate a HDUList containing HDUs for time, wavelength, data (fluxes and errors), and out-of-transit mask.
+
+            Returns
+            -------
+            astropy.io.fits.HDUList
+                An HDUList object that contains the time, wavelength, data, and ootmask HDUs.
+        """
         time = pf.ImageHDU(self.time, name=f'time_{self.name}')
         wave = pf.ImageHDU(self.wavelength, name=f'wave_{self.name}')
         data = pf.ImageHDU(array([self.fluxes, self.errors]), name=f'data_{self.name}')
@@ -134,6 +141,19 @@ class TSData:
 
     @staticmethod
     def import_fits(name: str, hdul: pf.HDUList) -> 'TSData':
+        """Import a data set from a FITS file.
+
+        Parameters
+        ----------
+        name
+            The name of the dataset to be imported from the FITS file.
+        hdul
+            The HDU list object containing the FITS file data.
+
+        Returns
+        -------
+        TSData
+        """
         time = hdul[f'TIME_{name}'].data
         wave = hdul[f'WAVE_{name}'].data
         data = hdul[f'DATA_{name}'].data
@@ -147,6 +167,7 @@ class TSData:
 
     @property
     def noise_group(self) -> str:
+        """Noise group name."""
         return self._noise_group
 
     @noise_group.setter
@@ -156,8 +177,8 @@ class TSData:
             self._dataset._update_nids()
 
     def mask_transit(self, t0: float | None = None, p: float | None = None, t14: float | None = None,
-                     ephemeris : Ephemeris | None = None, elims: tuple[int, int] | None = None) -> None:
-        """Create a transit mask.
+                     ephemeris : Ephemeris | None = None, elims: tuple[int, int] | None = None) -> 'TSData':
+        """Create a transit mask based on a given ephemeris or exposure index limits.
 
         Parameters
         ----------
@@ -184,7 +205,9 @@ class TSData:
             self.ootmask[:, elims[0]:elims[1]] = False
         else:
             raise ValueError("Transit masking requires either t0, pp, and t14, ephemeris, or transit limits in exposure indices.")
+        return self
 
+    @deprecated('0.9', alternative='mask_transit')
     def calculate_ootmask(self, t0: float | None = None, p: float | None = None, t14: float | None = None):
         self.ephemeris = Ephemeris(t0, p, t14)
         phase = fold(self.time, p, t0)
@@ -196,11 +219,11 @@ class TSData:
         self.npt = self.time.size
         self.wllims = self.wavelength.min(), self.wavelength.max()
 
-    @deprecated(0.9, alternative='normalize_to_poly')
-    def normalize_baseline(self, deg: int = 1) -> None:
+    @deprecated('0.9', alternative='normalize_to_poly')
+    def normalize_baseline(self, deg: int = 1) -> 'TSData':
         return self.normalize_to_poly(deg)
 
-    def normalize_to_poly(self, deg: int = 1) -> None:
+    def normalize_to_poly(self, deg: int = 1) -> 'TSData':
         """Normalize the baseline flux for each spectroscopic light curve.
 
         Normalize the baseline flux using a low-order polynomial fitted to the out-of-transit
@@ -235,8 +258,9 @@ class TSData:
             bl = poly1d(polyfit(self.time[self.ootmask], self.fluxes[ipb, self.ootmask], deg=deg))(self.time)
             self.fluxes[ipb, :] /= bl
             self.errors[ipb, :] /= bl
+        return self
 
-    @deprecated(0.9, alternative='normalize_to_median')
+    @deprecated('0.9', alternative='normalize_to_median')
     def normalize_median(self, s: slice) -> None:
         """Normalize the light curves to the median flux of the given slice along the time axis.
 
@@ -247,7 +271,7 @@ class TSData:
         """
         self.normalize_to_median(s)
 
-    def normalize_to_median(self, s: slice) -> None:
+    def normalize_to_median(self, s: slice) -> 'TSData':
         """Normalize the light curves to the median flux of the given slice along the time axis.
 
         Parameters
@@ -258,7 +282,9 @@ class TSData:
         n = median(self.fluxes[:, s], axis=1)[:, newaxis]
         self.fluxes[:,:] /= n
         self.errors[:,:] /= n
+        return self
 
+    @deprecated('0.9', alternative='partition_time')
     def split_time(self, t: float, b: float) -> 'TSDataSet':
         """Split the data into two parts: (time < t-b) and (time > t+b).
 
@@ -296,7 +322,7 @@ class TSData:
                            ootmask=self.ootmask[m], ephemeris=self.ephemeris)
         return d
 
-    def crop_wavelength(self, lmin: float, lmax: float) -> None:
+    def crop_wavelength(self, lmin: float, lmax: float) -> 'TSData':
         """Crop the data to include only the wavelength range between lmin and lmax.
 
         Parameters
@@ -317,8 +343,9 @@ class TSData:
         self._wl_l_edges = self._wl_l_edges[m]
         self._wl_r_edges = self._wl_r_edges[m]
         self._update()
+        return self
 
-    def crop_time(self, tmin: float, tmax: float) -> None:
+    def crop_time(self, tmin: float, tmax: float) -> 'TSData':
         """Crop the data to include only the time range between lmin and lmax.
 
         Parameters
@@ -339,8 +366,9 @@ class TSData:
         self._tm_l_edges = self._tm_l_edges[m]
         self._tm_r_edges = self._tm_r_edges[m]
         self._update()
+        return self
 
-    def remove_outliers(self, sigma: float = 5.0):
+    def remove_outliers(self, sigma: float = 5.0) -> 'TSData':
         """Remove outliers along the wavelength axis.
 
         Replace outliers along the wavelength axis with the value of a 5-point running median filter. Outliers are
@@ -359,6 +387,7 @@ class TSData:
         fm = median(self.fluxes, axis=0)
         fe = mad_std(self.fluxes, axis=0)
         self.fluxes = where(abs(self.fluxes - fm) / fe < sigma, self.fluxes, median_filter(self.fluxes, 5))
+        return self
 
     def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None, data=None,
              plims: tuple[float, float] | None = None) -> Figure:
@@ -438,7 +467,21 @@ class TSData:
         fig.axy2 = axy2
         return fig
 
-    def plot_white(self, ax=None, figsize=None) -> Axes:
+    def plot_white(self, ax: Axes | None = None, figsize: tuple[float, float] | None = None) -> Axes:
+        """Plot a white light curve.
+
+        Parameters
+        ----------
+        ax
+            The axes on which to plot. If None, a new figure and axes are created.
+        figsize
+            The size of the figure to create if `ax` is None. It should be a tuple in the format (width, height).
+
+        Returns
+        -------
+        ax : matplotlib.axes.Axes
+            The axes with the plot.
+        """
         if ax is None:
             fig, ax = subplots(figsize=figsize)
         else:
@@ -471,7 +514,7 @@ class TSData:
 
     def bin_wavelength(self, binning: Optional[Union[Binning, CompoundBinning]] = None,
                        nb: Optional[int] = None, bw: Optional[float] = None, r: Optional[float] = None,
-                       estimate_errors: bool = False):
+                       estimate_errors: bool = False) -> 'TSData':
         """Bin the data along the wavelength axis.
 
         Bin the data along the wavelength axis. If binning is not specified, a Binning object is created using the
@@ -510,7 +553,7 @@ class TSData:
 
     def bin_time(self, binning: Optional[Union[Binning, CompoundBinning]] = None,
                        nb: Optional[int] = None, bw: Optional[float] = None,
-                       estimate_errors: bool = False):
+                       estimate_errors: bool = False) -> 'TSData':
         """Bin the data along the time axis.
 
         Bin the data along the time axis. If binning is not specified, a Binning object is created using the
@@ -524,8 +567,6 @@ class TSData:
             Number of bins. Default value is None.
         bw
             Bin width in seconds. Default value is None.
-        r
-            Bin resolution. Default value is None.
         estimate_errors
             Should the uncertainties be estimated from the data. Default value is False.
 
@@ -581,37 +622,52 @@ class TSDataSet:
 
     @property
     def names(self) -> list[str]:
+        """Get the data set names."""
         return [d.name for d in self.data]
 
     @property
     def times(self) -> list[ndarray]:
+        """Get the data set times."""
         return [d.time for d in self.data]
 
     @property
     def wavelengths(self) -> list[ndarray]:
+        """Get the data set wavelengths."""
         return [d.wavelength for d in self.data]
 
     @property
     def fluxes(self) -> list[ndarray]:
+        """Get the data set fluxes."""
         return [d.fluxes for d in self.data]
 
     @property
     def errors(self) -> list[ndarray]:
+        """Get the data set errors."""
         return [d.errors for d in self.data]
 
     @property
     def noise_groups(self) -> list[str]:
+        """Get the data set noise groups."""
         return [d.noise_group for d in self.data]
 
     @property
     def n_noise_groups(self) -> int:
+        """Get the number of noise groups."""
         return len(set(self.noise_groups))
 
     @property
     def size(self) -> int:
+        """Get the number of data sets."""
         return len(self.data)
 
     def export_fits(self) -> pf.HDUList:
+        """Export the dataset along with its metadata to a FITS HDU list.
+
+        Returns
+        -------
+        astropy.io.fits.HDUList
+            A list of Header Data Units (HDUs) containing the dataset and its metadata.
+        """
         ds = pf.ImageHDU(name=f'dataset')
         ds.header['ndata'] = self.size
         for i,n in enumerate(self.names):
@@ -623,7 +679,19 @@ class TSDataSet:
         return hdul
 
     @staticmethod
-    def import_fits(hdul) -> 'TSDataSet':
+    def import_fits(hdul: pf.HDUList) -> 'TSDataSet':
+        """Import all the data from a FITS HDU list.
+
+        Parameters
+        ----------
+        hdul
+            HDU list containing FITS data.
+
+        Returns
+        -------
+        TSDataSet
+            An instance of TSDataSet containing imported data.
+        """
         ds = hdul['DATASET']
         data = []
         for i in range(ds.header['NDATA']):
@@ -655,6 +723,8 @@ class TSDataSet:
             The minimum value for the color mapping. Default is None.
         vmax
             The maximum value for the color mapping. Default is None.
+        ncols
+            The number of columns in the subplot grid. Default is 1.
         cmap
             The colormap used for mapping the data values to colors. Default is None.
         figsize
