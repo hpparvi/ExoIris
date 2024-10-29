@@ -4,8 +4,7 @@ Data handling
 =============
 .. currentmodule:: exoiris.tsdata
 
-.. Here you can find the details of the main EasyTS classes and their methods. However, you probably want to take a look
-at the :ref:`tutorials and examples <tutorials>` first.
+.. Here you can find the details of the main EasyTS classes and their methods. However, you probably want to take a look at the :ref:`tutorials and examples <tutorials>` first.
 
 The spectroscopic light curves are given to `EasyTS` as a `TSData` (Transmission Spectroscopy Data) or `TSDataSet`
 object. `TSData` is a utility class that provides methods for data cleanup, binning, and cropping, while `TSDataSet`
@@ -27,8 +26,33 @@ Data wrangling
     :toctree: api/
 
     TSData.bin_wavelength
+    TSData.bin_time
     TSData.crop_wavelength
+    TSData.crop_time
     TSData.remove_outliers
+    TSData.normalize_to_median
+    TSData.normalize_to_poly
+    TSData.partition_time
+
+Masking
+-------
+
+.. autosummary::
+    :toctree: api/
+
+    TSData.mask_transit
+
+I/O
+---
+
+.. autosummary::
+    :toctree: api/
+
+    TSData.export_fits
+    TSData.import_fits
+    TSDataSet.export_fits
+    TSDataSet.import_fits
+
 
 Plotting
 --------
@@ -37,4 +61,22 @@ Plotting
     :toctree: api/
 
     TSData.plot
+    TSData.plot_white
     TSDataSet.plot
+
+Properties
+----------
+
+.. autosummary::
+    :toctree: api/
+
+    TSData.noise_group
+    TSDataSet.names
+    TSDataSet.times
+    TSDataSet.wavelengths
+    TSDataSet.fluxes
+    TSDataSet.errors
+    TSDataSet.noise_groups
+    TSDataSet.n_noise_groups
+    TSDataSet.size
+
