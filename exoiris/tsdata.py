@@ -30,8 +30,7 @@ from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import LinearLocator, FuncFormatter
 from numpy import isfinite, median, where, all, zeros_like, diff, asarray, interp, arange, floor, ndarray, \
-    ceil, newaxis, inf, array, ones, poly1d, polyfit, nanpercentile
-from numpy.ma.extras import atleast_2d
+    ceil, newaxis, inf, array, ones, poly1d, polyfit, nanpercentile, atleast_2d, nan
 from pytransit.orbits import fold
 from scipy.ndimage import median_filter
 
@@ -401,8 +400,7 @@ class TSData:
 
         Returns
         -------
-        Figure
-
+        ~matplotlib.figure.Figure
         """
         if ax is None:
             fig, ax = subplots(figsize=figsize, constrained_layout=True)
@@ -410,14 +408,14 @@ class TSData:
             fig = ax.figure
         tref = floor(self.time.min())
 
-        def forward_x(x):
-            return interp(x, self.wavelength, arange(self.nwl))
-        def inverse_x(x):
-            return interp(x, arange(self.nwl), self.wavelength)
         def forward_y(y):
-            return interp(y, self.time-tref, arange(self.npt))
+            return interp(y, self.wavelength, arange(self.nwl))
         def inverse_y(y):
-            return interp(y, arange(self.npt), self.time-tref)
+            return interp(y, arange(self.nwl), self.wavelength)
+        def forward_x(x):
+            return interp(x, self.time-tref, arange(self.npt))
+        def inverse_x(x):
+            return interp(x, arange(self.npt), self.time-tref)
 
         data = data if data is not None else self.fluxes
         if plims is not None:
@@ -431,23 +429,25 @@ class TSData:
         setp(ax, ylabel=r'Wavelength [$\mu$m]', xlabel=f'Time - {tref:.0f} [BJD]')
         ax.yaxis.set_major_locator(LinearLocator(10))
         ax.yaxis.set_major_formatter('{x:.2f}')
+        ax.xaxis.set_major_locator(LinearLocator())
+        ax.xaxis.set_major_formatter('{x:.3f}')
 
         if self.name != "":
             ax.set_title(self.name)
 
-        axx2 = ax.secondary_yaxis('right', functions=(forward_x, inverse_x))
-        axx2.set_ylabel('Light curve index')
-        axx2.set_yticks(forward_x(ax.get_yticks()))
-        axx2.yaxis.set_major_formatter('{x:.0f}')
-        axy2 = ax.secondary_xaxis('top', functions=(forward_y, inverse_y))
-        axy2.set_xlabel('Exposure index')
-        axy2.set_xticks(forward_y(ax.get_xticks()))
-        axy2.xaxis.set_major_formatter('{x:.0f}')
+        axy2 = ax.secondary_yaxis('right', functions=(forward_y, inverse_y))
+        axy2.set_ylabel('Light curve index')
+        axy2.set_yticks(forward_y(ax.get_yticks()))
+        axy2.yaxis.set_major_formatter('{x:.0f}')
+        axx2 = ax.secondary_xaxis('top', functions=(forward_x, inverse_x))
+        axx2.set_xlabel('Exposure index')
+        axx2.xaxis.set_major_locator(LinearLocator())
+        axx2.xaxis.set_major_formatter('{x:.0f}')
         fig.axx2 = axx2
         fig.axy2 = axy2
         return fig
 
-    def plot_white(self, ax: Axes | None = None, figsize: tuple[float, float] | None = None) -> Axes:
+    def plot_white(self, ax: Axes | None = None, figsize: tuple[float, float] | None = None) -> Figure:
         """Plot a white light curve.
 
         Parameters
@@ -459,7 +459,7 @@ class TSData:
 
         Returns
         -------
-        ~matplotlib.axes.Axes
+        ~matplotlib.figure.Figure
         """
         if ax is None:
             fig, ax = subplots(figsize=figsize)
@@ -468,9 +468,41 @@ class TSData:
         tref = floor(self.time.min())
 
         ax.plot(self.time, self.fluxes.mean(0))
+        if self.ephemeris is not None:
+            [ax.axvline(tl, ls='--', c='k') for tl in self.ephemeris.transit_limits(self.time.mean())]
+
+        if self.name != "":
+            ax.set_title(self.name)
+
+        def forward_x(x):
+            return interp(x, self.time, arange(self.npt))
+        def inverse_x(x):
+            return interp(x, arange(self.npt), self.time)
+
+        axx2 = ax.secondary_xaxis('top', functions=(forward_x, inverse_x))
+        axx2.set_xlabel('Exposure index')
+        axx2.xaxis.set_major_locator(LinearLocator())
+        axx2.xaxis.set_major_formatter('{x:.0f}')
+
         ax.xaxis.set_major_formatter(FuncFormatter(lambda x,p: f"{x-tref:.3f}"))
-        setp(ax, xlabel=f'Time - {tref:.0f} [d]', ylabel='Normalized flux', xlim=[self.time[0]-0.003, self.time[-1]+0.003])
-        return ax
+        setp(ax, xlabel=f'Time - {tref:.0f} [BJD]', ylabel='Normalized flux', xlim=[self.time[0]-0.003, self.time[-1]+0.003])
+        return fig
+
+    def plot_baseline(self, ax: Axes | None = None, figsize: tuple[float, float] | None = None) -> Figure:
+        """Plot the out-of-transit spectroscopic light curves before and after the normalization.
+
+        Parameters
+        ----------
+        ax
+            The axes on which to plot. If None, a new figure and axes are created.
+        figsize
+            The size of the figure to create if `ax` is None. It should be a tuple in the format (width, height).
+
+        Returns
+        -------
+        ~matplotlib.figure.Figure
+        """
+        return self.plot(ax=ax, figsize=figsize, data=where(self.ootmask, self.fluxes, nan))
 
     def __add__(self, other: Union['TSData', 'TSDataSet']) -> 'TSDataSet':
         """Combine two transmission spectra along the wavelength axis.
@@ -716,14 +748,39 @@ class TSDataSet:
         else:
             axs = atleast_2d(axs)
             fig = axs.flat[0].get_figure()
-
         if data is None:
             for i in range(self.size):
                 self.data[i].plot(ax=axs.flat[i], vmin=vmin, vmax=vmax, cmap=cmap)
         else:
             for i in range(self.size):
                 self.data[i].plot(ax=axs.flat[i], vmin=vmin, vmax=vmax, cmap=cmap, data=data[i])
+        setp(axs[:-1, :], xlabel='')
+        return fig
 
+    def plot_white(self, axs=None, ncols: int = 1, figsize=None) -> Figure:
+        """Plot the white light curves.
+
+        Parameters
+        ----------
+        axs
+            A 2D ndarray of Axes used for plotting. If None, a new set of subplots will be created.
+        ncols
+            The number of columns in the subplot grid.
+        figsize
+            The size of the figure created if `ax` is None.
+
+        Returns
+        -------
+        ~matplotlib.figure.Figure
+        """
+        if axs is None:
+            nrows = int(ceil(self.size / ncols))
+            fig, axs = subplots(nrows, ncols=ncols, figsize=figsize, squeeze=False)
+        else:
+            axs = atleast_2d(axs)
+            fig = axs.flat[0].get_figure()
+        for i in range(self.size):
+            self.data[i].plot_white(ax=axs.flat[i])
         setp(axs[:-1, :], xlabel='')
         return fig
 
