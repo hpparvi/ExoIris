@@ -162,10 +162,6 @@ Model properties
     ExoIris.name
     ExoIris.ps
     ExoIris.data
-    ExoIris.time
-    ExoIris.wavelength
-    ExoIris.fluxes
-    ExoIris.errors
     ExoIris.k_knots
     ExoIris.ndim
     ExoIris.nk

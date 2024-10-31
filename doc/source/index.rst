@@ -49,7 +49,7 @@ Documentation
    :maxdepth: 1
    :caption: API Documentation
 
-   api/easyts
+   api/exoiris
    api/tsdata
    api/binning
 
