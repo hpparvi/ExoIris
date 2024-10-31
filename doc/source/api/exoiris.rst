@@ -153,25 +153,6 @@ Pandas `~pandas.DataFrame`.
     ExoIris.plot_residuals
     ExoIris.plot_limb_darkening_parameters
 
-Model properties
-----------------
-
-.. autosummary::
-    :toctree: api/
-
-    ExoIris.name
-    ExoIris.ps
-    ExoIris.data
-    ExoIris.k_knots
-    ExoIris.ndim
-    ExoIris.nk
-    ExoIris.nldp
-    ExoIris.npb
-    ExoIris.ldmodel
-    ExoIris.optimizer_population
-    ExoIris.mcmc_chains
-
-
 Utility methods
 ---------------
 
