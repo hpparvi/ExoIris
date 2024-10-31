@@ -139,10 +139,10 @@ class TSData:
         -------
         TSData
         """
-        time = hdul[f'TIME_{name}'].data
-        wave = hdul[f'WAVE_{name}'].data
-        data = hdul[f'DATA_{name}'].data
-        ootm = hdul[f'OOTM_{name}'].data
+        time = hdul[f'TIME_{name}'].data.astype('d')
+        wave = hdul[f'WAVE_{name}'].data.astype('d')
+        data = hdul[f'DATA_{name}'].data.astype('d')
+        ootm = hdul[f'OOTM_{name}'].data.astype('d')
         noise_group = hdul[f'DATA_{name}'].header['NGROUP']
         #TODO: import ephemeris
         return TSData(time, wave, data[0], data[1], name=name, noise_group=noise_group, ootmask=ootm)
