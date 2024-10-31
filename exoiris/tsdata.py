@@ -41,21 +41,8 @@ from .binning import Binning, CompoundBinning
 
 class TSData:
     """
-    TSData is a utility class representing transmission spectroscopy time series data with associated wavelength,
+    `TSData` is a utility class representing transmission spectroscopy time series data with associated wavelength,
     fluxes, and errors. It provides methods for manipulating and analyzing the data.
-
-    Attributes
-    ----------
-    time: 1D ndarray
-        Array of time values.
-    wavelength : 1D ndarray
-        Array of wavelength values.
-    fluxes : 2D ndarray
-        2D array of flux values with a shape ``(nwl, npt)``, where ``nwl`` is the number of wavelengths and ``npt`` the
-        number of exposures.
-    errors : 2D ndarray
-        2D Array of error values with a shape ``(nwl, npt)``, where ``nwl`` is the number of wavelengths and ``npt`` the
-        number of exposures.
     """
     def __init__(self, time: Sequence, wavelength: Sequence, fluxes: Sequence, errors: Sequence, name: str,
                  noise_group: str = 'a', wl_edges : Sequence | None = None, tm_edges : Sequence | None = None,
@@ -64,9 +51,9 @@ class TSData:
         Parameters
         ----------
         time
-            Array of time values.
+            1D Array of time values.
         wavelength
-            Array of wavelength values.
+            1D Array of wavelength values.
         fluxes
             2D array of flux values with a shape ``(nwl, npt)``, where ``nwl`` is the number of wavelengths and ``npt`` the
             number of exposures.
@@ -124,12 +111,11 @@ class TSData:
             self._tm_r_edges = tm_edges[1]
 
     def export_fits(self) -> pf.HDUList:
-        """Generate a HDUList containing HDUs for time, wavelength, data (fluxes and errors), and out-of-transit mask.
+        """Generate a `~astropy.io.fits.HDUList` containing HDUs storing the data and metadata.
 
             Returns
             -------
-            astropy.io.fits.HDUList
-                An HDUList object that contains the time, wavelength, data, and ootmask HDUs.
+            ~astropy.io.fits.HDUList
         """
         time = pf.ImageHDU(self.time, name=f'time_{self.name}')
         wave = pf.ImageHDU(self.wavelength, name=f'wave_{self.name}')
@@ -141,14 +127,14 @@ class TSData:
 
     @staticmethod
     def import_fits(name: str, hdul: pf.HDUList) -> 'TSData':
-        """Import a data set from a FITS file.
+        """Import a data set from a `~astropy.io.fits.HDUList`.
 
         Parameters
         ----------
         name
-            The name of the dataset to be imported from the FITS file.
+            The name of the dataset to be imported from the `~astropy.io.fits.HDUList`.
         hdul
-            The HDU list object containing the FITS file data.
+            The `~astropy.io.fits.HDUList` containing the data.
 
         Returns
         -------
@@ -182,16 +168,16 @@ class TSData:
 
         Parameters
         ----------
-        t0 : float | None
-            The zero-epoch time. Default is None.
-        p : float | None
-            The orbital period of the planet. Default is None.
-        t14 : float | None
-            The duration of the full transit in days. Default is None.
-        ephemeris : Ephemeris | None
-            The ephemeris object containing transit timing information. Default is None.
-        elims : tuple[int, int] | None
-            The limits of the region to mask in exposure indices. Default is None.
+        t0
+            The zero-epoch time.
+        p
+            The orbital period of the planet.
+        t14
+            The duration of the full transit in days.
+        ephemeris
+            The ephemeris object containing transit timing information.
+        elims
+            The limits of the region to mask in exposure indices.
         """
         if (t0 and p and t14) or ephemeris is not None:
             if ephemeris is not None:
@@ -239,12 +225,6 @@ class TSData:
         ------
         ValueError
             If `deg` is greater than 1.
-
-        Notes
-        -----
-        This method normalizes the baseline of the fluxes for each planet. It fits a polynomial of degree
-        `deg` to the out-of-transit data points and divides the fluxes by the fitted polynomial evaluated
-        at each time point.
         """
         if deg > 1:
             raise ValueError("The degree of the fitted polynomial ('deg') should be 0 or 1. Higher degrees "
@@ -276,7 +256,7 @@ class TSData:
 
         Parameters
         ----------
-        s : slice
+        s
             A slice object representing the portion of the data to normalize.
         """
         n = median(self.fluxes[:, s], axis=1)[:, newaxis]
@@ -290,9 +270,9 @@ class TSData:
 
         Parameters
         ----------
-        t : float
+        t
             The threshold time value used to split the data.
-        b : float
+        b
             The buffer time around the threshold `t` to exclude from the split range.
         """
         m1 = self.time < t-b
@@ -479,8 +459,7 @@ class TSData:
 
         Returns
         -------
-        ax : matplotlib.axes.Axes
-            The axes with the plot.
+        ~matplotlib.axes.Axes
         """
         if ax is None:
             fig, ax = subplots(figsize=figsize)
@@ -504,8 +483,6 @@ class TSData:
         Returns
         -------
         TSDataSet
-            The resulting TSDataSet object combining the two TSData objects.
-
         """
         if isinstance(other, TSData):
             return TSDataSet([self, other])
@@ -523,20 +500,19 @@ class TSData:
         Parameters
         ----------
         binning
-            The binning method to use. Default value is None.
+            The binning method to use.
         nb
-            Number of bins. Default value is None.
+            Number of bins.
         bw
-            Bin width. Default value is None.
+            Bin width.
         r
-            Bin resolution. Default value is None.
+            Bin resolution.
         estimate_errors
-            Should the uncertainties be estimated from the data. Default value is False.
+            Should the uncertainties be estimated from the data.
 
         Returns
         -------
         TSData
-            The binned data.
         """
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', numba.NumbaPerformanceWarning)
@@ -562,18 +538,17 @@ class TSData:
         Parameters
         ----------
         binning
-            The binning method to use. Default value is None.
+            The binning method to use.
         nb
-            Number of bins. Default value is None.
+            Number of bins.
         bw
-            Bin width in seconds. Default value is None.
+            Bin width in seconds.
         estimate_errors
-            Should the uncertainties be estimated from the data. Default value is False.
+            Should the uncertainties be estimated from the data.
 
         Returns
         -------
         TSData
-            The binned data.
         """
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', numba.NumbaPerformanceWarning)
@@ -591,7 +566,8 @@ class TSData:
             return d
 
 class TSDataSet:
-    """A high-level data storage class that can contain multiple TSData objects."""
+    """`TSDataSet` is a high-level data storage class that can contain multiple `TSData` objects.
+    """
     def __init__(self, data: Sequence[TSData]):
         self.data: list[TSData] = []
         self.wlmin: float = inf
@@ -622,42 +598,42 @@ class TSDataSet:
 
     @property
     def names(self) -> list[str]:
-        """Get the data set names."""
+        """List of data set names."""
         return [d.name for d in self.data]
 
     @property
     def times(self) -> list[ndarray]:
-        """Get the data set times."""
+        """List of 1D time arrays."""
         return [d.time for d in self.data]
 
     @property
     def wavelengths(self) -> list[ndarray]:
-        """Get the data set wavelengths."""
+        """List of 1D wavelength arrays."""
         return [d.wavelength for d in self.data]
 
     @property
     def fluxes(self) -> list[ndarray]:
-        """Get the data set fluxes."""
+        """List of 2D flux arrays."""
         return [d.fluxes for d in self.data]
 
     @property
     def errors(self) -> list[ndarray]:
-        """Get the data set errors."""
+        """List of 2D error arrays."""
         return [d.errors for d in self.data]
 
     @property
     def noise_groups(self) -> list[str]:
-        """Get the data set noise groups."""
+        """List of noise group names."""
         return [d.noise_group for d in self.data]
 
     @property
     def n_noise_groups(self) -> int:
-        """Get the number of noise groups."""
+        """Number of noise groups."""
         return len(set(self.noise_groups))
 
     @property
     def size(self) -> int:
-        """Get the number of data sets."""
+        """Number of data sets."""
         return len(self.data)
 
     def export_fits(self) -> pf.HDUList:
@@ -665,8 +641,7 @@ class TSDataSet:
 
         Returns
         -------
-        astropy.io.fits.HDUList
-            A list of Header Data Units (HDUs) containing the dataset and its metadata.
+        ~astropy.io.fits.HDUList
         """
         ds = pf.ImageHDU(name=f'dataset')
         ds.header['ndata'] = self.size
@@ -690,7 +665,6 @@ class TSDataSet:
         Returns
         -------
         TSDataSet
-            An instance of TSDataSet containing imported data.
         """
         ds = hdul['DATASET']
         data = []
@@ -712,7 +686,7 @@ class TSDataSet:
     def __repr__(self):
         return f"TSDataSet with {self.size} groups"
 
-    def plot(self, axs=None, vmin: float = None, vmax: float = None, ncols: int = 1, cmap=None, figsize=None, data: ndarray | None = None):
+    def plot(self, axs=None, vmin: float = None, vmax: float = None, ncols: int = 1, cmap=None, figsize=None, data: ndarray | None = None) -> Figure:
         """Plot all the data sets.
 
         Parameters
@@ -720,23 +694,21 @@ class TSDataSet:
         axs
             A 2D ndarray of Axes used for plotting. If None, a new set of subplots will be created.
         vmin
-            The minimum value for the color mapping. Default is None.
+            The minimum value for the color mapping.
         vmax
-            The maximum value for the color mapping. Default is None.
+            The maximum value for the color mapping.
         ncols
-            The number of columns in the subplot grid. Default is 1.
+            The number of columns in the subplot grid.
         cmap
-            The colormap used for mapping the data values to colors. Default is None.
+            The colormap used for mapping the data values to colors.
         figsize
-            The size of the figure created if `ax` is None. Default is None.
+            The size of the figure created if `ax` is None.
         data
             The data to be plotted. If None, the `self.data` attribute will be used.
 
         Returns
         -------
-        Figure
-            The Figure object that contains the subplots.
-
+        ~matplotlib.figure.Figure
         """
         if axs is None:
             nrows = int(ceil(self.size / ncols))
