@@ -18,5 +18,6 @@ from .exoiris import ExoIris, load_model # noqa
 from .tsdata import TSData, TSDataSet # noqa
 from .binning import Binning # noqa
 from .ldtkld import LDTkLD # noqa
+from .tslpf import clean_knots # noqa
 
-__version__ = '0.9.13'
+__version__ = '0.10.0'
