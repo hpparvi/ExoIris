@@ -104,29 +104,30 @@ def load_model(fname: Path | str, name: str | None = None):
 
 class ExoIris:
     """The core ExoIris class providing tools for exoplanet transit spectroscopy.
-
-    Parameters
-    ----------
-    name
-        The name of the instance.
-    ldmodel
-        The model for the limb darkening.
-    data
-        The time-series data object.
-    nk
-        The number of kernel samples.
-    nldc
-        The number of limb darkening coefficients.
-    nthreads
-        The number of threads to use for computation.
-    tmpars
-        Additional transit model parameters.
-    noise_model
-        The noise model to use. Should be either "white" for white noise or "fixed_gp" for Gaussian Process.
     """
 
     def __init__(self, name: str, ldmodel, data: TSDataSet | TSData, nk: int = 50, nldc: int = 10, nthreads: int = 1,
                  tmpars: dict | None = None, noise_model: str = 'white'):
+        """
+        Parameters
+        ----------
+        name
+            The name of the instance.
+        ldmodel
+            The model for the limb darkening.
+        data
+            The time-series data object.
+        nk
+            The number of kernel samples.
+        nldc
+            The number of limb darkening coefficients.
+        nthreads
+            The number of threads to use for computation.
+        tmpars
+            Additional transit model parameters.
+        noise_model
+            The noise model to use. Should be either "white" for white noise or "fixed_gp" for Gaussian Process.
+        """
         data = TSDataSet([data]) if isinstance(data, TSData) else data
         self._tsa: TSLPF = TSLPF(name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars, noise_model=noise_model)
         self._wa: WhiteLPF | None = None
@@ -265,7 +266,7 @@ class ExoIris:
 
     @property
     def name(self) -> str:
-        """Get the name of the analysis."""
+        """Analysis name."""
         return self._tsa.name
 
     @name.setter
@@ -274,57 +275,57 @@ class ExoIris:
 
     @property
     def data(self) -> TSDataSet:
-        """Get the analysis dataset."""
+        """Analysis data set."""
         return self._tsa.data
 
     @property
     def k_knots(self) -> ndarray:
-        """Get the radius ratio (k) knots."""
+        """Radius ratio (k) knots."""
         return self._tsa.k_knots
 
     @property
     def ndim(self) -> int:
-        """Get the number of free model parameters."""
+        """Number of free model parameters."""
         return self._tsa.ndim
 
     @property
     def nk(self) -> int:
-        """Get the number of radius ratio (k) knots."""
+        """Number of radius ratio (k) knots."""
         return self._tsa.nk
 
     @property
     def nldp(self) -> int:
-        """Get the number of limb darkening knots."""
+        """Number of limb darkening knots."""
         return self._tsa.nldc
 
     @property
     def npb(self) -> list[int]:
-        """Get the number of passbands for each data set."""
+        """Number of passbands for each data set."""
         return self._tsa.npb
 
     @property
     def ldmodel(self):
-        """Get the limb darkening model."""
+        """The limb darkening model."""
         return self._tsa.ldmodel
 
     @property
     def gp(self) -> list[GaussianProcess]:
-        """Get the Gaussian Process (GP) models."""
+        """Gaussian Process (GP) models."""
         return self._tsa._gp
 
     @property
     def optimizer_population(self) -> ndarray:
-        """Get the current population of the optimizer."""
+        """DE optimizer parameter vector population."""
         return self._tsa._de_population
 
     @property
     def mcmc_chains(self) -> ndarray:
-        """Get the current emcee MCMC chains."""
+        """Emcee sampler MCMC chains."""
         return self._tsa._mc_chains
 
     @property
     def posterior_samples(self) -> pd.DataFrame:
-        """Get the posterior samples from the MCMC sampler."""
+        """Posterior samples from the MCMC sampler."""
         return pd.DataFrame(self._tsa._mc_chains.reshape([-1, self.ndim]), columns=self.ps.names)
 
     def add_radius_ratio_knots(self, knot_wavelengths: Sequence) -> None:
@@ -370,7 +371,7 @@ class ExoIris:
 
     @property
     def ps(self) -> ParameterSet:
-        """Get the model parameterization."""
+        """Model parameterization."""
         return self._tsa.ps
 
     def print_parameters(self) -> None:
@@ -859,7 +860,7 @@ class ExoIris:
 
         fig = figure(layout='constrained', figsize=figsize)
         fts, fbelow = fig.subfigures(2, 1, hspace=0.07, height_ratios=height_ratios)
-        fres, fldc = fbelow.subfigures(1, 2, wspace=0.05, width_ratios=(0.4, 0.6))
+        fres, fldc = fbelow.subfigures(1, 2, wspace=0.05, width_ratios=(0.5, 0.5))
         axts = fts.add_subplot()
         axs_res = [fres.add_subplot(self.data.size, 1, i + 1) for i in range(self.data.size)]
         axs_ldc = (fldc.add_subplot(2, 1, 1), fldc.add_subplot(2, 1, 2))
