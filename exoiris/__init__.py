@@ -20,4 +20,8 @@ from .binning import Binning # noqa
 from .ldtkld import LDTkLD # noqa
 from .tslpf import clean_knots # noqa
 
-__version__ = '0.10.0'
+from importlib.metadata import version as _version, PackageNotFoundError
+try:
+    __version__ = _version(__name__)
+except PackageNotFoundError:
+    __version__ = "unknown"
