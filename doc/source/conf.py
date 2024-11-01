@@ -13,6 +13,7 @@ release = exoiris.__version__
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
+#    'sphinx_automodapi.automodapi',
     'sphinx.ext.mathjax',
     'sphinx.ext.intersphinx',
     'sphinx.ext.imgmath',
