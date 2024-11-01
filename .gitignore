@@ -2,3 +2,7 @@
 /doc/build/
 /EasyTS.egg-info/
 *.ipynb_checkpoints
+/doc/source/api/api/*
+/build/
+/dist/
+/tests/.coverage
