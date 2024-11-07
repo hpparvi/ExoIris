@@ -19,24 +19,32 @@ from pathlib import Path
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
-from numpy import sqrt, array
+from numpy import sqrt, array, concatenate
 from pytransit import LDTkLD as PTLDTkLD
 from ldtk import BoxcarFilter
 
-from .tsdata import TSData
+from .tsdata import TSData, TSDataSet
 
 
 class LDTkLD(PTLDTkLD):
-    def __init__(self, data: TSData,
+    def __init__(self, data: TSDataSet | TSData,
                  teff: tuple[float, float],
                  logg: tuple[float, float],
                  metal: tuple[float, float],
                  cache: str | Path | None = None,
                  dataset: str = 'vis-lowres') -> None:
-        filters = [BoxcarFilter('a', wla*1e3, wlb*1e3) for wla, wlb in zip(data._wl_l_edges, data._wl_r_edges)]
+
+        data = TSDataSet([data]) if isinstance(data, TSData) else data
+        wl_edges = concatenate([array([d._wl_l_edges, d._wl_r_edges]) for d in data], axis=1).T
+        filters = [BoxcarFilter(f"{0.5*(wla+wlb):08.5f}", wla*1e3, wlb*1e3) for wla, wlb in wl_edges]
         super().__init__(filters, teff, logg, metal, cache, dataset)
-        self.wavelength = data.wavelength
+        self.wavelength = wl_edges.mean(1)
         self.dataset = dataset
+        self.wlslices = []
+        wl0 = 0
+        for d in data:
+            self.wlslices.append(slice(wl0, wl0+d.nwl))
+            wl0 += d.nwl
 
     def plot_profiles(self, teff: float, logg: float, metal: float, x: str = 'mu', ax: Axes = None) -> Figure:
         """Plots the profiles of a star's surface brightness.

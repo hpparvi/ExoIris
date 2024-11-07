@@ -1,5 +1,5 @@
 pytransit >= 2.6.11
-ldtk
+ldtk >= 1.8.5
 numpy
 scipy
 numba

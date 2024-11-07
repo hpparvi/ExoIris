@@ -19,18 +19,19 @@ from typing import Optional
 from ldtk import BoxcarFilter, LDPSetCreator   # noqa
 from numba import njit, prange
 from numpy import zeros, log, pi, linspace, inf, atleast_2d, newaxis, clip, arctan2, ones, floor, sum, concatenate, \
-    sort, ndarray, zeros_like, array, tile, arange, squeeze
+    sort, ndarray, zeros_like, array, tile, arange, squeeze, dstack
 from numpy.random import default_rng
 from celerite2 import GaussianProcess as GP, terms
 
-from pytransit import TSModel, RRModel, LDTkLD, TransitAnalysis
 from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
 
 from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_pkaiews, epoch
 from pytransit.param import ParameterSet, UniformPrior as UP, NormalPrior as NP, GParameter
 from scipy.interpolate import splev, splrep
 
+from .tsmodel import TransmissionSpectroscopyModel as TSModel
 from .tsdata import TSDataSet
+from .ldtkld import LDTkLD
 
 NM_WHITE = 0
 NM_GP_FIXED = 1
@@ -113,10 +114,13 @@ class TSLPF(LogPosteriorFunction):
         self.set_noise_model(noise_model)
 
         self.ldmodel = ldmodel
+
         self.tms = [TSModel(ldmodel, nthreads=nthreads, **(tmpars or {})) for i in range(len(data))]
         self.set_data(data)
 
         if isinstance(ldmodel, LDTkLD):
+            for tm in self.tms:
+                tm.ldmodel = None
             self.ldmodel._init_interpolation(self.tms[0].mu)
 
         self.nthreads = nthreads
@@ -516,7 +520,15 @@ class TSLPF(LogPosteriorFunction):
         inc = i_from_ba(pv[:, 3], aor)
         ecc = pv[:, 4] ** 2 + pv[:, 5] ** 2
         w = arctan2(pv[:, 5], pv[:, 4])
-        return [tm.evaluate(k[i], ldp[i], t0, p, aor, inc, ecc, w, copy) for i,tm in enumerate(self.tms)]
+        if isinstance(self.ldmodel, LDTkLD):
+            ldp, istar = self.ldmodel(self.tms[0].mu, ldp)
+            ldpi = dstack([ldp, istar])
+            flux = []
+            for i, tm in enumerate(self.tms):
+                flux.append(tm.evaluate(k[i], ldpi[:, self.ldmodel.wlslices[i], :], t0, p, aor, inc, ecc, w, copy))
+            return flux
+        else:
+            return [tm.evaluate(k[i], ldp[i], t0, p, aor, inc, ecc, w, copy) for i,tm in enumerate(self.tms)]
 
     def flux_model(self, pv):
         return self.transit_model(pv)
