@@ -77,8 +77,13 @@ def load_model(fname: Path | str, name: str | None = None):
         else:
             ldm =  hdul[0].header['LDMODEL']
 
+        try:
+            ip = hdul[0].header['INTERP']
+        except KeyError:
+            ip = 'bspline'
+
         #TODO: save and load the noise model information
-        a = ExoIris(name or hdul[0].header['NAME'], ldmodel=ldm, data=data, interpolation=hdul[0].header['INTERP'])
+        a = ExoIris(name or hdul[0].header['NAME'], ldmodel=ldm, data=data, interpolation=ip)
         a.set_radius_ratio_knots(hdul['K_KNOTS'].data.astype('d'))
         a.set_limb_darkening_knots(hdul['LD_KNOTS'].data.astype('d'))
 
