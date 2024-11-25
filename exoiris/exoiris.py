@@ -31,8 +31,9 @@ from astropy.table import Table
 from celerite2 import GaussianProcess, terms
 from matplotlib.pyplot import subplots, setp, figure, Figure, GridSpec, Axes
 from numpy import (poly1d, polyfit, where, sqrt, clip, percentile, median, squeeze, floor, ndarray,
-                   array, inf, newaxis, r_, arange, tile, log10, sort, argsort, concatenate)
+                   array, inf, newaxis, r_, arange, tile, log10, sort, argsort, concatenate, zeros, full, nan)
 from numpy.random import normal, permutation
+from pytransit import UniformPrior, NormalPrior
 from pytransit.orbits import fold, epoch
 from pytransit.param import ParameterSet
 from pytransit.utils.de import DiffEvol
@@ -700,9 +701,6 @@ class ExoIris:
         else:
             fig = axs[0].get_figure()
 
-        ldp1 = array([[p.prior.mean, p.prior.std] for p in self.ps[self._tsa._sl_ld][::2]])
-        ldp2 = array([[p.prior.mean, p.prior.std] for p in self.ps[self._tsa._sl_ld][1::2]])
-
         if result is None:
             result = 'mcmc' if self._tsa.sampler is not None else 'fit'
         if result not in ('fit', 'mcmc'):
@@ -741,10 +739,20 @@ class ExoIris:
             axs[0].errorbar(self._tsa.ld_knots, ld1m, ld1e, fmt='ok')
             axs[1].errorbar(self._tsa.ld_knots, ld2m, ld2e, fmt='ok')
 
-        axs[0].plot(self._tsa.ld_knots, ldp1[:,0] + ldp1[:,1], ':', c='C0')
-        axs[0].plot(self._tsa.ld_knots, ldp1[:,0] - ldp1[:,1], ':', c='C0')
-        axs[1].plot(self._tsa.ld_knots, ldp2[:,0] + ldp2[:,1], ':', c='C0')
-        axs[1].plot(self._tsa.ld_knots, ldp2[:,0] - ldp2[:,1], ':', c='C0')
+        ldp = full((self.nldp, 2, 2), nan)
+        for i in range(self.nldp):
+            for j in range(2):
+                p = self.ps[self._tsa._sl_ld][i*2+j].prior
+                if isinstance(p, UniformPrior):
+                    ldp[i, j, 0] = p.a
+                    ldp[i, j, 1] = p.b
+                elif isinstance(p, NormalPrior):
+                    ldp[i, j, 0] = p.mean - p.std
+                    ldp[i, j, 1] = p.mean + p.std
+
+        for i in range(2):
+            for j in range(2):
+                axs[i].plot(self._tsa.ld_knots, ldp[:, i, j], ':', c='C0')
 
         setp(axs, xlim=(wavelength.min(), wavelength.max()), xlabel=r'Wavelength [$\mu$m]')
         setp(axs[0], ylabel='Limb darkening coefficient 1')
