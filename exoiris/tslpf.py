@@ -28,7 +28,7 @@ from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
 
 from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_pkaiews, epoch
 from pytransit.param import ParameterSet, UniformPrior as UP, NormalPrior as NP, GParameter
-from scipy.interpolate import splev, splrep
+from scipy.interpolate import pchip_interpolate
 
 from .tsmodel import TransmissionSpectroscopyModel as TSModel
 from .tsdata import TSDataSet
@@ -53,7 +53,7 @@ def lnlike_normal(o, m, e, f):
 
 
 def resample(x_new, x_old, y_old):
-    return splev(x_new, splrep(x_old, y_old, s=0.0))
+    return pchip_interpolate(x_old, y_old, x_new)
 
 
 def add_knots(x_new, x_old):
@@ -467,7 +467,7 @@ class TSLPF(LogPosteriorFunction):
         ks = [zeros((pvp.shape[0], npb)) for npb in self.npb]
         for ids in range(self.data.size):
             for ipv in range(pvp.shape[0]):
-                ks[ids][ipv,:] =  splev(self.wavelengths[ids], splrep(self.k_knots, pvp[ipv], s=0.0))
+                ks[ids][ipv,:] =  pchip_interpolate(self.k_knots, pvp[ipv], self.wavelengths[ids])
         return ks
 
     def _eval_ldc(self, pvp):
@@ -483,8 +483,8 @@ class TSLPF(LogPosteriorFunction):
             ldp = [zeros((pvp.shape[0], npb, 2)) for npb in self.npb]
             for ids in range(self.data.size):
                 for ipv in range(pvp.shape[0]):
-                    ldp[ids][ipv, :, 0] = splev(self.wavelengths[ids], splrep(self.ld_knots, ldk[ipv, :, 0], s=0.0))
-                    ldp[ids][ipv, :, 1] = splev(self.wavelengths[ids], splrep(self.ld_knots, ldk[ipv, :, 1], s=0.0))
+                    ldp[ids][ipv, :, 0] = pchip_interpolate(self.ld_knots, ldk[ipv, :, 0], self.wavelengths[ids])
+                    ldp[ids][ipv, :, 1] = pchip_interpolate(self.ld_knots, ldk[ipv, :, 1], self.wavelengths[ids])
             return ldp
 
     def transit_model(self, pv, copy=True):
