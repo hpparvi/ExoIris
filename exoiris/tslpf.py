@@ -15,7 +15,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from copy import deepcopy
-from typing import Optional
+from typing import Optional, Literal
 
 from ldtk import BoxcarFilter, LDPSetCreator   # noqa
 from numba import njit, prange
@@ -28,7 +28,7 @@ from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
 
 from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_pkaiews, epoch
 from pytransit.param import ParameterSet, UniformPrior as UP, NormalPrior as NP, GParameter
-from scipy.interpolate import pchip_interpolate
+from scipy.interpolate import pchip_interpolate, splrep, splev
 
 from .tsmodel import TransmissionSpectroscopyModel as TSModel
 from .tsdata import TSDataSet
@@ -52,8 +52,12 @@ def lnlike_normal(o, m, e, f):
         return lnlike
 
 
-def resample(x_new, x_old, y_old):
-    return pchip_interpolate(x_old, y_old, x_new)
+def ip_pchip(x, xk, yk):
+    return pchip_interpolate(xk, yk, x)
+
+
+def ip_bspline(x, xk, yk):
+    return splev(x, splrep(xk, yk))
 
 
 def add_knots(x_new, x_old):
@@ -100,13 +104,16 @@ def clean_knots(knots, min_distance, lmin=0, lmax=inf):
 
 class TSLPF(LogPosteriorFunction):
     def __init__(self, name: str, ldmodel, data: TSDataSet, nk: int = 50, nldc: int = 10, nthreads: int = 1,
-                 tmpars = None, noise_model: str = 'white'):
+                 tmpars = None, noise_model: str = 'white', interpolation: Literal['bspline', 'pchip'] = 'bspline'):
         super().__init__(name)
         self._original_data: TSDataSet | None = None
         self.data: TSDataSet | None = None
         self.npb: list[int] | None= None
         self.npt: list[int] | None = None
         self.ndim: int | None = None
+        self.interpolation: str = interpolation
+
+        self._ip = {'bspline': ip_bspline, 'pchip': ip_pchip}[interpolation]
 
         self._gp: Optional[list[GP]] = None
         self._gp_time: Optional[list[ndarray]] = None
@@ -372,7 +379,7 @@ class TSLPF(LogPosteriorFunction):
             # Resample the radius ratios
             # --------------------------
             for i in range(den.shape[0]):
-                den[i, sln] = resample(xn, xo, deo[i, slo])
+                den[i, sln] = self._ip(xn, xo, deo[i, slo])
 
             self._de_population = den
             self.de = None
@@ -393,7 +400,7 @@ class TSLPF(LogPosteriorFunction):
             # Resample the radius ratios
             # --------------------------
             for i in range(fmcn.shape[0]):
-                fmcn[i, sln] = resample(xn, xo, fmco[i, slo])
+                fmcn[i, sln] = self._ip(xn, xo, fmco[i, slo])
 
             self._mc_chains = fmcn.reshape([mco.shape[0], mco.shape[1], ndn])
             self.sampler = None
@@ -443,7 +450,7 @@ class TSLPF(LogPosteriorFunction):
             # Resample the radius ratios
             # --------------------------
             for i in range(pvpn.shape[0]):
-                pvpn[i, sldn] = resample(xn, xo, pvpo[i, sldo])
+                pvpn[i, sldn] = self._ip(xn, xo, pvpo[i, sldo])
 
             self.de = None
             self._de_population = pvpn
@@ -467,7 +474,7 @@ class TSLPF(LogPosteriorFunction):
         ks = [zeros((pvp.shape[0], npb)) for npb in self.npb]
         for ids in range(self.data.size):
             for ipv in range(pvp.shape[0]):
-                ks[ids][ipv,:] =  pchip_interpolate(self.k_knots, pvp[ipv], self.wavelengths[ids])
+                ks[ids][ipv,:] =  self._ip(self.wavelengths[ids], self.k_knots, pvp[ipv])
         return ks
 
     def _eval_ldc(self, pvp):
@@ -483,8 +490,8 @@ class TSLPF(LogPosteriorFunction):
             ldp = [zeros((pvp.shape[0], npb, 2)) for npb in self.npb]
             for ids in range(self.data.size):
                 for ipv in range(pvp.shape[0]):
-                    ldp[ids][ipv, :, 0] = pchip_interpolate(self.ld_knots, ldk[ipv, :, 0], self.wavelengths[ids])
-                    ldp[ids][ipv, :, 1] = pchip_interpolate(self.ld_knots, ldk[ipv, :, 1], self.wavelengths[ids])
+                    ldp[ids][ipv, :, 0] = self._ip(self.wavelengths[ids], self.ld_knots, ldk[ipv, :, 0])
+                    ldp[ids][ipv, :, 1] = self._ip(self.wavelengths[ids], self.ld_knots, ldk[ipv, :, 1])
             return ldp
 
     def transit_model(self, pv, copy=True):

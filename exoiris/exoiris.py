@@ -17,28 +17,27 @@
 import codecs
 import json
 import pickle
+from collections.abc import Sequence
 from multiprocessing import Pool
 from pathlib import Path
-from collections.abc import Sequence
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, Literal
 
-import pandas as pd
-import seaborn as sb
 import astropy.io.fits as pf
 import astropy.units as u
-
+import pandas as pd
+import seaborn as sb
 from astropy.table import Table
 from celerite2 import GaussianProcess, terms
-from matplotlib.pyplot import subplots, setp, figure, Figure, GridSpec, Axes
-from numpy import (poly1d, polyfit, where, sqrt, clip, percentile, median, squeeze, floor, ndarray,
-                   array, inf, newaxis, r_, arange, tile, log10, sort, argsort, concatenate, zeros, full, nan)
+from matplotlib.pyplot import subplots, setp, figure, Figure, Axes
+from numpy import (where, sqrt, clip, percentile, median, squeeze, floor, ndarray,
+                   array, inf, newaxis, arange, tile, sort, argsort, concatenate, full, nan)
 from numpy.random import normal, permutation
 from pytransit import UniformPrior, NormalPrior
-from pytransit.orbits import fold, epoch
+from pytransit.orbits import epoch
 from pytransit.param import ParameterSet
 from pytransit.utils.de import DiffEvol
 from scipy.stats import norm
-from uncertainties import ufloat, UFloat
+from uncertainties import UFloat
 
 from .ldtkld import LDTkLD
 from .tsdata import TSData, TSDataSet
@@ -78,7 +77,8 @@ def load_model(fname: Path | str, name: str | None = None):
         else:
             ldm =  hdul[0].header['LDMODEL']
 
-        a = ExoIris(name or hdul[0].header['NAME'], ldmodel=ldm, data=data)
+        #TODO: save and load the noise model information
+        a = ExoIris(name or hdul[0].header['NAME'], ldmodel=ldm, data=data, interpolation=hdul[0].header['INTERP'])
         a.set_radius_ratio_knots(hdul['K_KNOTS'].data.astype('d'))
         a.set_limb_darkening_knots(hdul['LD_KNOTS'].data.astype('d'))
 
@@ -108,7 +108,7 @@ class ExoIris:
     """
 
     def __init__(self, name: str, ldmodel, data: TSDataSet | TSData, nk: int = 50, nldc: int = 10, nthreads: int = 1,
-                 tmpars: dict | None = None, noise_model: str = 'white'):
+                 tmpars: dict | None = None, noise_model: str = 'white', interpolation: Literal['bspline','pchip'] = 'bspline'):
         """
         Parameters
         ----------
@@ -130,7 +130,8 @@ class ExoIris:
             The noise model to use. Should be either "white" for white noise or "fixed_gp" for Gaussian Process.
         """
         data = TSDataSet([data]) if isinstance(data, TSData) else data
-        self._tsa: TSLPF = TSLPF(name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars, noise_model=noise_model)
+        self._tsa: TSLPF = TSLPF(name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars,
+                                 noise_model=noise_model, interpolation=interpolation)
         self._wa: WhiteLPF | None = None
         self.nthreads: int = nthreads
         self.de: DiffEvol | None = None
@@ -923,6 +924,7 @@ class ExoIris:
         pri.header['t0'] = self.zero_epoch
         pri.header['t14'] = self.transit_duration
         pri.header['ndgroups'] = self.data.size
+        pri.header['interp'] = self._tsa.interpolation
 
         pr = pf.ImageHDU(name='priors')
         priors = [pickle.dumps(p) for p in self.ps]
