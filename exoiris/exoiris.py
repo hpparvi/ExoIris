@@ -113,7 +113,8 @@ class ExoIris:
     """
 
     def __init__(self, name: str, ldmodel, data: TSDataSet | TSData, nk: int = 50, nldc: int = 10, nthreads: int = 1,
-                 tmpars: dict | None = None, noise_model: str = 'white', interpolation: Literal['bspline','pchip'] = 'bspline'):
+                 tmpars: dict | None = None, noise_model: str = 'white',
+                 interpolation: Literal['bspline', 'pchip', 'makima'] = 'bspline'):
         """
         Parameters
         ----------
@@ -527,7 +528,8 @@ class ExoIris:
         return fig
 
     def fit(self, niter: int = 200, npop: Optional[int] = None, pool: Optional[Pool] = None, lnpost: Optional[Callable]=None,
-            population: Optional[ndarray] = None, initial_population: Optional[ndarray] = None) -> None:
+            population: Optional[ndarray] = None, initial_population: Optional[ndarray] = None,
+            min_ptp: float = 5.0, plot_convergence: bool = True) -> None:
         """Fit the spectroscopic light curves jointly using Differential Evolution.
 
         Fit the spectroscopic light curves jointly for `niter` iterations using Differential Evolution.
@@ -568,7 +570,7 @@ class ExoIris:
                 x0[:, self._tsa._sl_rratios] = normal(sqrt(pv0[4]), 0.001, size=(npop, self.nk))
 
         self._tsa.optimize_global(niter=niter, npop=npop, population=x0, pool=pool, lnpost=lnpost,
-                                  vectorize=(pool is None))
+                                  vectorize=(pool is None), min_ptp=min_ptp, plot_convergence=plot_convergence)
         self.de = self._tsa.de
 
     def sample(self, niter: int = 500, thin: int = 10, repeats: int = 1, pool=None, lnpost=None, leave=True, save=False, use_tqdm: bool = True):

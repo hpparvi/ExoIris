@@ -28,7 +28,7 @@ from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
 
 from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_pkaiews, epoch
 from pytransit.param import ParameterSet, UniformPrior as UP, NormalPrior as NP, GParameter
-from scipy.interpolate import pchip_interpolate, splrep, splev
+from scipy.interpolate import pchip_interpolate, splrep, splev, Akima1DInterpolator
 
 from .tsmodel import TransmissionSpectroscopyModel as TSModel
 from .tsdata import TSDataSet
@@ -58,6 +58,10 @@ def ip_pchip(x, xk, yk):
 
 def ip_bspline(x, xk, yk):
     return splev(x, splrep(xk, yk))
+
+
+def ip_makima(x, xk, yk):
+    return Akima1DInterpolator(xk, yk, method='makima')(x)
 
 
 def add_knots(x_new, x_old):
@@ -104,7 +108,8 @@ def clean_knots(knots, min_distance, lmin=0, lmax=inf):
 
 class TSLPF(LogPosteriorFunction):
     def __init__(self, name: str, ldmodel, data: TSDataSet, nk: int = 50, nldc: int = 10, nthreads: int = 1,
-                 tmpars = None, noise_model: str = 'white', interpolation: Literal['bspline', 'pchip'] = 'bspline'):
+                 tmpars = None, noise_model: str = 'white',
+                 interpolation: Literal['bspline', 'pchip', 'makima'] = 'bspline'):
         super().__init__(name)
         self._original_data: TSDataSet | None = None
         self.data: TSDataSet | None = None
@@ -113,7 +118,7 @@ class TSLPF(LogPosteriorFunction):
         self.ndim: int | None = None
         self.interpolation: str = interpolation
 
-        self._ip = {'bspline': ip_bspline, 'pchip': ip_pchip}[interpolation]
+        self._ip = {'bspline': ip_bspline, 'pchip': ip_pchip, 'makima': ip_makima}[interpolation]
 
         self._gp: Optional[list[GP]] = None
         self._gp_time: Optional[list[ndarray]] = None
