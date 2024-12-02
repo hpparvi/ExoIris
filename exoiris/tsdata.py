@@ -33,6 +33,7 @@ from numpy import isfinite, median, where, all, zeros_like, diff, asarray, inter
     ceil, newaxis, inf, array, ones, poly1d, polyfit, nanpercentile, atleast_2d, nan
 from pytransit.orbits import fold
 from scipy.ndimage import median_filter
+from scipy.signal import medfilt
 
 from .ephemeris import Ephemeris
 from .util import bin2d
@@ -142,7 +143,7 @@ class TSData:
         time = hdul[f'TIME_{name}'].data.astype('d')
         wave = hdul[f'WAVE_{name}'].data.astype('d')
         data = hdul[f'DATA_{name}'].data.astype('d')
-        ootm = hdul[f'OOTM_{name}'].data.astype('d')
+        ootm = hdul[f'OOTM_{name}'].data.astype(bool)
         noise_group = hdul[f'DATA_{name}'].header['NGROUP']
         #TODO: import ephemeris
         return TSData(time, wave, data[0], data[1], name=name, noise_group=noise_group, ootmask=ootm)
@@ -367,6 +368,35 @@ class TSData:
         fe = mad_std(self.fluxes, axis=0)
         self.fluxes = where(abs(self.fluxes - fm) / fe < sigma, self.fluxes, median_filter(self.fluxes, 5))
         return self
+
+    def remove_outliers_along_wavelength(self, sigma: float = 5.0, filter_width: int = 9, min_flux: float = 1e-6,
+                                         plot: bool = True, ax = None, figsize=None):
+
+        mean_flux = self.fluxes.mean(1)
+        filtered_flux = medfilt(mean_flux, filter_width)
+        residuals = mean_flux - filtered_flux
+        residual_std = mad_std(residuals)
+
+        mask_good = abs(residuals) < sigma*residual_std
+        mask_good &= mean_flux > min_flux
+
+        if plot:
+            if ax is None:
+                fig, ax = subplots(figsize=figsize, constrained_layout=True)
+            else:
+                fig = ax.figure
+            ax.plot(self.wavelength, mean_flux, c='0.8')
+            ax.plot(self.wavelength, where(mask_good, mean_flux, nan))
+            ax.plot(self.wavelength, filtered_flux+5*mad_std(residuals), '--', c='0.85')
+            ax.plot(self.wavelength, filtered_flux-5*mad_std(residuals), '--', c='0.85')
+            setp(ax, xlabel='wavelength', ylabel='Flux', xlim=self.wavelength[[0,-1]])
+
+        self.wavelength = self.wavelength[mask_good]
+        self.fluxes = self.fluxes[mask_good, :]
+        self.errors = self.errors[mask_good, :]
+        self._wl_l_edges = self._wl_l_edges[mask_good]
+        self._wl_r_edges = self._wl_r_edges[mask_good]
+        self._update()
 
     def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None, data=None,
              plims: tuple[float, float] | None = None) -> Figure:
