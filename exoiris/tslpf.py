@@ -61,7 +61,7 @@ def ip_bspline(x, xk, yk):
 
 
 def ip_makima(x, xk, yk):
-    return Akima1DInterpolator(xk, yk, method='makima')(x)
+    return Akima1DInterpolator(xk, yk, method='makima', extrapolate=True)(x)
 
 
 def add_knots(x_new, x_old):
