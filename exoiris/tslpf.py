@@ -566,16 +566,16 @@ class TSLPF(LogPosteriorFunction):
         pv = atleast_2d(pv)[:, self._sl_baseline]
         npv = pv.shape[0]
         if self._baseline_models is None or self._baseline_models[0].shape[0] != npv:
-            self._baseline_models = [zeros((npv, d.nwl, d.npt)) for d in self.data]
+            self._baseline_models = [zeros((npv, d.nwl)) for d in self.data]
         j = 0
         for i, d in enumerate(self.data):
             nbl = d.n_baseline
             m = self._baseline_models[i]
             if nbl == 1:
-                m[:, :, :] = pv[:, j][:, newaxis, newaxis]
+                m[:, :] = pv[:, j][:, newaxis]
             else:
                 for ipv in range(npv):
-                    m[ipv, :, :] = splev(d.wavelength, splrep(self.baseline_knots[i], pv[ipv, j:j+nbl], k=min(nbl-1, 3)))[:, newaxis]
+                    m[ipv, :] = splev(d.wavelength, splrep(self.baseline_knots[i], pv[ipv, j:j+nbl], k=min(nbl-1, 3)))
             j += nbl
         return self._baseline_models
 
@@ -583,7 +583,7 @@ class TSLPF(LogPosteriorFunction):
         transit_models = self.transit_model(pv)
         baseline_models = self.baseline_model(pv)
         for i in range(self.data.size):
-            transit_models[i][:, :, :] *= baseline_models[i]
+            transit_models[i][:, :, :] *= baseline_models[i][:, :, newaxis]
         return transit_models
 
     def create_pv_population(self, npop: int = 50):
