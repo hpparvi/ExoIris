@@ -30,7 +30,7 @@ from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import LinearLocator, FuncFormatter
 from numpy import isfinite, median, where, all, zeros_like, diff, asarray, interp, arange, floor, ndarray, \
-    ceil, newaxis, inf, array, ones, poly1d, polyfit, nanpercentile, atleast_2d, nan
+    ceil, newaxis, inf, array, ones, poly1d, polyfit, nanpercentile, atleast_2d, nan, linspace
 from pytransit.orbits import fold
 from scipy.ndimage import median_filter
 from scipy.signal import medfilt
@@ -46,7 +46,7 @@ class TSData:
     """
     def __init__(self, time: Sequence, wavelength: Sequence, fluxes: Sequence, errors: Sequence, name: str,
                  noise_group: str = 'a', wl_edges : Sequence | None = None, tm_edges : Sequence | None = None,
-                 ootmask: ndarray | None = None, ephemeris: Ephemeris | None = None) -> None:
+                 ootmask: ndarray | None = None, ephemeris: Ephemeris | None = None, n_baseline: int = 1) -> None:
         """
         Parameters
         ----------
@@ -77,6 +77,9 @@ class TSData:
         if ootmask is not None and ootmask.size != time.size:
             raise ValueError("The size of the out-of-transit mask array must match the size of the time array.")
 
+        if n_baseline < 1:
+            raise ValueError("n_baseline must be greater than zero.")
+
         m = all(isfinite(fluxes), axis=1)
         self.name: str = name
         self.time: ndarray = time.copy()
@@ -86,6 +89,7 @@ class TSData:
         self.ootmask: ndarray = ootmask if ootmask is not None else ones(time.size, dtype=bool)
         self.ngid: int = 0
         self.ephemeris: Ephemeris | None = ephemeris
+        self.n_baseline: int = n_baseline
         self._noise_group: str = noise_group
         self._dataset: Optional['TSDataSet'] = None
         self._update()
@@ -122,6 +126,7 @@ class TSData:
         data = pf.ImageHDU(array([self.fluxes, self.errors]), name=f'data_{self.name}')
         ootm = pf.ImageHDU(self.ootmask.astype(int), name=f'ootm_{self.name}')
         data.header['ngroup'] = self.noise_group
+        data.header['nbasel'] = self.n_baseline
         #TODO: export ephemeris
         return pf.HDUList([time, wave, data, ootm])
 
@@ -145,8 +150,15 @@ class TSData:
         data = hdul[f'DATA_{name}'].data.astype('d')
         ootm = hdul[f'OOTM_{name}'].data.astype(bool)
         noise_group = hdul[f'DATA_{name}'].header['NGROUP']
+
+        try:
+            n_baseline = hdul[f'DATA_{name}'].header['NBASEL']
+        except KeyError:
+            n_baseline = 1
+
         #TODO: import ephemeris
-        return TSData(time, wave, data[0], data[1], name=name, noise_group=noise_group, ootmask=ootm)
+        return TSData(time, wave, data[0], data[1], name=name, noise_group=noise_group, ootmask=ootm,
+                      n_baseline=n_baseline)
 
     def __repr__(self) -> str:
         return f"TSData Name:'{self.name}' [{self.wavelength[0]:.2f} - {self.wavelength[-1]:.2f}] nwl={self.nwl} npt={self.npt}"
@@ -692,6 +704,11 @@ class TSDataSet:
     def n_noise_groups(self) -> int:
         """Number of noise groups."""
         return len(set(self.noise_groups))
+
+    @property
+    def n_baselines(self) -> list[int]:
+        """Number of baseline coefficients for each data set."""
+        return [d.n_baseline for d in self.data]
 
     @property
     def size(self) -> int:

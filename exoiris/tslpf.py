@@ -116,6 +116,7 @@ class TSLPF(LogPosteriorFunction):
         self.npb: list[int] | None= None
         self.npt: list[int] | None = None
         self.ndim: int | None = None
+        self._baseline_models: list[ndarray] | None = None
         self.interpolation: str = interpolation
 
         self._ip = {'bspline': ip_bspline, 'pchip': ip_pchip, 'makima': ip_makima}[interpolation]
@@ -188,6 +189,7 @@ class TSLPF(LogPosteriorFunction):
         self._init_p_limb_darkening()
         self._init_p_radius_ratios()
         self._init_p_noise()
+        self._init_p_baseline()
         self.ps.freeze()
         self.ndim = len(self.ps)
 
@@ -304,6 +306,23 @@ class TSLPF(LogPosteriorFunction):
         ps.add_global_block('white_noise_multipliers', pp)
         self._start_wnm = ps.blocks[-1].start
         self._sl_wnm = ps.blocks[-1].slice
+
+    def _init_p_baseline(self):
+        ps = self.ps
+        self.n_baselines = self.data.n_baselines
+        self.baseline_knots = []
+        pp = []
+        for i, d in enumerate(self.data):
+            if d.n_baseline== 1:
+                self.baseline_knots.append([])
+                pp.append(GParameter(f'bl_{i:02d}_c', 'baseline constant', '', NP(1.0, 1e-6), (0, inf)))
+            elif d.n_baseline > 1:
+                knots = linspace(d.wavelength.min(), d.wavelength.max(), d.n_baseline)
+                self.baseline_knots.append(knots)
+                pp.extend([GParameter(f'bl_{i:02d}_{k:08.5f}', fr'baseline at {k:08.5f} $\mu$m', '', NP(1.0, 1e-6), (0, inf)) for k in knots])
+        ps.add_global_block('baseline_coefficients', pp)
+        self._start_baseline = ps.blocks[-1].start
+        self._sl_baseline = ps.blocks[-1].slice
 
     def set_ldtk_prior(self, teff, logg, metal, dataset: str = 'visir-lowres', width: float = 50,
                        uncertainty_multiplier: float = 10):
@@ -543,8 +562,29 @@ class TSLPF(LogPosteriorFunction):
         else:
             return [tm.evaluate(k[i], ldp[i], t0, p, aor, inc, ecc, w, copy) for i,tm in enumerate(self.tms)]
 
+    def baseline_model(self, pv):
+        pv = atleast_2d(pv)[:, self._sl_baseline]
+        npv = pv.shape[0]
+        if self._baseline_models is None or self._baseline_models[0].shape[0] != npv:
+            self._baseline_models = [zeros((npv, d.nwl, d.npt)) for d in self.data]
+        j = 0
+        for i, d in enumerate(self.data):
+            nbl = d.n_baseline
+            m = self._baseline_models[i]
+            if nbl == 1:
+                m[:, :, :] = pv[:, j][:, newaxis, newaxis]
+            else:
+                for ipv in range(npv):
+                    m[ipv, :, :] = splev(d.wavelength, splrep(self.baseline_knots[i], pv[ipv, j:j+nbl], k=min(nbl-1, 3)))[:, newaxis]
+            j += nbl
+        return self._baseline_models
+
     def flux_model(self, pv):
-        return self.transit_model(pv)
+        transit_models = self.transit_model(pv)
+        baseline_models = self.baseline_model(pv)
+        for i in range(self.data.size):
+            transit_models[i][:, :, :] *= baseline_models[i]
+        return transit_models
 
     def create_pv_population(self, npop: int = 50):
         """ Crate a parameter vector population.
