@@ -30,7 +30,7 @@ from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import LinearLocator, FuncFormatter
 from numpy import isfinite, median, where, all, zeros_like, diff, asarray, interp, arange, floor, ndarray, \
-    ceil, newaxis, inf, array, ones, poly1d, polyfit, nanpercentile, atleast_2d, nan, linspace
+    ceil, newaxis, inf, array, ones, poly1d, polyfit, nanpercentile, atleast_2d, nan, linspace, any
 from pytransit.orbits import fold
 from scipy.ndimage import median_filter
 from scipy.signal import medfilt
@@ -70,6 +70,9 @@ class TSData:
             Tuple containing left and right time edges for each exposure.
         """
         time, wavelength, fluxes, errors = asarray(time), asarray(wavelength), asarray(fluxes), asarray(errors)
+
+        if any(~isfinite(fluxes)) or any(~isfinite(errors)):
+            raise ValueError("Fluxes or errors cannot have nonfinite values.")
 
         if fluxes.shape[0] != wavelength.size:
             raise ValueError("The size of the flux array's first axis must match the size of the wavelength array.")
