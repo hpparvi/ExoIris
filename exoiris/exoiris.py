@@ -30,7 +30,7 @@ from astropy.table import Table
 from celerite2 import GaussianProcess, terms
 from matplotlib.pyplot import subplots, setp, figure, Figure, Axes
 from numpy import (where, sqrt, clip, percentile, median, squeeze, floor, ndarray,
-                   array, inf, newaxis, arange, tile, sort, argsort, concatenate, full, nan)
+                   array, inf, newaxis, arange, tile, sort, argsort, concatenate, full, nan, r_)
 from numpy.random import normal, permutation
 from pytransit import UniformPrior, NormalPrior
 from pytransit.orbits import epoch
@@ -382,6 +382,25 @@ class ExoIris:
             List or array of knot wavelengths.
         """
         self._tsa.set_k_knots(knot_wavelengths)
+
+    def create_dense_radius_ratio_block(self, wlmin: float, wlmax: float) -> None:
+        """Create a block of radius ratio knots using the full data resolution.
+
+        Creates a block of radius ratio knots using the full data resolution that replaces
+        any existing radius ratio knots inside the block.
+
+        Parameters
+        ----------
+        wlmin
+            The minimum wavelength for the full-resolution block.
+        wlmax
+            The maximum wavelength for the full-resolution block.
+        """
+        ck = self._tsa.k_knots
+        nk = concatenate(self.data.wavelengths)
+        nk.sort()
+        nk = nk[(nk >= wlmin) & (nk <= wlmax)]
+        self.set_radius_ratio_knots(r_[ck[ck < nk[0]], nk, ck[ck > nk[-1]]])
 
     def add_limb_darkening_knots(self, knot_wavelengths: Sequence) -> None:
         """Add limb darkening knots.
