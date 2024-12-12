@@ -290,9 +290,9 @@ class TSData:
         m1 = self.time < t-b
         m2 = self.time > t+b
         t1 = TSData(name=f'{self.name}_a', time=self.time[m1], wavelength=self.wavelength, fluxes=self.fluxes[:, m1], errors=self.errors[:, m1],
-                    noise_group=self.noise_group, ootmask=self.ootmask[m1], ephemeris=self.ephemeris)
+                    noise_group=self.noise_group, ootmask=self.ootmask[m1], ephemeris=self.ephemeris, n_baseline=self.n_baseline)
         t2 = TSData(name=f'{self.name}_b', time=self.time[m2], wavelength=self.wavelength, fluxes=self.fluxes[:, m2], errors=self.errors[:, m2],
-                    noise_group=self.noise_group, ootmask=self.ootmask[m2], ephemeris=self.ephemeris)
+                    noise_group=self.noise_group, ootmask=self.ootmask[m2], ephemeris=self.ephemeris, n_baseline=self.n_baseline)
         return t1 + t2
 
     def partition_time(self, tlims: tuple[tuple[float,float]]) -> 'TSDataSet':
@@ -311,7 +311,8 @@ class TSData:
             d = d + TSData(name=f'{self.name}_{i+2}', time=self.time[m], wavelength=self.wavelength,
                            fluxes=self.fluxes[:, m], errors=self.errors[:, m],
                            noise_group=self.noise_group,
-                           ootmask=self.ootmask[m], ephemeris=self.ephemeris)
+                           ootmask=self.ootmask[m], ephemeris=self.ephemeris,
+                           n_baseline=self.n_baseline)
         return d
 
     def crop_wavelength(self, lmin: float, lmax: float) -> 'TSData':
@@ -598,7 +599,7 @@ class TSData:
                 warnings.warn('Error estimation failed for some bins, check the error array.')
             return TSData(self.time, binning.bins.mean(1), bf, be, wl_edges=(binning.bins[:,0], binning.bins[:,1]),
                           name=self.name, tm_edges=(self._tm_l_edges, self._tm_r_edges), noise_group=self.noise_group,
-                          ootmask=self.ootmask, ephemeris=self.ephemeris)
+                          ootmask=self.ootmask, ephemeris=self.ephemeris, n_baseline=self.n_baseline)
 
 
     def bin_time(self, binning: Optional[Union[Binning, CompoundBinning]] = None,
@@ -634,7 +635,7 @@ class TSData:
                           wl_edges=(self._wl_l_edges, self._wl_r_edges),
                           tm_edges=(binning.bins[:,0], binning.bins[:,1]),
                           name=self.name, noise_group=self.noise_group,
-                          ephemeris=self.ephemeris)
+                          ephemeris=self.ephemeris, n_baseline=self.n_baseline)
             if self.ephemeris is not None:
                 d.mask_transit(ephemeris=self.ephemeris)
             return d
