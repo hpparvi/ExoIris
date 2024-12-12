@@ -189,36 +189,63 @@ class ExoIris:
         data = TSDataSet([data]) if isinstance(data, TSData) else data
         self._tsa.set_data(data)
 
-    def set_prior(self, parameter: str, prior: str | Any, *nargs) -> None:
+    def set_prior(self, parameter: Literal['radius ratios', 'baselines', 'wn multipliers'] | str,
+                  prior: str | Any, *nargs) -> None:
         """Set a prior on a model parameter.
 
         Parameters
         ----------
         parameter
-            The name of the parameter to set prior for.
+            The name of the parameter to set a prior for. Can also be 'radius ratios', 'baselines', or 'wn multipliers'
+            to set identical priors on all the radius ratios, baselines, or white noise multipliers.
 
         prior
-            The prior distribution to set for the parameter. This can be "NP" for a normal prior, "UP" for a
+            The prior distribution for the parameter. This can be "NP" for a normal prior, "UP" for a
             uniform prior, or an object with .logpdf(x) method.
 
         *nargs
             Additional arguments to be passed to the prior: (mean, std) for the normal prior and (min, max)
             for the uniform prior.
         """
-        self._tsa.set_prior(parameter, prior, *nargs)
+        if parameter == 'radius ratios':
+            for l in self._tsa.k_knots:
+                self.set_prior(f'k_{l:08.5f}', prior, *nargs)
+        elif parameter == 'baselines':
+            for par in self.ps[self._tsa._sl_baseline]:
+                self.set_prior(par.name, prior, *nargs)
+        elif parameter == 'wn multipliers':
+            for par in self.ps[self._tsa._sl_wnm]:
+                self.set_prior(par.name, prior, *nargs)
+        else:
+            self._tsa.set_prior(parameter, prior, *nargs)
 
-    def set_radius_ratio_prior(self, prior: float, *nargs) -> None:
+    def set_radius_ratio_prior(self, prior, *nargs) -> None:
         """Set an identical prior on all radius ratio (k) knots.
 
         Parameters
         ----------
         prior
-            The prior for the radius ratios.
+            The prior for the radius ratios. This can be "NP" for a normal prior, "UP" for a uniform prior,
+            or an object with .logpdf(x) method.
         *nargs
             Additional arguments for the prior.
         """
         for l in self._tsa.k_knots:
             self.set_prior(f'k_{l:08.5f}', prior, *nargs)
+
+    def set_baseline_prior(self, prior, *nargs) -> None:
+        """Set an identical prior on all baseline knots.
+
+        Parameters
+        ----------
+        prior
+            The prior for the baseline knots.  This can be "NP" for a normal prior, "UP" for a uniform prior,
+            or an object with .logpdf(x) method.
+        *nargs
+            Additional arguments for the prior.
+        """
+        for par in self.ps[self._tsa._sl_baseline]:
+            self.set_prior(par.name, prior, *nargs)
 
     def set_ldtk_prior(self,
                        teff: UFloat | tuple[float, float],
