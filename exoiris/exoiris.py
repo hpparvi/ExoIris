@@ -521,19 +521,19 @@ class ExoIris:
         self.transit_duration = self._wa.transit_duration
         self.data.calculate_ootmask(pv[0], pv[1], self.transit_duration)
 
-    def plot_white(self, axs=None, figsize=None, ncols=2) -> Figure:
+    def plot_white(self, axs=None, figsize: tuple[float, float] | None = None, ncols: int | None=None) -> Figure:
         """Plot the white light curve data with the best-fit model.
 
         Parameters
         ----------
         axs : Axes, optional
             Matplotlib axis object on which to plot. If None, a new figure and axis will be created.
-        figsize : tuple of float, optional
-            Tuple representing the figure size in inches. Default is None.
-        ncols : int, optional
-            Number of columns in the plot layout. Default is 2.
+        figsize
+            Tuple representing the figure size in inches.
+        ncols
+            Number of columns in the plot layout.
         """
-        return self._wa.plot(axs=axs, figsize=figsize, ncols=ncols)
+        return self._wa.plot(axs=axs, figsize=figsize, ncols=ncols or min(self.data.size, 2))
 
     def normalize_baseline(self, deg: int = 1) -> None:
         """Normalize the baseline flux for each spectroscopic light curve.
