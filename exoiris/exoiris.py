@@ -613,7 +613,10 @@ class ExoIris:
                 x0[:, 1] = normal(pv0[0], 1e-4, size=npop)
                 x0[:, 2] = normal(pv0[1], 1e-5, size=npop)
                 x0[:, 3] = clip(normal(pv0[3], 0.01, size=npop), 0.0, 1.0)
-                x0[:, self._tsa._sl_rratios] = normal(sqrt(pv0[4]), 0.001, size=(npop, self.nk))
+                sl = self._tsa._sl_rratios
+                x0[:, sl] = normal(sqrt(pv0[4]), 0.001, size=(npop, self.nk))
+                for i in range(sl.start, sl.stop):
+                    x0[:, i] = clip(x0[:, i], 1.001*self.ps[i].prior.a, 0.999*self.ps[i].prior.b)
 
         self._tsa.optimize_global(niter=niter, npop=npop, population=x0, pool=pool, lnpost=lnpost,
                                   vectorize=(pool is None), min_ptp=min_ptp, plot_convergence=plot_convergence)
