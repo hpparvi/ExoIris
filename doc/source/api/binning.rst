@@ -4,10 +4,10 @@ Binning data
 ============
 .. currentmodule:: exoiris.binning
 
-While EasyTS aims to be fast enough that binning of data is not usually necessary, we still may want to do it every now
-or then. For this, EasyTS provides the `Binning` and `CompoundBinning` classes that can be used to define complex,
+While ExoIris aims to be fast enough that binning of data is not usually necessary, we still may want to do it every now
+or then. For this, ExoIris provides the `Binning` and `CompoundBinning` classes that can be used to define complex,
 non-regular binning geometries. These can be used to bin spectroscopic light curve data sets stored as
-`~easyts.tsdata.TSData` objects using its `~exoiris.tsdata.TSData.bin_wavelength` method.
+`~exoiris.tsdata.TSData` objects using its `~exoiris.tsdata.TSData.bin_wavelength` method.
 
 Binning
 -------

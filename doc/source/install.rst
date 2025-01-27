@@ -1,12 +1,12 @@
 Installation
 ============
 
-Install EasyTS either from PyPI as::
+Install ExoIris either from PyPI as::
 
-    pip install easyts
+    pip install exoiris
 
 or clone it from GitHub and install as::
 
-   git clone https://github.com/hpparvi/EasyTS.git
-   cd EasyTS
+   git clone https://github.com/hpparvi/ExoIris
+   cd ExoIris
    pip install .

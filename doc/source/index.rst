@@ -8,7 +8,7 @@ Easy Exoplanet Transmission Spectroscopy
 .. image:: http://img.shields.io/badge/license-GPLv3-blue.svg?style=flat
    :target: https://www.gnu.org/licenses/gpl-3.0.en.html
 
-.. image:: https://badge.fury.io/py/easyts.svg
+.. image:: https://badge.fury.io/py/exoiris.svg
    :target: https://pypi.org/project/ExoIris/
 
 .. image:: https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg
@@ -57,7 +57,7 @@ Support
 -------
 
 If you experience any difficulties with ExoIris, please submit an issue on the ExoIris
-`GitHub <https://github.com/hpparvi/easyts/issues>`_ repository. You are also encouraged to share suggestions or
+`GitHub <https://github.com/hpparvi/exoiris/issues>`_ repository. You are also encouraged to share suggestions or
 feature requests either through the same method or by reaching out to the authors directly.
 
 License
