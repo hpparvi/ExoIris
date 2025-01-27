@@ -660,6 +660,29 @@ class ExoIris:
         self._tsa.sample_mcmc(niter=niter, thin=thin, repeats=repeats, pool=pool, lnpost=lnpost,
                               vectorize=(pool is None), leave=leave, save=save, use_tqdm=use_tqdm)
 
+    def reset(self, optimizer: bool = True, sampler: bool = True) -> None:
+        """Reset the internal states of the optimizer and sampler.
+
+        Parameters
+        ----------
+        optimizer
+            If True, clears all the internal attributes associated with the optimizer.
+        sampler
+            If True, clears all the internal attributes associated with the sampler.
+
+        Returns
+        -------
+        None
+        """
+        if optimizer:
+            self._tsa.de = None
+            self._tsa._de_population = None
+            self._tsa._de_imin = None
+
+        if sampler:
+            self._tsa.sampler = None
+            self._tsa._mc_chains = None
+
     def reset_sampler(self) -> None:
         """Reset the MCMC sampler
 
