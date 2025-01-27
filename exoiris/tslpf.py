@@ -586,7 +586,7 @@ class TSLPF(LogPosteriorFunction):
             transit_models[i][:, :, :] *= baseline_models[i][:, :, newaxis]
         return transit_models
 
-    def create_pv_population(self, npop: int = 50):
+    def create_pv_population(self, npop: int = 50) -> ndarray:
         """ Crate a parameter vector population.
         Parameters
         ----------
@@ -604,7 +604,7 @@ class TSLPF(LogPosteriorFunction):
         for ipb in range(self.nk):
             self.set_prior(f'k_{ipb + 1:03d}', 'UP', kmin, kmax)
 
-    def lnlikelihood(self, pv):
+    def lnlikelihood(self, pv) -> ndarray | float :
         """Log likelihood for parameter vector pv.
 
         Parameters
