@@ -3,6 +3,7 @@ ldtk >= 1.8.5
 numpy
 scipy
 numba
+emcee
 matplotlib
 celerite2
 pandas

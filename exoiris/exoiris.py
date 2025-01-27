@@ -24,10 +24,13 @@ from typing import Optional, Callable, Any, Literal
 
 import astropy.io.fits as pf
 import astropy.units as u
+import emcee
 import pandas as pd
+import pytransit.utils.de
 import seaborn as sb
 from astropy.table import Table
 from celerite2 import GaussianProcess, terms
+from emcee import EnsembleSampler
 from matplotlib.pyplot import subplots, setp, figure, Figure, Axes
 from numpy import (where, sqrt, clip, percentile, median, squeeze, floor, ndarray,
                    array, inf, newaxis, arange, tile, sort, argsort, concatenate, full, nan, r_)
@@ -140,8 +143,6 @@ class ExoIris:
                                  noise_model=noise_model, interpolation=interpolation)
         self._wa: WhiteLPF | None = None
         self.nthreads: int = nthreads
-        self.de: DiffEvol | None = None
-        self.sampler = None
 
         self.period: float | None = None
         self.zero_epoch: float | None = None
@@ -342,6 +343,16 @@ class ExoIris:
     def ldmodel(self):
         """The limb darkening model."""
         return self._tsa.ldmodel
+
+    @property
+    def sampler(self) -> EnsembleSampler |None:
+        """The emcee sampler."""
+        return self._tsa.sampler
+
+    @property
+    def optimizer(self) -> DiffEvol | None:
+        """The global optimization algorithm."""
+        return self._tsa.de
 
     @property
     def gp(self) -> list[GaussianProcess]:
@@ -575,7 +586,7 @@ class ExoIris:
 
     def fit(self, niter: int = 200, npop: Optional[int] = None, pool: Optional[Pool] = None, lnpost: Optional[Callable]=None,
             population: Optional[ndarray] = None, initial_population: Optional[ndarray] = None,
-            min_ptp: float = 5.0, plot_convergence: bool = True) -> None:
+            min_ptp: float = 2.0, plot_convergence: bool = True) -> None:
         """Fit the spectroscopic light curves jointly using Differential Evolution.
 
         Fit the spectroscopic light curves jointly for `niter` iterations using Differential Evolution.
@@ -648,7 +659,6 @@ class ExoIris:
         """
         self._tsa.sample_mcmc(niter=niter, thin=thin, repeats=repeats, pool=pool, lnpost=lnpost,
                               vectorize=(pool is None), leave=leave, save=save, use_tqdm=use_tqdm)
-        self.sampler = self._tsa.sampler
 
     def reset_sampler(self) -> None:
         """Reset the MCMC sampler
