@@ -359,6 +359,7 @@ class TSData:
         self.time = self.time[m]
         self.fluxes = self.fluxes[:, m]
         self.errors = self.errors[:, m]
+        self.ootmask = self.ootmask[m]
         self._tm_l_edges = self._tm_l_edges[m]
         self._tm_r_edges = self._tm_r_edges[m]
         self._update()
