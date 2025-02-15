@@ -208,11 +208,18 @@ class TSData:
             raise ValueError("Transit masking requires either t0, pp, and t14, ephemeris, or transit limits in exposure indices.")
         return self
 
-    @deprecated('0.9', alternative='mask_transit')
-    def calculate_ootmask(self, t0: float | None = None, p: float | None = None, t14: float | None = None):
-        self.ephemeris = Ephemeris(t0, p, t14)
-        phase = fold(self.time, p, t0)
-        self.ootmask = abs(phase) > 0.502 * t14
+    def estimate_average_uncertainties(self):
+        """Estimate the per-wavelength average flux uncertainties.
+
+        Estimate the per-wavelength flux uncertainties as standard deviation of the first differences of
+        fluxes outside the target object's region. The result is normalized to provide the estimated
+        uncertainty for each data point.
+
+        Notes
+        -----
+        Modifies the `~TSData.errors` attribute in place.
+        """
+        self.errors[:,:] =  (diff(self.fluxes[:, self.ootmask], 1).std(1) / sqrt(2))[:, newaxis]
 
     def _update(self) -> None:
         """Update the internal attributes."""
@@ -284,7 +291,7 @@ class TSData:
                            n_baseline=self.n_baseline)
         return d
 
-    def crop_wavelength(self, lmin: float, lmax: float) -> 'TSData':
+    def crop_wavelength(self, lmin: float, lmax: float, inplace: bool = True) -> 'TSData':
         """Crop the data to include only the wavelength range between lmin and lmax.
 
         Parameters
@@ -293,21 +300,30 @@ class TSData:
             The minimum wavelength value to crop.
         lmax
             The maximum wavelength value to crop.
-
-        Note
-        ----
-        The data will be modified in place.
+        inplace
+            If True, the data will be modified in place, otherwise a new TSData object will be returned.
         """
         m = (self.wavelength > lmin) & (self.wavelength < lmax)
-        self.wavelength = self.wavelength[m]
-        self.fluxes = self.fluxes[m]
-        self.errors = self.errors[m]
-        self._wl_l_edges = self._wl_l_edges[m]
-        self._wl_r_edges = self._wl_r_edges[m]
-        self._update()
-        return self
+        if inplace:
+            self.wavelength = self.wavelength[m]
+            self.fluxes = self.fluxes[m]
+            self.errors = self.errors[m]
+            self._wl_l_edges = self._wl_l_edges[m]
+            self._wl_r_edges = self._wl_r_edges[m]
+            self._update()
+            return self
+        else:
+            return TSData(name=self.name, time=self.time,
+                          wavelength=self.wavelength[m],
+                          fluxes=self.fluxes[m],
+                          errors=self.errors[m],
+                          noise_group=self.noise_group,
+                          wl_edges=(self._wl_l_edges[m], self._wl_r_edges[m]),
+                          tm_edges=(self._tm_l_edges, self._tm_r_edges),
+                          ootmask=self.ootmask, ephemeris=self.ephemeris,
+                          n_baseline=self.n_baseline)
 
-    def crop_time(self, tmin: float, tmax: float) -> 'TSData':
+    def crop_time(self, tmin: float, tmax: float, inplace: bool = True) -> 'TSData':
         """Crop the data to include only the time range between lmin and lmax.
 
         Parameters
@@ -316,20 +332,29 @@ class TSData:
             The minimum time value to crop.
         tmax
             The maximum time value to crop.
-
-        Note
-        ----
-        The data will be modified in place.
+        inplace
+            If True, the data will be modified in place, otherwise a new TSData object will be returned.
         """
         m = (self.time > tmin) & (self.time < tmax)
-        self.time = self.time[m]
-        self.fluxes = self.fluxes[:, m]
-        self.errors = self.errors[:, m]
-        self.ootmask = self.ootmask[m]
-        self._tm_l_edges = self._tm_l_edges[m]
-        self._tm_r_edges = self._tm_r_edges[m]
-        self._update()
-        return self
+        if inplace:
+            self.time = self.time[m]
+            self.fluxes = self.fluxes[:, m]
+            self.errors = self.errors[:, m]
+            self.ootmask = self.ootmask[m]
+            self._tm_l_edges = self._tm_l_edges[m]
+            self._tm_r_edges = self._tm_r_edges[m]
+            self._update()
+            return self
+        else:
+            return TSData(name=self.name, time=self.time[m],
+                          wavelength=self.wavelength,
+                          fluxes=self.fluxes[:, m],
+                          errors=self.errors[:, m],
+                          noise_group=self.noise_group,
+                          wl_edges=(self._wl_l_edges, self._wl_r_edges),
+                          tm_edges=(self._tm_l_edges[m], self._tm_r_edges[m]),
+                          ootmask=self.ootmask[m], ephemeris=self.ephemeris,
+                          n_baseline=self.n_baseline)
 
     def remove_outliers(self, sigma: float = 5.0) -> 'TSData':
         """Remove outliers along the wavelength axis.
@@ -723,9 +748,9 @@ class TSDataSet:
             data.append(TSData.import_fits(name, hdul))
         return TSDataSet(data)
 
-    def calculate_ootmask(self, tc: float, p: float, t14: float):
+    def mask_transit(self, tc: float, p: float, t14: float):
         for d in self.data:
-            d.calculate_ootmask(tc, p, t14)
+            d.mask_transit(tc, p, t14)
 
     def __getitem__(self, index: int) -> TSData:
         return self.data[index]
