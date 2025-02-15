@@ -30,7 +30,7 @@ from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import LinearLocator, FuncFormatter
 from numpy import isfinite, median, where, all, zeros_like, diff, asarray, interp, arange, floor, ndarray, \
-    ceil, newaxis, inf, array, ones, poly1d, polyfit, nanpercentile, atleast_2d, nan, linspace, any
+    ceil, newaxis, inf, array, ones, poly1d, polyfit, nanpercentile, atleast_2d, nan, linspace, any, sqrt
 from pytransit.orbits import fold
 from scipy.ndimage import median_filter
 from scipy.signal import medfilt
@@ -66,7 +66,7 @@ class TSData:
             Noise group the data belongs to.
         wl_edges
             Tuple containing left and right wavelength edges for each wavelength element.
-        wl_edges
+        tm_edges
             Tuple containing left and right time edges for each exposure.
         """
         time, wavelength, fluxes, errors = asarray(time), asarray(wavelength), asarray(fluxes), asarray(errors)
@@ -89,6 +89,7 @@ class TSData:
         self.wavelength: ndarray = wavelength[m]
         self.fluxes: ndarray = fluxes[m]
         self.errors: ndarray = errors[m]
+        self.mask: ndarray = ones(self.fluxes.shape, dtype=bool)
         self.ootmask: ndarray = ootmask if ootmask is not None else ones(time.size, dtype=bool)
         self.ngid: int = 0
         self.ephemeris: Ephemeris | None = ephemeris
