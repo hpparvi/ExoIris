@@ -220,10 +220,6 @@ class TSData:
         self.npt = self.time.size
         self.wllims = self.wavelength.min(), self.wavelength.max()
 
-    @deprecated('0.9', alternative='normalize_to_poly')
-    def normalize_baseline(self, deg: int = 1) -> 'TSData':
-        return self.normalize_to_poly(deg)
-
     def normalize_to_poly(self, deg: int = 1) -> 'TSData':
         """Normalize the baseline flux for each spectroscopic light curve.
 
@@ -255,17 +251,6 @@ class TSData:
             self.errors[ipb, :] /= bl
         return self
 
-    @deprecated('0.9', alternative='normalize_to_median')
-    def normalize_median(self, s: slice) -> None:
-        """Normalize the light curves to the median flux of the given slice along the time axis.
-
-        Parameters
-        ----------
-        s : slice
-            A slice object representing the portion of the data to normalize.
-        """
-        self.normalize_to_median(s)
-
     def normalize_to_median(self, s: slice) -> 'TSData':
         """Normalize the light curves to the median flux of the given slice along the time axis.
 
@@ -278,25 +263,6 @@ class TSData:
         self.fluxes[:,:] /= n
         self.errors[:,:] /= n
         return self
-
-    @deprecated('0.9', alternative='partition_time')
-    def split_time(self, t: float, b: float) -> 'TSDataSet':
-        """Split the data into two parts: (time < t-b) and (time > t+b).
-
-        Parameters
-        ----------
-        t
-            The threshold time value used to split the data.
-        b
-            The buffer time around the threshold `t` to exclude from the split range.
-        """
-        m1 = self.time < t-b
-        m2 = self.time > t+b
-        t1 = TSData(name=f'{self.name}_a', time=self.time[m1], wavelength=self.wavelength, fluxes=self.fluxes[:, m1], errors=self.errors[:, m1],
-                    noise_group=self.noise_group, ootmask=self.ootmask[m1], ephemeris=self.ephemeris, n_baseline=self.n_baseline)
-        t2 = TSData(name=f'{self.name}_b', time=self.time[m2], wavelength=self.wavelength, fluxes=self.fluxes[:, m2], errors=self.errors[:, m2],
-                    noise_group=self.noise_group, ootmask=self.ootmask[m2], ephemeris=self.ephemeris, n_baseline=self.n_baseline)
-        return t1 + t2
 
     def partition_time(self, tlims: tuple[tuple[float,float]]) -> 'TSDataSet':
         """Partition the data into n segments defined by tlims.

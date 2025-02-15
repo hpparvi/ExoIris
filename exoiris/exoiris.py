@@ -519,7 +519,7 @@ class ExoIris:
         self.period = pv[1]
         self.zero_epoch = self._wa.transit_center
         self.transit_duration = self._wa.transit_duration
-        self.data.calculate_ootmask(pv[0], pv[1], self.transit_duration)
+        self.data.mask_transit(pv[0], pv[1], self.transit_duration)
 
     def plot_white(self, axs=None, figsize: tuple[float, float] | None = None, ncols: int | None=None) -> Figure:
         """Plot the white light curve data with the best-fit model.
