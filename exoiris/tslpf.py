@@ -40,15 +40,32 @@ NM_GP_FREE = 2
 
 noise_models = dict(white=NM_WHITE, fixed_gp=NM_GP_FIXED, free_gp=NM_GP_FREE)
 
+
 @njit(parallel=True, cache=False)
-def lnlike_normal(o, m, e, f):
+def lnlike_normal(o, m, e, f, mask):
+    nwl, nt = o.shape
+
     if m.ndim == 2:
-        return -sum(log(f[0]*e)) - 0.5 * o.size * log(2. * pi) - 0.5 * sum((o - m) ** 2 / (f[0]*e) ** 2)
+        la, lb, lc = 0.0, 0.0, 0.0
+        for iwl in range(nwl):
+            for it in range(nt):
+                if mask[iwl, it]:
+                    la += log(f[0]*e[iwl, it])
+                    lb += log(2*pi)
+                    lc += (o[iwl, it] - m[iwl, it])**2 / (f[0]*e[iwl, it])**2
+        return -la - 0.5*lb - 0.5*lc
     if m.ndim == 3:
         npv = m.shape[0]
         lnlike = zeros(npv)
         for i in prange(npv):
-            lnlike[i] = -sum(log(f[i]*e)) - 0.5 * o.size * log(2. * pi) - 0.5 * sum((o - m[i]) ** 2 / (f[i]*e) ** 2)
+            la, lb, lc = 0.0, 0.0, 0.0
+            for iwl in range(nwl):
+                for it in range(nt):
+                    if mask[iwl, it]:
+                        la += log(f[i]*e[iwl, it])
+                        lb += log(2*pi)
+                        lc += (o[iwl, it] - m[i, iwl, it])**2 / (f[i]*e[iwl, it])**2
+            lnlike[i] = -la - 0.5*lb - 0.5*lc
         return lnlike
 
 
@@ -625,7 +642,7 @@ class TSLPF(LogPosteriorFunction):
         lnl = zeros(npv)
         if self._nm == NM_WHITE:
             for i, d in enumerate(self.data):
-                lnl += lnlike_normal(d.fluxes, fmod[i], d.errors, wn_multipliers[:, d.ngid])
+                lnl += lnlike_normal(d.fluxes, fmod[i], d.errors, wn_multipliers[:, d.ngid], d.mask)
         elif self._nm == NM_GP_FIXED:
             for j in range(npv):
                 for i in range(self.data.size):

@@ -13,10 +13,9 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
-from numpy import log10, diff, sqrt, floor, ceil, arange, newaxis
+from numpy import log10, diff, sqrt, floor, ceil, arange, newaxis, nanmean, isfinite
 from scipy.optimize import minimize
 
 from pytransit import BaseLPF, LinearModelBaseline
@@ -27,8 +26,12 @@ from .tslpf import TSLPF
 class WhiteLPF(BaseLPF):
     def __init__(self, tsa: TSLPF):
         self.tsa = tsa
-        times = tsa.data.times
-        fluxes = [f.mean(0) for f in tsa.data.fluxes]
+        fluxes, times = [], []
+        for t, f in zip(tsa.data.times, tsa.data.fluxes):
+            f = nanmean(f, 0)
+            m = isfinite(f)
+            times.append(t[m])
+            fluxes.append(f[m])
         covs = [(t-t.mean())[:, newaxis] for t in times]
 
         super().__init__('white', tsa.data.unique_noise_groups, times, fluxes, covariates=covs, wnids=tsa.data.ngids,
