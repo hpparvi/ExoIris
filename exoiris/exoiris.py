@@ -580,8 +580,8 @@ class ExoIris:
             fig = axs[0, 0].figure
 
         for i in range(self.data.size):
-            self._tsa._original_data[i].plot(ax=axs[i, 0], data=where(self.data[i].ootmask, self._tsa._original_data[i].fluxes, 1))
-            self.data[i].plot(ax=axs[i, 1], data=where(self.data[i].ootmask, self.data[i].fluxes, 1))
+            self._tsa._original_data[i].plot(ax=axs[i, 0], data=where(self.data[i].transit_mask, self._tsa._original_data[i].fluxes, 1))
+            self.data[i].plot(ax=axs[i, 1], data=where(self.data[i].transit_mask, self.data[i].fluxes, 1))
         return fig
 
     def fit(self, niter: int = 200, npop: Optional[int] = None, pool: Optional[Pool] = None, lnpost: Optional[Callable]=None,
@@ -1201,9 +1201,9 @@ class ExoIris:
             rp = DummyPrior()
 
         npb = ids.size
-        time = (tile(data.time[newaxis, data.ootmask], (npb, 1)) + arange(npb)[:, newaxis]).ravel()
-        flux = (data.fluxes[ids, :][:, data.ootmask]).ravel() - 1
-        ferr = (data.errors[ids, :][:, data.ootmask]).ravel()
+        time = (tile(data.time[newaxis, data.transit_mask], (npb, 1)) + arange(npb)[:, newaxis]).ravel()
+        flux = (data.fluxes[ids, :][:, data.transit_mask]).ravel() - 1
+        ferr = (data.errors[ids, :][:, data.transit_mask]).ravel()
         gp = GaussianProcess(terms.Matern32Term(sigma=flux.std(), rho=0.1))
 
         def nll(log10x):

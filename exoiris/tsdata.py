@@ -30,7 +30,7 @@ from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import LinearLocator, FuncFormatter
 from numpy import isfinite, median, where, all, zeros_like, diff, asarray, interp, arange, floor, ndarray, \
-    ceil, newaxis, inf, array, ones, poly1d, polyfit, nanpercentile, atleast_2d, nan, linspace, any, sqrt
+    ceil, newaxis, inf, array, ones, poly1d, polyfit, nanpercentile, atleast_2d, nan, linspace, any, sqrt, nanmedian
 from pytransit.orbits import fold
 from scipy.ndimage import median_filter
 from scipy.signal import medfilt
@@ -46,7 +46,8 @@ class TSData:
     """
     def __init__(self, time: Sequence, wavelength: Sequence, fluxes: Sequence, errors: Sequence, name: str,
                  noise_group: str = 'a', wl_edges : Sequence | None = None, tm_edges : Sequence | None = None,
-                 ootmask: ndarray | None = None, ephemeris: Ephemeris | None = None, n_baseline: int = 1) -> None:
+                 transit_mask: ndarray | None = None, ephemeris: Ephemeris | None = None, n_baseline: int = 1,
+                 mask: ndarray = None) -> None:
         """
         Parameters
         ----------
@@ -71,26 +72,22 @@ class TSData:
         """
         time, wavelength, fluxes, errors = asarray(time), asarray(wavelength), asarray(fluxes), asarray(errors)
 
-        if any(~isfinite(fluxes)) or any(~isfinite(errors)):
-            raise ValueError("Fluxes or errors cannot have nonfinite values.")
-
         if fluxes.shape[0] != wavelength.size:
             raise ValueError("The size of the flux array's first axis must match the size of the wavelength array.")
 
-        if ootmask is not None and ootmask.size != time.size:
+        if transit_mask is not None and transit_mask.size != time.size:
             raise ValueError("The size of the out-of-transit mask array must match the size of the time array.")
 
         if n_baseline < 1:
             raise ValueError("n_baseline must be greater than zero.")
 
-        m = all(isfinite(fluxes), axis=1)
         self.name: str = name
         self.time: ndarray = time.copy()
-        self.wavelength: ndarray = wavelength[m]
-        self.fluxes: ndarray = fluxes[m]
-        self.errors: ndarray = errors[m]
-        self.mask: ndarray = ones(self.fluxes.shape, dtype=bool)
-        self.ootmask: ndarray = ootmask if ootmask is not None else ones(time.size, dtype=bool)
+        self.wavelength: ndarray = wavelength
+        self.mask: ndarray = mask if mask is not None else isfinite(fluxes) & isfinite(errors)
+        self.fluxes: ndarray = where(self.mask, fluxes, nan)
+        self.errors: ndarray = where(self.mask, errors, nan)
+        self.transit_mask: ndarray = transit_mask if transit_mask is not None else ones(time.size, dtype=bool)
         self.ngid: int = 0
         self.ephemeris: Ephemeris | None = ephemeris
         self.n_baseline: int = n_baseline
@@ -128,11 +125,12 @@ class TSData:
         time = pf.ImageHDU(self.time, name=f'time_{self.name}')
         wave = pf.ImageHDU(self.wavelength, name=f'wave_{self.name}')
         data = pf.ImageHDU(array([self.fluxes, self.errors]), name=f'data_{self.name}')
-        ootm = pf.ImageHDU(self.ootmask.astype(int), name=f'ootm_{self.name}')
+        ootm = pf.ImageHDU(self.transit_mask.astype(int), name=f'ootm_{self.name}')
+        mask = pf.ImageHDU(self.mask.astype(int), name=f'mask_{self.name}')
         data.header['ngroup'] = self.noise_group
         data.header['nbasel'] = self.n_baseline
         #TODO: export ephemeris
-        return pf.HDUList([time, wave, data, ootm])
+        return pf.HDUList([time, wave, data, ootm, mask])
 
     @staticmethod
     def import_fits(name: str, hdul: pf.HDUList) -> 'TSData':
@@ -153,6 +151,7 @@ class TSData:
         wave = hdul[f'WAVE_{name}'].data.astype('d')
         data = hdul[f'DATA_{name}'].data.astype('d')
         ootm = hdul[f'OOTM_{name}'].data.astype(bool)
+        mask = hdul[f'MASK_{name}'].data.astype(bool)
         noise_group = hdul[f'DATA_{name}'].header['NGROUP']
 
         try:
@@ -161,8 +160,8 @@ class TSData:
             n_baseline = 1
 
         #TODO: import ephemeris
-        return TSData(time, wave, data[0], data[1], name=name, noise_group=noise_group, ootmask=ootm,
-                      n_baseline=n_baseline)
+        return TSData(time, wave, data[0], data[1], name=name, noise_group=noise_group, transit_mask=ootm,
+                      n_baseline=n_baseline, mask=mask)
 
     def __repr__(self) -> str:
         return f"TSData Name:'{self.name}' [{self.wavelength[0]:.2f} - {self.wavelength[-1]:.2f}] nwl={self.nwl} npt={self.npt}"
@@ -201,10 +200,10 @@ class TSData:
             else:
                 self.ephemeris = Ephemeris(t0, p, t14)
             phase = fold(self.time, self.ephemeris.period, self.ephemeris.zero_epoch)
-            self.ootmask = abs(phase) > 0.502 * self.ephemeris.duration
+            self.transit_mask = abs(phase) > 0.502 * self.ephemeris.duration
         elif elims is not None:
-            self.ootmask = ones(self.fluxes.shape, bool)
-            self.ootmask[:, elims[0]:elims[1]] = False
+            self.transit_mask = ones(self.fluxes.shape, bool)
+            self.transit_mask[:, elims[0]:elims[1]] = False
         else:
             raise ValueError("Transit masking requires either t0, pp, and t14, ephemeris, or transit limits in exposure indices.")
         return self
@@ -220,7 +219,8 @@ class TSData:
         -----
         Modifies the `~TSData.errors` attribute in place.
         """
-        self.errors[:,:] =  (diff(self.fluxes[:, self.ootmask], 1).std(1) / sqrt(2))[:, newaxis]
+        for ipb in range(self.nwl):
+            self.errors[ipb, :] = (diff(self.fluxes[ipb, self.transit_mask & self.mask[ipb]]).std() / sqrt(2))
 
     def _update(self) -> None:
         """Update the internal attributes."""
@@ -249,12 +249,14 @@ class TSData:
             raise ValueError("The degree of the fitted polynomial ('deg') should be 0 or 1. Higher degrees "
                              "are not allowed because they could affect the transit depths.")
 
-        if self.ootmask is None:
+        if self.transit_mask is None:
             raise ValueError("The out-of-transit mask must be defined for normalization. "
                              "Call TSData.mask_transit(...) first.")
 
         for ipb in range(self.nwl):
-            bl = poly1d(polyfit(self.time[self.ootmask], self.fluxes[ipb, self.ootmask], deg=deg))(self.time)
+            bl = poly1d(polyfit(self.time[self.transit_mask & self.mask[ipb]],
+                                self.fluxes[ipb, self.transit_mask & self.mask[ipb]],
+                                deg=deg))(self.time)
             self.fluxes[ipb, :] /= bl
             self.errors[ipb, :] /= bl
         return self
@@ -267,7 +269,7 @@ class TSData:
         s
             A slice object representing the portion of the data to normalize.
         """
-        n = median(self.fluxes[:, s], axis=1)[:, newaxis]
+        n = nanmedian(self.fluxes[:, s], axis=1)[:, newaxis]
         self.fluxes[:,:] /= n
         self.errors[:,:] /= n
         return self
@@ -282,13 +284,15 @@ class TSData:
         """
         masks = [(self.time >= l[0]) & (self.time <= l[1]) for l in tlims]
         m = masks[0]
-        d = TSData(name=f'{self.name}_1', time=self.time[m], wavelength=self.wavelength, fluxes=self.fluxes[:, m],
-                   errors=self.errors[:, m], noise_group=self.noise_group, ootmask=self.ootmask[m], ephemeris=self.ephemeris)
+        d = TSData(name=f'{self.name}_1', time=self.time[m], wavelength=self.wavelength,
+                   fluxes=self.fluxes[:, m], errors=self.errors[:, m], mask=self.mask[:, m],
+                   noise_group=self.noise_group, transit_mask=self.transit_mask[m],
+                   ephemeris=self.ephemeris, n_baseline=self.n_baseline)
         for i, m in enumerate(masks[1:]):
             d = d + TSData(name=f'{self.name}_{i+2}', time=self.time[m], wavelength=self.wavelength,
-                           fluxes=self.fluxes[:, m], errors=self.errors[:, m],
+                           fluxes=self.fluxes[:, m], errors=self.errors[:, m], mask=self.mask[:, m],
                            noise_group=self.noise_group,
-                           ootmask=self.ootmask[m], ephemeris=self.ephemeris,
+                           transit_mask=self.transit_mask[m], ephemeris=self.ephemeris,
                            n_baseline=self.n_baseline)
         return d
 
@@ -309,6 +313,7 @@ class TSData:
             self.wavelength = self.wavelength[m]
             self.fluxes = self.fluxes[m]
             self.errors = self.errors[m]
+            self.mask = self.mask[m]
             self._wl_l_edges = self._wl_l_edges[m]
             self._wl_r_edges = self._wl_r_edges[m]
             self._update()
@@ -318,10 +323,11 @@ class TSData:
                           wavelength=self.wavelength[m],
                           fluxes=self.fluxes[m],
                           errors=self.errors[m],
+                          mask=self.mask[m],
                           noise_group=self.noise_group,
                           wl_edges=(self._wl_l_edges[m], self._wl_r_edges[m]),
                           tm_edges=(self._tm_l_edges, self._tm_r_edges),
-                          ootmask=self.ootmask, ephemeris=self.ephemeris,
+                          transit_mask=self.transit_mask, ephemeris=self.ephemeris,
                           n_baseline=self.n_baseline)
 
     def crop_time(self, tmin: float, tmax: float, inplace: bool = True) -> 'TSData':
@@ -341,7 +347,8 @@ class TSData:
             self.time = self.time[m]
             self.fluxes = self.fluxes[:, m]
             self.errors = self.errors[:, m]
-            self.ootmask = self.ootmask[m]
+            self.mask = self.mask[:, m]
+            self.transit_mask = self.transit_mask[m]
             self._tm_l_edges = self._tm_l_edges[m]
             self._tm_r_edges = self._tm_r_edges[m]
             self._update()
@@ -351,10 +358,11 @@ class TSData:
                           wavelength=self.wavelength,
                           fluxes=self.fluxes[:, m],
                           errors=self.errors[:, m],
+                          mask = self.mask[:, m],
                           noise_group=self.noise_group,
                           wl_edges=(self._wl_l_edges, self._wl_r_edges),
                           tm_edges=(self._tm_l_edges[m], self._tm_r_edges[m]),
-                          ootmask=self.ootmask[m], ephemeris=self.ephemeris,
+                          transit_mask=self.transit_mask[m], ephemeris=self.ephemeris,
                           n_baseline=self.n_baseline)
 
     def remove_outliers(self, sigma: float = 5.0) -> 'TSData':
@@ -375,37 +383,10 @@ class TSData:
         """
         fm = median(self.fluxes, axis=0)
         fe = mad_std(self.fluxes, axis=0)
-        self.fluxes = where(abs(self.fluxes - fm) / fe < sigma, self.fluxes, median_filter(self.fluxes, 5))
+        self.mask &= abs(self.fluxes - fm) / fe < sigma
+        self.fluxes = where(self.mask, self.fluxes, nan)
+        self.errors = where(self.mask, self.errors, nan)
         return self
-
-    def remove_outliers_along_wavelength(self, sigma: float = 5.0, filter_width: int = 9, min_flux: float = 1e-6,
-                                         plot: bool = True, ax = None, figsize=None):
-
-        mean_flux = self.fluxes.mean(1)
-        filtered_flux = medfilt(mean_flux, filter_width)
-        residuals = mean_flux - filtered_flux
-        residual_std = mad_std(residuals)
-
-        mask_good = abs(residuals) < sigma*residual_std
-        mask_good &= mean_flux > min_flux
-
-        if plot:
-            if ax is None:
-                fig, ax = subplots(figsize=figsize, constrained_layout=True)
-            else:
-                fig = ax.figure
-            ax.plot(self.wavelength, mean_flux, c='0.8')
-            ax.plot(self.wavelength, where(mask_good, mean_flux, nan))
-            ax.plot(self.wavelength, filtered_flux+5*mad_std(residuals), '--', c='0.85')
-            ax.plot(self.wavelength, filtered_flux-5*mad_std(residuals), '--', c='0.85')
-            setp(ax, xlabel='wavelength', ylabel='Flux', xlim=self.wavelength[[0,-1]])
-
-        self.wavelength = self.wavelength[mask_good]
-        self.fluxes = self.fluxes[mask_good, :]
-        self.errors = self.errors[mask_good, :]
-        self._wl_l_edges = self._wl_l_edges[mask_good]
-        self._wl_r_edges = self._wl_r_edges[mask_good]
-        self._update()
 
     def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None, data=None,
              plims: tuple[float, float] | None = None) -> Figure:
@@ -541,7 +522,7 @@ class TSData:
         -------
         ~matplotlib.figure.Figure
         """
-        return self.plot(ax=ax, figsize=figsize, data=where(self.ootmask, self.fluxes, nan))
+        return self.plot(ax=ax, figsize=figsize, data=where(self.transit_mask, self.fluxes, nan))
 
     def __add__(self, other: Union['TSData', 'TSDataSet']) -> 'TSDataSet':
         """Combine two transmission spectra along the wavelength axis.
@@ -595,7 +576,7 @@ class TSData:
                 warnings.warn('Error estimation failed for some bins, check the error array.')
             return TSData(self.time, binning.bins.mean(1), bf, be, wl_edges=(binning.bins[:,0], binning.bins[:,1]),
                           name=self.name, tm_edges=(self._tm_l_edges, self._tm_r_edges), noise_group=self.noise_group,
-                          ootmask=self.ootmask, ephemeris=self.ephemeris, n_baseline=self.n_baseline)
+                          transit_mask=self.transit_mask, ephemeris=self.ephemeris, n_baseline=self.n_baseline)
 
 
     def bin_time(self, binning: Optional[Union[Binning, CompoundBinning]] = None,
