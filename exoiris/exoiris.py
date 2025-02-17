@@ -33,7 +33,7 @@ from celerite2 import GaussianProcess, terms
 from emcee import EnsembleSampler
 from matplotlib.pyplot import subplots, setp, figure, Figure, Axes
 from numpy import (where, sqrt, clip, percentile, median, squeeze, floor, ndarray,
-                   array, inf, newaxis, arange, tile, sort, argsort, concatenate, full, nan, r_)
+                   array, inf, newaxis, arange, tile, sort, argsort, concatenate, full, nan, r_, nanpercentile)
 from numpy.random import normal, permutation
 from pytransit import UniformPrior, NormalPrior
 from pytransit.orbits import epoch
@@ -912,17 +912,12 @@ class ExoIris:
         for ids, data in enumerate(self.data):
             ax = axs[ids]
             residuals = data.fluxes - squeeze(fmodel[ids])
-            pp = percentile(residuals, [pmin, pmax])
+            pp = nanpercentile(residuals, [pmin, pmax])
             data.plot(ax=ax, data=residuals, vmin=pp[0], vmax=pp[1], cmap=cmap)
 
             tc = pv[1] + pv[2]*epoch(data.time.mean(), pv[1], pv[2])
             td = self.transit_duration
 
-            #for i in range(2):
-            #    ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='w', ymax=0.05, lw=5)
-            #    ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='w', ymin=0.95, lw=5)
-            #    ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='k', ymax=0.05, lw=1)
-            #    ax.axvline(tc + (-1) ** i * 0.5 * td - self._tref, c='k', ymin=0.95, lw=1)
             if not show_names:
                 ax.set_title("")
 
