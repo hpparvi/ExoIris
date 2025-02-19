@@ -94,7 +94,7 @@ def load_model(fname: Path | str, name: str | None = None):
             a.period = hdul[0].header['P']
             a.zero_epoch = hdul[0].header['T0']
             a.transit_duration = hdul[0].header['T14']
-            [d.calculate_ootmask(a.zero_epoch, a.period, a.transit_duration) for d in a.data]
+            [d.mask_transit(a.zero_epoch, a.period, a.transit_duration) for d in a.data]
         except KeyError:
             pass
 
@@ -164,13 +164,13 @@ class ExoIris:
         """
         return squeeze(self._tsa.lnposterior(pvp))
 
-    def set_noise_model(self, noise_model: str) -> None:
+    def set_noise_model(self, noise_model: Literal['white', 'fixed_gp', 'free_gp']) -> None:
         """Set the noise model for the analysis.
 
         Parameters
         ----------
         noise_model
-            The noise model to be used. Must be one of the following: white, fixed_gp, free_gp.
+            The noise model to be used.
 
         Raises
         ------
@@ -373,6 +373,26 @@ class ExoIris:
     def posterior_samples(self) -> pd.DataFrame:
         """Posterior samples from the MCMC sampler."""
         return pd.DataFrame(self._tsa._mc_chains.reshape([-1, self.ndim]), columns=self.ps.names)
+
+    @property
+    def white_times(self) -> list[ndarray]:
+        """White light curve time arrays."""
+        return self._wa.times
+
+    @property
+    def white_fluxes(self) -> list[ndarray]:
+        """White light curve flux arrays."""
+        return self._wa.fluxes
+
+    @property
+    def white_models(self) -> list[ndarray]:
+        fm = self._wa.flux_model(self._wa._local_minimization.x)
+        return [fm[sl] for sl in self._wa.lcslices]
+
+    @property
+    def white_errors(self) -> list[ndarray]:
+        """White light curve flux error arrays."""
+        return self._wa.std_errors
 
     def add_radius_ratio_knots(self, knot_wavelengths: Sequence) -> None:
         """Add radius ratio (k) knots.
@@ -914,9 +934,6 @@ class ExoIris:
             residuals = data.fluxes - squeeze(fmodel[ids])
             pp = nanpercentile(residuals, [pmin, pmax])
             data.plot(ax=ax, data=residuals, vmin=pp[0], vmax=pp[1], cmap=cmap)
-
-            tc = pv[1] + pv[2]*epoch(data.time.mean(), pv[1], pv[2])
-            td = self.transit_duration
 
             if not show_names:
                 ax.set_title("")
