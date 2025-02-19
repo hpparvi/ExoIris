@@ -207,6 +207,7 @@ class TSLPF(LogPosteriorFunction):
         self._init_p_radius_ratios()
         self._init_p_noise()
         self._init_p_baseline()
+        self._init_p_bias()
         self.ps.freeze()
         self.ndim = len(self.ps)
 
@@ -344,6 +345,16 @@ class TSLPF(LogPosteriorFunction):
         ps.add_global_block('baseline_coefficients', pp)
         self._start_baseline = ps.blocks[-1].start
         self._sl_baseline = ps.blocks[-1].slice
+
+    def _init_p_bias(self):
+        ps = self.ps
+        offset_groups = self.data.offset_groups
+        pp = []
+        for i in range(1, max(offset_groups) + 1):
+            pp.append(GParameter(f'bias_{i:02d}', 'bias offset', '', NP(0.0, 1e-6), (-inf, inf)))
+        ps.add_global_block('bias_offsets', pp)
+        self._start_bias = ps.blocks[-1].start
+        self._sl_bias = ps.blocks[-1].slice
 
     def set_ldtk_prior(self, teff, logg, metal, dataset: str = 'visir-lowres', width: float = 50,
                        uncertainty_multiplier: float = 10):
@@ -573,15 +584,21 @@ class TSLPF(LogPosteriorFunction):
         inc = i_from_ba(pv[:, 3], aor)
         ecc = pv[:, 4] ** 2 + pv[:, 5] ** 2
         w = arctan2(pv[:, 5], pv[:, 4])
+        fluxes = []
         if isinstance(self.ldmodel, LDTkLD):
             ldp, istar = self.ldmodel(self.tms[0].mu, ldp)
             ldpi = dstack([ldp, istar])
-            flux = []
             for i, tm in enumerate(self.tms):
-                flux.append(tm.evaluate(k[i], ldpi[:, self.ldmodel.wlslices[i], :], t0, p, aor, inc, ecc, w, copy))
-            return flux
+                fluxes.append(tm.evaluate(k[i], ldpi[:, self.ldmodel.wlslices[i], :], t0, p, aor, inc, ecc, w, copy))
         else:
-            return [tm.evaluate(k[i], ldp[i], t0, p, aor, inc, ecc, w, copy) for i,tm in enumerate(self.tms)]
+            for i, tm in enumerate(self.tms):
+                fluxes.append(tm.evaluate(k[i], ldp[i], t0, p, aor, inc, ecc, w, copy))
+
+        for i, d in enumerate(self.data):
+            if d.offset_group > 0:
+                biases = pv[:, self._start_bias + d.offset_group - 1][:, None, None]
+                fluxes[i] = biases + (1.0 - biases) * fluxes[i]
+        return fluxes
 
     def baseline_model(self, pv):
         pv = atleast_2d(pv)[:, self._sl_baseline]
