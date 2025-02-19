@@ -240,22 +240,25 @@ class TSLPF(LogPosteriorFunction):
         self._gp_ferr = []
         self._gp = []
         for d in self.data:
-            self._gp_time.append((tile(d.time[newaxis, :], (d.nwl, 1)) + arange(d.nwl)[:, newaxis]).ravel())
-            self._gp_flux.append(d.fluxes.ravel())
-            self._gp_ferr.append(d.errors.ravel())
+            self._gp_time.append((tile(d.time[newaxis, :], (d.nwl, 1)) + arange(d.nwl)[:, newaxis])[d.mask])
+            self._gp_flux.append(d.fluxes[d.mask])
+            self._gp_ferr.append(d.errors[d.mask])
             self._gp.append(GP(terms.Matern32Term(sigma=self._gp_flux[-1].std(), rho=0.1)))
             self._gp[-1].compute(self._gp_time[-1], yerr=self._gp_ferr[-1], quiet=True)
 
-    def set_gp_hyperparameters(self, sigma: float, rho: float) -> None:
+    def set_gp_hyperparameters(self, sigma: float, rho: float, idata: int | None = None) -> None:
         """Sets the Gaussian Process hyperparameters assuming a Matern32 kernel.
 
         Parameters
         ----------
-        sigma : float
+        sigma
             The kernel amplitude parameter.
 
-        rho : float
+        rho
             The length scale parameter.
+
+        idata
+            The data set for which to set the hyperparameters. If None, the hyperparameters are set for all data sets.
 
         Raises
         ------
@@ -264,9 +267,10 @@ class TSLPF(LogPosteriorFunction):
         """
         if self._gp is None:
             raise RuntimeError('The GP needs to be initialized before setting hyperparameters.')
-        for i, gp in enumerate(self._gp):
-            gp.kernel = terms.Matern32Term(sigma=sigma, rho=rho)
-            gp.compute(self._gp_time[i], yerr=self._gp_ferr[i], quiet=True)
+
+        for i in ([idata] or range(self.data.size)):
+            self._gp[i].kernel = terms.Matern32Term(sigma=sigma, rho=rho)
+            self._gp[i].compute(self._gp_time[i], yerr=self._gp_ferr[i], quiet=True)
 
     def set_gp_kernel(self, kernel: terms.Term) -> None:
         """Sets the kernel for the Gaussian Process (GP) model and recomputes the GP.
@@ -646,7 +650,7 @@ class TSLPF(LogPosteriorFunction):
         elif self._nm == NM_GP_FIXED:
             for j in range(npv):
                 for i in range(self.data.size):
-                    lnl[j] += self._gp[i].log_likelihood(self._gp_flux[i] - fmod[i][j].ravel())
+                    lnl[j] += self._gp[i].log_likelihood(self._gp_flux[i] - fmod[i][j][self.data[i].mask])
         else:
             raise NotImplementedError("The free GP noise model hasn't been implemented yet.")
         return lnl if npv > 1 else lnl[0]
