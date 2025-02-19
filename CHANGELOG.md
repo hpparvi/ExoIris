@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+## [0.17.0] - 2025-02-19
+
+### Added
+
+- Added support for masked data support with GP noise model.
+- Added an option to set the GP hyperparameters for an individual data set.
+- Added  `white_times`, `white_fluxes`, `white_models`, and `white_errors` properties to `ExoIris` to access white ligth curve data.
+
+### Fixed
+
+- Fixed model loading with masked data.
+
 ## [0.16.0] - 2025-02-17
 
 ### Added
