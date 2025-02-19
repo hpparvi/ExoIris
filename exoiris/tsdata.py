@@ -47,7 +47,7 @@ class TSData:
     def __init__(self, time: Sequence, wavelength: Sequence, fluxes: Sequence, errors: Sequence, name: str,
                  noise_group: str = 'a', wl_edges : Sequence | None = None, tm_edges : Sequence | None = None,
                  transit_mask: ndarray | None = None, ephemeris: Ephemeris | None = None, n_baseline: int = 1,
-                 mask: ndarray = None) -> None:
+                 mask: ndarray = None, ephemeris_group: int = 0, offset_group: int = 0) -> None:
         """
         Parameters
         ----------
@@ -81,6 +81,12 @@ class TSData:
         if n_baseline < 1:
             raise ValueError("n_baseline must be greater than zero.")
 
+        if ephemeris_group < 0:
+            raise ValueError("ephemeris_group must be a non-negative integer.")
+
+        if offset_group < 0:
+            raise ValueError("offset_group must be a non-negative integer.")
+
         self.name: str = name
         self.time: ndarray = time.copy()
         self.wavelength: ndarray = wavelength
@@ -92,6 +98,8 @@ class TSData:
         self.ephemeris: Ephemeris | None = ephemeris
         self.n_baseline: int = n_baseline
         self._noise_group: str = noise_group
+        self.ephemeris_group: int = ephemeris_group
+        self.offset_group: int = offset_group
         self._dataset: Optional['TSDataSet'] = None
         self._update()
 
@@ -129,6 +137,8 @@ class TSData:
         mask = pf.ImageHDU(self.mask.astype(int), name=f'mask_{self.name}')
         data.header['ngroup'] = self.noise_group
         data.header['nbasel'] = self.n_baseline
+        data.header['epgroup'] = self.ephemeris_group
+        data.header['offgroup'] = self.offset_group
         #TODO: export ephemeris
         return pf.HDUList([time, wave, data, ootm, mask])
 
@@ -153,6 +163,8 @@ class TSData:
         ootm = hdul[f'OOTM_{name}'].data.astype(bool)
         mask = hdul[f'MASK_{name}'].data.astype(bool)
         noise_group = hdul[f'DATA_{name}'].header['NGROUP']
+        ephemeris_group = hdul[f'DATA_{name}'].header['EPGROUP']
+        offset_group = hdul[f'DATA_{name}'].header['OFFGROUP']
 
         try:
             n_baseline = hdul[f'DATA_{name}'].header['NBASEL']
@@ -161,7 +173,7 @@ class TSData:
 
         #TODO: import ephemeris
         return TSData(time, wave, data[0], data[1], name=name, noise_group=noise_group, transit_mask=ootm,
-                      n_baseline=n_baseline, mask=mask)
+                      n_baseline=n_baseline, mask=mask, ephemeris_group=ephemeris_group, offset_group=offset_group)
 
     def __repr__(self) -> str:
         return f"TSData Name:'{self.name}' [{self.wavelength[0]:.2f} - {self.wavelength[-1]:.2f}] nwl={self.nwl} npt={self.npt}"
@@ -286,13 +298,20 @@ class TSData:
         m = masks[0]
         d = TSData(name=f'{self.name}_1', time=self.time[m], wavelength=self.wavelength,
                    fluxes=self.fluxes[:, m], errors=self.errors[:, m], mask=self.mask[:, m],
-                   noise_group=self.noise_group, transit_mask=self.transit_mask[m],
-                   ephemeris=self.ephemeris, n_baseline=self.n_baseline)
+                   noise_group=self.noise_group,
+                   ephemeris_group=self.ephemeris_group,
+                   offset_group=self.offset_group,
+                   transit_mask=self.transit_mask[m],
+                   ephemeris=self.ephemeris,
+                   n_baseline=self.n_baseline)
         for i, m in enumerate(masks[1:]):
             d = d + TSData(name=f'{self.name}_{i+2}', time=self.time[m], wavelength=self.wavelength,
                            fluxes=self.fluxes[:, m], errors=self.errors[:, m], mask=self.mask[:, m],
                            noise_group=self.noise_group,
-                           transit_mask=self.transit_mask[m], ephemeris=self.ephemeris,
+                           ephemeris_group=self.ephemeris_group,
+                           offset_group=self.offset_group,
+                           transit_mask=self.transit_mask[m],
+                           ephemeris=self.ephemeris,
                            n_baseline=self.n_baseline)
         return d
 
@@ -325,6 +344,8 @@ class TSData:
                           errors=self.errors[m],
                           mask=self.mask[m],
                           noise_group=self.noise_group,
+                          ephemeris_group=self.ephemeris_group,
+                          offset_group=self.offset_group,
                           wl_edges=(self._wl_l_edges[m], self._wl_r_edges[m]),
                           tm_edges=(self._tm_l_edges, self._tm_r_edges),
                           transit_mask=self.transit_mask, ephemeris=self.ephemeris,
@@ -360,6 +381,8 @@ class TSData:
                           errors=self.errors[:, m],
                           mask = self.mask[:, m],
                           noise_group=self.noise_group,
+                          ephemeris_group=self.ephemeris_group,
+                          offset_group=self.offset_group,
                           wl_edges=(self._wl_l_edges, self._wl_r_edges),
                           tm_edges=(self._tm_l_edges[m], self._tm_r_edges[m]),
                           transit_mask=self.transit_mask[m], ephemeris=self.ephemeris,
@@ -574,10 +597,16 @@ class TSData:
                            binning.bins, estimate_errors=estimate_errors)
             if not all(isfinite(be)):
                 warnings.warn('Error estimation failed for some bins, check the error array.')
-            return TSData(self.time, binning.bins.mean(1), bf, be, wl_edges=(binning.bins[:,0], binning.bins[:,1]),
-                          name=self.name, tm_edges=(self._tm_l_edges, self._tm_r_edges), noise_group=self.noise_group,
-                          transit_mask=self.transit_mask, ephemeris=self.ephemeris, n_baseline=self.n_baseline)
-
+            return TSData(self.time, binning.bins.mean(1), bf, be,
+                          wl_edges=(binning.bins[:,0], binning.bins[:,1]),
+                          name=self.name,
+                          tm_edges=(self._tm_l_edges, self._tm_r_edges),
+                          noise_group=self.noise_group,
+                          ephemeris_group=self.ephemeris_group,
+                          offset_group=self.offset_group,
+                          transit_mask=self.transit_mask,
+                          ephemeris=self.ephemeris,
+                          n_baseline=self.n_baseline)
 
     def bin_time(self, binning: Optional[Union[Binning, CompoundBinning]] = None,
                        nb: Optional[int] = None, bw: Optional[float] = None,
@@ -609,10 +638,14 @@ class TSData:
             bf, be = bin2d(self.fluxes.T, self.errors.T, self._tm_l_edges, self._tm_r_edges,
                            binning.bins, estimate_errors=estimate_errors)
             d = TSData(binning.bins.mean(1), self.wavelength, bf.T, be.T,
-                          wl_edges=(self._wl_l_edges, self._wl_r_edges),
-                          tm_edges=(binning.bins[:,0], binning.bins[:,1]),
-                          name=self.name, noise_group=self.noise_group,
-                          ephemeris=self.ephemeris, n_baseline=self.n_baseline)
+                       wl_edges=(self._wl_l_edges, self._wl_r_edges),
+                       tm_edges=(binning.bins[:,0], binning.bins[:,1]),
+                       name=self.name,
+                       noise_group=self.noise_group,
+                       ephemeris=self.ephemeris,
+                       n_baseline=self.n_baseline,
+                       ephemeris_group=self.ephemeris_group,
+                       offset_group=self.offset_group)
             if self.ephemeris is not None:
                 d.mask_transit(ephemeris=self.ephemeris)
             return d
@@ -682,6 +715,11 @@ class TSDataSet:
     def n_noise_groups(self) -> int:
         """Number of noise groups."""
         return len(set(self.noise_groups))
+
+    @property
+    def offset_groups(self) -> list[int]:
+        """List of offset groups."""
+        return [d.offset_group for d in self.data]
 
     @property
     def n_baselines(self) -> list[int]:
