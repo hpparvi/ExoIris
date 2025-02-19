@@ -15,7 +15,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
-from numpy import log10, diff, sqrt, floor, ceil, arange, newaxis, nanmean, isfinite
+from numpy import log10, diff, sqrt, floor, ceil, arange, newaxis, nanmean, isfinite, nan, where, nanstd
 from scipy.optimize import minimize
 
 from pytransit import BaseLPF, LinearModelBaseline
@@ -26,16 +26,18 @@ from .tslpf import TSLPF
 class WhiteLPF(BaseLPF):
     def __init__(self, tsa: TSLPF):
         self.tsa = tsa
-        fluxes, times = [], []
+        fluxes, times, errors = [], [], []
         for t, f in zip(tsa.data.times, tsa.data.fluxes):
-            f = nanmean(f, 0)
-            m = isfinite(f)
+            mf = nanmean(f, 0)
+            m = isfinite(mf)
             times.append(t[m])
-            fluxes.append(f[m])
+            fluxes.append(mf[m])
+            errors.append(nanstd(where(m, f, nan), 0) / sqrt(f.shape[0]))
         covs = [(t-t.mean())[:, newaxis] for t in times]
+        self.std_errors = errors
 
-        super().__init__('white', tsa.data.unique_noise_groups, times, fluxes, covariates=covs, wnids=tsa.data.ngids,
-                         pbids=tsa.data.ngids)
+        super().__init__('white', tsa.data.unique_noise_groups, times, fluxes,
+                         covariates=covs, wnids=tsa.data.ngids, pbids=tsa.data.ngids)
         self.set_prior('tc', tsa.ps[tsa.ps.find_pid('tc')].prior)
         self.set_prior('p', tsa.ps[tsa.ps.find_pid('p')].prior)
         self.set_prior('rho', tsa.ps[tsa.ps.find_pid('rho')].prior)
