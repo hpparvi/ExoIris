@@ -33,7 +33,8 @@ from celerite2 import GaussianProcess, terms
 from emcee import EnsembleSampler
 from matplotlib.pyplot import subplots, setp, figure, Figure, Axes
 from numpy import (where, sqrt, clip, percentile, median, squeeze, floor, ndarray,
-                   array, inf, newaxis, arange, tile, sort, argsort, concatenate, full, nan, r_, nanpercentile)
+                   array, inf, newaxis, arange, tile, sort, argsort, concatenate, full, nan, r_, nanpercentile, log10,
+                   ceil)
 from numpy.random import normal, permutation
 from pytransit import UniformPrior, NormalPrior
 from pytransit.orbits import epoch
@@ -554,6 +555,22 @@ class ExoIris:
             Number of columns in the plot layout.
         """
         return self._wa.plot(axs=axs, figsize=figsize, ncols=ncols or min(self.data.size, 2))
+
+    def plot_white_gp_predictions(self, axs = None, ncol: int = 1, figsize: tuple[float, float] | None = None):
+        ndata = self.data.size
+
+        if axs is None:
+            nrow = int(ceil(ndata / ncol))
+            fig, axs = subplots(nrow, ncol, sharey='all', constrained_layout=True, squeeze=False, figsize=figsize)
+        else:
+            fig = axs[0].axes
+
+        for i in range(ndata):
+            tref = floor(self.white_times[i][0])
+            axs.flat[i].plot(self.white_times[i] - tref, self.white_fluxes[i]-self.white_models[i])
+            axs.flat[i].plot(self.white_times[i] - tref, self.white_gp_models[i], 'k')
+            setp(axs.flat[i], xlabel=f'Time - {tref:.0f} [d]', xlim=self.white_times[i][[0,-1]]-tref)
+        setp(axs[:, 0], ylabel='Residuals')
 
     def normalize_baseline(self, deg: int = 1) -> None:
         """Normalize the baseline flux for each spectroscopic light curve.
@@ -1120,87 +1137,15 @@ class ExoIris:
             pvp = self._tsa._mc_chains[:, -1, :] = pvp
 
     def optimize_gp_hyperparameters(self,
-                                    log10_sigma_bounds: float | tuple[float, float] = (-5, -2),
+                                    log10_sigma_bounds: float | tuple[float, float] | None = None,
                                     log10_rho_bounds: float | tuple[float, float] = (-5, 0),
                                     log10_sigma_prior=None, log10_rho_prior=None,
-                                    npop: int = 10, niter: int = 100, subset = None):
-        """Optimize the Matern-3/2 kernel Gaussian Process hyperparameters.
-
-        Parameters
-        ----------
-        log10_sigma_bounds
-            The bounds for the log10 of the sigma hyperparameter. If float is provided, the parameter will be
-            fixed to the given value. Default is (-5, -2).
-        log10_rho_bounds
-            The bounds for the log10 of the rho hyperparameter. If float is provided, the parameter will be fixed
-            to the given value. Default is (-5, 0).
-        log10_sigma_prior
-            The prior distribution for the sigma hyperparameter expressed as an object with a `logpdf` method
-            or as an iterable containing the mean and standard deviation of the prior distribution. Default is None.
-        log10_rho_prior
-            The prior distribution for the rho hyperparameter expressed as an object with a `logpdf` method
-            or as an iterable containing the mean and standard deviation of the prior distribution. Default is None.
-        npop
-            The population size for the differential evolution optimizer. Default is 10.
-        niter
-            The number of iterations for the differential evolution optimization process. Default is 100.
-        subset
-            The subset used for the optimization process. If `subset` is a float, a random subset of size
-            `0.5 * self.npb` is used. If `subset` is an iterable, it must contain the indices of the subset.
-            Default is None.
-
-        Returns
-        -------
-        tuple[float, float]
-            The optimized values for the log10 of the sigma and rho hyperparameters.
-        float
-            The fitness value.
-
-        Raises
-        ------
-        ValueError
-            If `subset` is not an iterable or a float.
-        ValueError
-            If `log10_sigma_prior` is not an object with a `logpdf` method or iterable.
-        ValueError
-            If `log10_rho_prior` is not an object with a `logpdf` method or iterable.
-
-        Notes
-        -----
-        - The Gaussian Process is reconfigured with the optimal hyperparameters. Any previous kernels are overwritten.
-        """
-
+                                    npop: int = 10, niter: int = 100):
         if self._tsa.noise_model != 'fixed_gp':
             raise ValueError("The noise model must be set to 'fixed_gp' before the hyperparameter optimization.")
 
-        sb = log10_sigma_bounds if isinstance(log10_sigma_bounds, Sequence) else [log10_sigma_bounds-1, log10_sigma_bounds+1]
-        rb = log10_rho_bounds if isinstance(log10_rho_bounds, Sequence) else [log10_rho_bounds-1, log10_rho_bounds+1]
-        bounds = array([sb, rb])
-
-        data = self.data[0]
-        if subset is not None:
-            if isinstance(subset, float):
-                ids = sort(permutation(data.nwl)[:int(subset*data.nwl)])
-            elif isinstance(subset, Sequence):
-                ids = array(subset, int)
-            else:
-                raise ValueError("subset must be either an iterable or a float.")
-        else:
-            ids = arange(data.nwl)
-
-        class DummyPrior:
-            def logpdf(self, x):
-                return 0.0
-
-        if log10_sigma_prior is not None:
-            if isinstance(log10_sigma_prior, Sequence):
-                sp = norm(*log10_sigma_prior)
-            elif hasattr(log10_sigma_prior, 'logpdf'):
-                sp = log10_sigma_prior
-            else:
-                raise ValueError('Bad sigma_prior')
-        else:
-            sp = DummyPrior()
+        if self._wa is None:
+            raise ValueError("The white light curves must be fit using 'fit_white()' before the hyperparameter optimization.")
 
         if log10_rho_prior is not None:
             if isinstance(log10_rho_prior, Sequence):
@@ -1210,29 +1155,69 @@ class ExoIris:
             else:
                 raise ValueError('Bad rho_prior')
         else:
-            rp = DummyPrior()
+            rp = norm(-2, 1)
 
-        npb = ids.size
-        time = (tile(data.time[newaxis, data.transit_mask], (npb, 1)) + arange(npb)[:, newaxis]).ravel()
-        flux = (data.fluxes[ids, :][:, data.transit_mask]).ravel() - 1
-        ferr = (data.errors[ids, :][:, data.transit_mask]).ravel()
-        gp = GaussianProcess(terms.Matern32Term(sigma=flux.std(), rho=0.1))
+        times = self.white_times
+        errors = self.white_errors
+        residuals = [o-m for o,m in zip(self.white_fluxes, self.white_models)]
+        self.white_gp_models = []
 
-        def nll(log10x):
-            x = 10**log10x
-            if any(log10x < bounds[:,0]) or any(log10x > bounds[:,1]):
-                return inf
-            gp.kernel = terms.Matern32Term(sigma=x[0], rho=x[1])
-            gp.compute(time, yerr=ferr, quiet=True)
-            return -(gp.log_likelihood(flux) + sp.logpdf(log10x[0]) + rp.logpdf(log10x[1]))
+        gp_hyperparameters = []
+        for i in range(len(times)):
+            time = times[i]
+            fres = residuals[i]
+            ferr = errors[i]
 
-        de = DiffEvol(nll, bounds, npop, min_ptp=0.2)
-        if isinstance(log10_sigma_bounds, float):
-            de.population[:, 0] = log10_sigma_bounds
-        if isinstance(log10_rho_bounds, float):
-            de.population[:, 1] = log10_rho_bounds
+            log10_sigma_guess = log10(fres.std())
 
-        de.optimize(niter)
-        x = de.minimum_location
-        self._tsa.set_gp_hyperparameters(10**x[0], 10**x[1])
-        return 10**x, de._fitness.ptp()
+            match log10_sigma_bounds:
+                case None:
+                    sb =  [log10_sigma_guess-1, log10_sigma_guess+1]
+                case _ if isinstance(log10_sigma_bounds, Sequence):
+                    sb = log10_sigma_bounds
+                case _ if isinstance(log10_sigma_bounds, float):
+                    sb = [log10_sigma_bounds-1, log10_sigma_bounds+1]
+
+            match log10_rho_bounds:
+                case None:
+                    rb =  [-5, -2]
+                case _ if isinstance(log10_rho_bounds, Sequence):
+                    rb = log10_rho_bounds
+                case _ if isinstance(log10_rho_bounds, float):
+                    rb = [log10_rho_bounds-1, log10_rho_bounds+1]
+
+            bounds = array([sb, rb])
+
+            if log10_sigma_prior is not None:
+                if isinstance(log10_sigma_prior, Sequence):
+                    sp = norm(*log10_sigma_prior)
+                elif hasattr(log10_sigma_prior, 'logpdf'):
+                    sp = log10_sigma_prior
+                else:
+                    raise ValueError('Bad sigma_prior')
+            else:
+                sp = norm(log10_sigma_guess, 0.1)
+
+            gp = GaussianProcess(terms.Matern32Term(sigma=fres.std(), rho=0.1))
+
+            def nll(log10x):
+                x = 10**log10x
+                if any(log10x < bounds[:,0]) or any(log10x > bounds[:,1]):
+                    return inf
+                gp.kernel = terms.Matern32Term(sigma=x[0], rho=x[1])
+                gp.compute(time, yerr=ferr, quiet=True)
+                return -(gp.log_likelihood(fres) + sp.logpdf(log10x[0]) + rp.logpdf(log10x[1]))
+
+            de = DiffEvol(nll, bounds, npop, min_ptp=0.2)
+            if isinstance(log10_sigma_bounds, float):
+                de.population[:, 0] = log10_sigma_bounds
+            if isinstance(log10_rho_bounds, float):
+                de.population[:, 1] = log10_rho_bounds
+
+            de.optimize(niter)
+            x = de.minimum_location
+            gp_hyperparameters.append(10**x)
+            gp.kernel = terms.Matern32Term(sigma=10**x[0], rho=10**x[1])
+            self.white_gp_models.append(gp.predict(fres))
+            self._tsa.set_gp_hyperparameters(10**x[0], 10**x[1], i)
+        return gp_hyperparameters
