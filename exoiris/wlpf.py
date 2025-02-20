@@ -79,7 +79,7 @@ class WhiteLPF(BaseLPF):
     def plot(self, axs=None, figsize=None, ncols=2) -> Figure:
         if axs is None:
             nrows = int(ceil(self.nlc / ncols))
-            fig, axs = subplots(nrows, ncols, figsize=figsize, sharey='all', squeeze=False)
+            fig, axs = subplots(nrows, ncols, figsize=figsize, sharey='all', squeeze=False, constrained_layout=True)
         else:
             fig = axs[0].get_figure()
 
