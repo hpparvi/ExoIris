@@ -20,11 +20,11 @@ RoadRunner transit model (`pytransit.RRModel`). The RoadRunner model is an advan
 efficiently use any radially symmetric function to model stellar limb darkening, as described in
 `Parviainen (2020) <https://ui.adsabs.harvard.edu/link_gateway/2020MNRAS.499.1633P/PUB_HTML>`_.
 
-Since `TSModel` is based on `RRModel`, it offers the same flexibility for modeling stellar limb darkening.
-The `ldmodel` argument can be one of the following:
+Since `~pytransit.TSModel` is based on `~pytransit.RRModel`, it offers the same flexibility for modeling stellar limb
+darkening. The ``ldmodel`` argument can be one of the following:
 
-- a string representing one of the built-in limb darkening models supported by `RRModel`, such as
-  `power-2` or `quadratic`,
+- a string representing one of the built-in limb darkening models supported by ``RRModel``, such as
+  ``power-2`` or ``quadratic``,
 - an object that is a subclass of the `pytransit.models.ldmodel.LDModel` limb darkening model class,
 - a tuple of two functions, with the first returning the limb darkening profile as a function of
   :math:`\mu` and the second returning its integral over the stellar disk, or
@@ -44,7 +44,6 @@ An `ExoIris` instance can be saved to a FITS file using the `ExoIris.save` metho
 optimiser state, and MCMC sampler state, allowing the model to be fully recreated later using the `load_model`
 function.
 
-
 .. autosummary::
     :toctree: api/
 
@@ -59,18 +58,26 @@ where a saved low-resolution analysis can be loaded as a new analysis using the 
 like the radius ratio and limb darkening knots can be adjusted to increase the resolution of the estimated
 transmission spectrum, and even the observational data can be changed to improve the data resolution.
 
-
 .. autosummary::
     :toctree: api/
 
     ExoIris.set_data
     ExoIris.set_radius_ratio_knots
     ExoIris.add_radius_ratio_knots
+    ExoIris.create_dense_radius_ratio_block
+    ExoIris.plot_setup
+
+Parameterization and priors
+---------------------------
+
+.. autosummary::
+    :toctree: api/
+
+    ExoIris.set_prior
+    ExoIris.set_baseline_prior
     ExoIris.set_ldtk_prior
     ExoIris.set_radius_ratio_prior
-    ExoIris.plot_setup
     ExoIris.print_parameters
-
 
 Noise model setup
 -----------------
@@ -89,6 +96,7 @@ via the `ExoIris.gp` attribute.
     ExoIris.set_gp_hyperparameters
     ExoIris.optimize_gp_hyperparameters
     ExoIris.gp
+    ExoIris.plot_white_gp_predictions
 
 
 First steps
@@ -159,4 +167,32 @@ Utility methods
 .. autosummary::
     :toctree: api/
 
+    ExoIris.reset
     ExoIris.create_initial_population
+    ExoIris.lnposterior
+
+Properties
+----------
+
+The following properties expose key internal states and parameters of the analysis:
+
+.. autosummary::
+    :toctree: api/
+
+    ExoIris.name
+    ExoIris.data
+    ExoIris.k_knots
+    ExoIris.ndim
+    ExoIris.nk
+    ExoIris.nldp
+    ExoIris.npb
+    ExoIris.ldmodel
+    ExoIris.sampler
+    ExoIris.optimizer
+    ExoIris.optimizer_population
+    ExoIris.mcmc_chains
+    ExoIris.white_times
+    ExoIris.white_fluxes
+    ExoIris.white_models
+    ExoIris.white_errors
+    ExoIris.ps

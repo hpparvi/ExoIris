@@ -387,6 +387,7 @@ class ExoIris:
 
     @property
     def white_models(self) -> list[ndarray]:
+        """Fitted white light curve flux model arrays."""
         fm = self._wa.flux_model(self._wa._local_minimization.x)
         return [fm[sl] for sl in self._wa.lcslices]
 
@@ -556,7 +557,25 @@ class ExoIris:
         """
         return self._wa.plot(axs=axs, figsize=figsize, ncols=ncols or min(self.data.size, 2))
 
-    def plot_white_gp_predictions(self, axs = None, ncol: int = 1, figsize: tuple[float, float] | None = None):
+    def plot_white_gp_predictions(self, axs = None, ncol: int = 1, figsize: tuple[float, float] | None = None) -> None:
+        """Plot the predictions of a Gaussian Process model for white light curves and residuals.
+
+        Parameters
+        ----------
+        axs
+            Axes array in which the plots are drawn. If None, new subplots are generated.
+        ncol
+            The number of columns for the created grid of subplots. Used only if axs is None.
+        figsize
+            Size of the figure in inches (width, height). Used only if axs is None. If None,
+            a default size is used.
+
+        Notes
+        -----
+        The number of rows for the subplots is determined dynamically based on the shape of
+        the data and the number of columns specified (ncol). If the provided axes array (axs)
+        does not accommodate all the subplots, the behavior is undefined.
+        """
         ndata = self.data.size
 
         if axs is None:
