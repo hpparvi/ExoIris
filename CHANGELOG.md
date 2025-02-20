@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+## [0.18.0] - 2025-02-20
+
+### Added
+
+- Added `offset_group` variable to `TSData` that can be used in ExoIris to account for bias offsets between instruments
+  and monochromatic transit-to-transit variations in transit depths caused by unocculted stellar heterogeneities, such
+  as spots and faculae. 
+
 ## [0.17.0] - 2025-02-19
 
 ### Added
