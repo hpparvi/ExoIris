@@ -125,7 +125,7 @@ def clean_knots(knots, min_distance, lmin=0, lmax=inf):
 
 class TSLPF(LogPosteriorFunction):
     def __init__(self, name: str, ldmodel, data: TSDataSet, nk: int = 50, nldc: int = 10, nthreads: int = 1,
-                 tmpars = None, noise_model: str = 'white',
+                 tmpars = None, noise_model: Literal["white", "fixed_gp", "free_gp"] = 'white',
                  interpolation: Literal['bspline', 'pchip', 'makima'] = 'bspline'):
         super().__init__(name)
         self._original_data: TSDataSet | None = None
@@ -206,6 +206,8 @@ class TSLPF(LogPosteriorFunction):
         self._init_p_limb_darkening()
         self._init_p_radius_ratios()
         self._init_p_noise()
+        if self._nm == NM_GP_FREE:
+            self._init_p_gp()
         self._init_p_baseline()
         self._init_p_bias()
         self.ps.freeze()
@@ -230,6 +232,10 @@ class TSLPF(LogPosteriorFunction):
         self._nm = noise_models[noise_model]
         if self._nm in (NM_GP_FIXED, NM_GP_FREE):
             self._init_gp()
+        if self._nm == NM_GP_FREE:
+            self.ps.thaw()
+            self._init_p_gp()
+            self.ps.freeze()
 
     def _init_gp(self) -> None:
         """Initializes the Gaussian Process (GP) .
@@ -328,6 +334,15 @@ class TSLPF(LogPosteriorFunction):
         ps.add_global_block('white_noise_multipliers', pp)
         self._start_wnm = ps.blocks[-1].start
         self._sl_wnm = ps.blocks[-1].slice
+
+    def _init_p_gp(self):
+        ps = self.ps
+        if not hasattr(self, '_sl_gp'):
+            pp = [GParameter('gp_log_sigma', 'GP log sigma', '', NP(0.0, 0.01), (-inf, inf)),
+                  GParameter('gp_log_rho', 'GP log rho', '', NP(0.0, 0.01), (-inf, inf))]
+            ps.add_global_block('gp_hyperparameters', pp)
+            self._start_gp = ps.blocks[-1].start
+            self._sl_gp = ps.blocks[-1].slice
 
     def _init_p_baseline(self):
         ps = self.ps
@@ -664,12 +679,12 @@ class TSLPF(LogPosteriorFunction):
         if self._nm == NM_WHITE:
             for i, d in enumerate(self.data):
                 lnl += lnlike_normal(d.fluxes, fmod[i], d.errors, wn_multipliers[:, d.ngid], d.mask)
-        elif self._nm == NM_GP_FIXED:
+        else:
             for j in range(npv):
+                if self._nm == NM_GP_FREE:
+                    self.set_gp_hyperparameters(*pv[j, self._sl_gp])
                 for i in range(self.data.size):
                     lnl[j] += self._gp[i].log_likelihood(self._gp_flux[i] - fmod[i][j][self.data[i].mask])
-        else:
-            raise NotImplementedError("The free GP noise model hasn't been implemented yet.")
         return lnl if npv > 1 else lnl[0]
 
     def create_initial_population(self, n: int, source: str, add_noise: bool = True) -> ndarray:
