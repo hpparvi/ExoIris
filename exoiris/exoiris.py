@@ -86,8 +86,12 @@ def load_model(fname: Path | str, name: str | None = None):
         except KeyError:
             ip = 'bspline'
 
-        #TODO: save and load the noise model information
-        a = ExoIris(name or hdul[0].header['NAME'], ldmodel=ldm, data=data, interpolation=ip)
+        try:
+            noise_model = hdul[0].header['NOISE']
+        except KeyError:
+            noise_model = "white"
+
+        a = ExoIris(name or hdul[0].header['NAME'], ldmodel=ldm, data=data, noise_model=noise_model, interpolation=ip)
         a.set_radius_ratio_knots(hdul['K_KNOTS'].data.astype('d'))
         a.set_limb_darkening_knots(hdul['LD_KNOTS'].data.astype('d'))
 
@@ -117,7 +121,7 @@ class ExoIris:
     """
 
     def __init__(self, name: str, ldmodel, data: TSDataSet | TSData, nk: int = 50, nldc: int = 10, nthreads: int = 1,
-                 tmpars: dict | None = None, noise_model: str = 'white',
+                 tmpars: dict | None = None, noise_model: Literal["white", "fixed_gp", "free_gp"] = 'white',
                  interpolation: Literal['bspline', 'pchip', 'makima'] = 'bspline'):
         """
         Parameters
@@ -1062,6 +1066,7 @@ class ExoIris:
         pri.header['t14'] = self.transit_duration
         pri.header['ndgroups'] = self.data.size
         pri.header['interp'] = self._tsa.interpolation
+        pri.header['noise'] = self._tsa.noise_model
 
         pr = pf.ImageHDU(name='priors')
         priors = [pickle.dumps(p) for p in self.ps]
@@ -1160,8 +1165,8 @@ class ExoIris:
                                     log10_rho_bounds: float | tuple[float, float] = (-5, 0),
                                     log10_sigma_prior=None, log10_rho_prior=None,
                                     npop: int = 10, niter: int = 100):
-        if self._tsa.noise_model != 'fixed_gp':
-            raise ValueError("The noise model must be set to 'fixed_gp' before the hyperparameter optimization.")
+        if self._tsa.noise_model not in ('fixed_gp', 'free_gp'):
+            raise ValueError("The noise model must be set to 'fixed_gp' or 'free_gp' before the hyperparameter optimization.")
 
         if self._wa is None:
             raise ValueError("The white light curves must be fit using 'fit_white()' before the hyperparameter optimization.")
