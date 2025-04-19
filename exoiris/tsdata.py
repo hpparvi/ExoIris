@@ -162,9 +162,21 @@ class TSData:
         data = hdul[f'DATA_{name}'].data.astype('d')
         ootm = hdul[f'OOTM_{name}'].data.astype(bool)
         mask = hdul[f'MASK_{name}'].data.astype(bool)
-        noise_group = hdul[f'DATA_{name}'].header['NGROUP']
-        ephemeris_group = hdul[f'DATA_{name}'].header['EPGROUP']
-        offset_group = hdul[f'DATA_{name}'].header['OFFGROUP']
+
+        try:
+            noise_group = hdul[f'DATA_{name}'].header['NGROUP']
+        except KeyError:
+            noise_group = 0
+
+        try:
+            ephemeris_group = hdul[f'DATA_{name}'].header['EPGROUP']
+        except KeyError:
+            ephemeris_group = 0
+
+        try:
+            offset_group = hdul[f'DATA_{name}'].header['OFFGROUP']
+        except KeyError:
+            offset_group = 0
 
         try:
             n_baseline = hdul[f'DATA_{name}'].header['NBASEL']
