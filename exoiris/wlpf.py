@@ -32,7 +32,7 @@ class WhiteLPF(BaseLPF):
             m = isfinite(mf)
             times.append(t[m])
             fluxes.append(mf[m])
-            errors.append(nanstd(where(m, f, nan), 0) / sqrt(f.shape[0]))
+            errors.append(nanstd(f, 0)[m] / sqrt(f.shape[0]))
         covs = [(t-t.mean())[:, newaxis] for t in times]
         self.std_errors = errors
 
