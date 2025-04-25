@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a support for a free GP noise model. That is, the GP hyperparameters can be free parameters in the model.  
+  However, this is somewhat slower than using the fixed GP model, since the GP needs to be computed for each model
+  evaluation.
+- Added a ``ExoIris.plot_white_gp_predictions`` method to visualize the GP predictions for the white light curves.
+
+### Improved
+
+- Improved TSData fits io to make sure all the properties (such as the noise and bias groups) are saved and read properly.
+- Fixed a white light curve fitting but where the error array was not filtered correctly.
+- Made `TSData` to raise a `ValueError` if either the time or wavelength array contains any non-finite values.
+
 ### Changed
 
 ### Removed
