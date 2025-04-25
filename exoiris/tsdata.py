@@ -87,6 +87,12 @@ class TSData:
         if offset_group < 0:
             raise ValueError("offset_group must be a non-negative integer.")
 
+        if not all(isfinite(time)):
+            raise ValueError("The time array must contain only finite values.")
+
+        if not all(isfinite(wavelength)):
+            raise ValueError("The wavelength array must contain only finite values.")
+
         self.name: str = name
         self.time: ndarray = time.copy()
         self.wavelength: ndarray = wavelength
