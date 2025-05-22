@@ -29,8 +29,9 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import LinearLocator, FuncFormatter
-from numpy import isfinite, median, where, all, zeros_like, diff, asarray, interp, arange, floor, ndarray, \
-    ceil, newaxis, inf, array, ones, poly1d, polyfit, nanpercentile, atleast_2d, nan, linspace, any, sqrt, nanmedian
+from numpy import any, isfinite, median, where, all, zeros_like, diff, asarray, interp, arange, floor, ndarray, \
+    ceil, newaxis, inf, array, ones, poly1d, polyfit, nanpercentile, atleast_2d, nan, linspace, any, sqrt, nanmedian, \
+    nanmean
 from pytransit.orbits import fold
 from scipy.ndimage import median_filter
 from scipy.signal import medfilt
@@ -45,9 +46,10 @@ class TSData:
     fluxes, and errors. It provides methods for manipulating and analyzing the data.
     """
     def __init__(self, time: Sequence, wavelength: Sequence, fluxes: Sequence, errors: Sequence, name: str,
-                 noise_group: str = 'a', wl_edges : Sequence | None = None, tm_edges : Sequence | None = None,
+                 noise_group: int = 0, wl_edges : Sequence | None = None, tm_edges : Sequence | None = None,
                  transit_mask: ndarray | None = None, ephemeris: Ephemeris | None = None, n_baseline: int = 1,
-                 mask: ndarray = None, ephemeris_group: int = 0, offset_group: int = 0) -> None:
+                 mask: ndarray = None, epoch_group: int = 0, offset_group: int = 0,
+                 mask_nonfinite_errors: bool = True) -> None:
         """
         Parameters
         ----------
@@ -81,8 +83,11 @@ class TSData:
         if n_baseline < 1:
             raise ValueError("n_baseline must be greater than zero.")
 
-        if ephemeris_group < 0:
-            raise ValueError("ephemeris_group must be a non-negative integer.")
+        if noise_group < 0:
+            raise ValueError("noise_group must be a positive integer.")
+
+        if epoch_group < 0:
+            raise ValueError("epoch_group must be a non-negative integer.")
 
         if offset_group < 0:
             raise ValueError("offset_group must be a non-negative integer.")
@@ -94,17 +99,20 @@ class TSData:
             raise ValueError("The wavelength array must contain only finite values.")
 
         self.name: str = name
+        self.mask_nonfinite_errors: bool = mask_nonfinite_errors
         self.time: ndarray = time.copy()
         self.wavelength: ndarray = wavelength
-        self.mask: ndarray = mask if mask is not None else isfinite(fluxes) & isfinite(errors)
+        self.mask: ndarray = mask if mask is not None else isfinite(fluxes)
+        if self.mask_nonfinite_errors:
+            self.mask &= isfinite(errors)
         self.fluxes: ndarray = where(self.mask, fluxes, nan)
         self.errors: ndarray = where(self.mask, errors, nan)
         self.transit_mask: ndarray = transit_mask if transit_mask is not None else ones(time.size, dtype=bool)
         self.ngid: int = 0
-        self.ephemeris: Ephemeris | None = ephemeris
+        self._ephemeris: Ephemeris | None = ephemeris
         self.n_baseline: int = n_baseline
         self._noise_group: str = noise_group
-        self.ephemeris_group: int = ephemeris_group
+        self.epoch_group: int = epoch_group
         self.offset_group: int = offset_group
         self._dataset: Optional['TSDataSet'] = None
         self._update()
@@ -143,7 +151,7 @@ class TSData:
         mask = pf.ImageHDU(self.mask.astype(int), name=f'mask_{self.name}')
         data.header['ngroup'] = self.noise_group
         data.header['nbasel'] = self.n_baseline
-        data.header['epgroup'] = self.ephemeris_group
+        data.header['epgroup'] = self.epoch_group
         data.header['offgroup'] = self.offset_group
         #TODO: export ephemeris
         return pf.HDUList([time, wave, data, ootm, mask])
@@ -191,7 +199,7 @@ class TSData:
 
         #TODO: import ephemeris
         return TSData(time, wave, data[0], data[1], name=name, noise_group=noise_group, transit_mask=ootm,
-                      n_baseline=n_baseline, mask=mask, ephemeris_group=ephemeris_group, offset_group=offset_group)
+                      n_baseline=n_baseline, mask=mask, epoch_group=ephemeris_group, offset_group=offset_group)
 
     def __repr__(self) -> str:
         return f"TSData Name:'{self.name}' [{self.wavelength[0]:.2f} - {self.wavelength[-1]:.2f}] nwl={self.nwl} npt={self.npt}"
@@ -206,6 +214,16 @@ class TSData:
         self._noise_group = ng
         if self._dataset is not None:
             self._dataset._update_nids()
+
+    @property
+    def ephemeris(self) -> Ephemeris:
+        """Ephemeris."""
+        return self._ephemeris
+
+    @ephemeris.setter
+    def ephemeris(self, ep: Ephemeris) -> None:
+        self._ephemeris = ep
+        self.mask_transit(ephemeris=ep)
 
     def mask_transit(self, t0: float | None = None, p: float | None = None, t14: float | None = None,
                      ephemeris : Ephemeris | None = None, elims: tuple[int, int] | None = None) -> 'TSData':
@@ -226,9 +244,9 @@ class TSData:
         """
         if (t0 and p and t14) or ephemeris is not None:
             if ephemeris is not None:
-                self.ephemeris = ephemeris
+                self._ephemeris = ephemeris
             else:
-                self.ephemeris = Ephemeris(t0, p, t14)
+                self._ephemeris = Ephemeris(t0, p, t14)
             phase = fold(self.time, self.ephemeris.period, self.ephemeris.zero_epoch)
             self.transit_mask = abs(phase) > 0.502 * self.ephemeris.duration
         elif elims is not None:
@@ -257,6 +275,15 @@ class TSData:
         self.nwl = self.wavelength.size
         self.npt = self.time.size
         self.wllims = self.wavelength.min(), self.wavelength.max()
+        if self._ephemeris is not None:
+            self.mask_transit(ephemeris=self._ephemeris)
+
+    def _update_data_mask(self) -> None:
+        self.mask = isfinite(self.fluxes)
+        if self.mask_nonfinite_errors:
+            self.mask &= isfinite(self.errors)
+        self.fluxes = where(self.mask, self.fluxes, nan)
+        self.errors = where(self.mask, self.errors, nan)
 
     def normalize_to_poly(self, deg: int = 1) -> 'TSData':
         """Normalize the baseline flux for each spectroscopic light curve.
@@ -289,6 +316,7 @@ class TSData:
                                 deg=deg))(self.time)
             self.fluxes[ipb, :] /= bl
             self.errors[ipb, :] /= bl
+        self._update_data_mask()
         return self
 
     def normalize_to_median(self, s: slice) -> 'TSData':
@@ -317,20 +345,22 @@ class TSData:
         d = TSData(name=f'{self.name}_1', time=self.time[m], wavelength=self.wavelength,
                    fluxes=self.fluxes[:, m], errors=self.errors[:, m], mask=self.mask[:, m],
                    noise_group=self.noise_group,
-                   ephemeris_group=self.ephemeris_group,
+                   epoch_group=self.epoch_group,
                    offset_group=self.offset_group,
                    transit_mask=self.transit_mask[m],
                    ephemeris=self.ephemeris,
-                   n_baseline=self.n_baseline)
+                   n_baseline=self.n_baseline,
+                   mask_nonfinite_errors=self.mask_nonfinite_errors)
         for i, m in enumerate(masks[1:]):
             d = d + TSData(name=f'{self.name}_{i+2}', time=self.time[m], wavelength=self.wavelength,
                            fluxes=self.fluxes[:, m], errors=self.errors[:, m], mask=self.mask[:, m],
                            noise_group=self.noise_group,
-                           ephemeris_group=self.ephemeris_group,
+                           epoch_group=self.epoch_group,
                            offset_group=self.offset_group,
                            transit_mask=self.transit_mask[m],
                            ephemeris=self.ephemeris,
-                           n_baseline=self.n_baseline)
+                           n_baseline=self.n_baseline,
+                           mask_nonfinite_errors=self.mask_nonfinite_errors)
         return d
 
     def crop_wavelength(self, lmin: float, lmax: float, inplace: bool = True) -> 'TSData':
@@ -362,12 +392,13 @@ class TSData:
                           errors=self.errors[m],
                           mask=self.mask[m],
                           noise_group=self.noise_group,
-                          ephemeris_group=self.ephemeris_group,
+                          epoch_group=self.epoch_group,
                           offset_group=self.offset_group,
                           wl_edges=(self._wl_l_edges[m], self._wl_r_edges[m]),
                           tm_edges=(self._tm_l_edges, self._tm_r_edges),
                           transit_mask=self.transit_mask, ephemeris=self.ephemeris,
-                          n_baseline=self.n_baseline)
+                          n_baseline=self.n_baseline,
+                          mask_nonfinite_errors=self.mask_nonfinite_errors)
 
     def crop_time(self, tmin: float, tmax: float, inplace: bool = True) -> 'TSData':
         """Crop the data to include only the time range between lmin and lmax.
@@ -399,19 +430,20 @@ class TSData:
                           errors=self.errors[:, m],
                           mask = self.mask[:, m],
                           noise_group=self.noise_group,
-                          ephemeris_group=self.ephemeris_group,
+                          epoch_group=self.epoch_group,
                           offset_group=self.offset_group,
                           wl_edges=(self._wl_l_edges, self._wl_r_edges),
                           tm_edges=(self._tm_l_edges[m], self._tm_r_edges[m]),
                           transit_mask=self.transit_mask[m], ephemeris=self.ephemeris,
-                          n_baseline=self.n_baseline)
+                          n_baseline=self.n_baseline,
+                          mask_nonfinite_errors=self.mask_nonfinite_errors)
 
-    def remove_outliers(self, sigma: float = 5.0) -> 'TSData':
-        """Remove outliers along the wavelength axis.
+    # TODO: separate mask into bad data mask and outlier mask.
+    def mask_outliers(self, sigma: float = 5.0) -> 'TSData':
+        """Mask outliers along the wavelength axis.
 
-        Replace outliers along the wavelength axis with the value of a 5-point running median filter. Outliers are
-        defined as data points that deviate from the median by more than sigma times the median absolute deviation
-        along the wavelength axis.
+        Outliers are defined as data points that deviate from the running 5-point median by more
+        than sigma times the median absolute deviation along the wavelength axis.
 
         Parameters
         ----------
@@ -422,12 +454,17 @@ class TSData:
         ----
         The data will be modified in place.
         """
-        fm = median(self.fluxes, axis=0)
-        fe = mad_std(self.fluxes, axis=0)
+        fm = nanmedian(self.fluxes, axis=0)
+        fe = mad_std(self.fluxes, axis=0, ignore_nan=True)
         self.mask &= abs(self.fluxes - fm) / fe < sigma
         self.fluxes = where(self.mask, self.fluxes, nan)
         self.errors = where(self.mask, self.errors, nan)
         return self
+
+    @deprecated("0.10", alternative="TSData.mask_outliers")
+    def remove_outliers(self, sigma: float = 5.0) -> 'TSData':
+        """Remove outliers along the wavelength axis."""
+        self.mask_outliers(sigma=sigma)
 
     def plot(self, ax=None, vmin: float = None, vmax: float = None, cmap=None, figsize=None, data=None,
              plims: tuple[float, float] | None = None) -> Figure:
@@ -528,7 +565,7 @@ class TSData:
             fig = ax.figure
         tref = floor(self.time.min())
 
-        ax.plot(self.time, self.fluxes.mean(0))
+        ax.plot(self.time, nanmean(self.fluxes, 0))
         if self.ephemeris is not None:
             [ax.axvline(tl, ls='--', c='k') for tl in self.ephemeris.transit_limits(self.time.mean())]
 
@@ -620,7 +657,7 @@ class TSData:
                           name=self.name,
                           tm_edges=(self._tm_l_edges, self._tm_r_edges),
                           noise_group=self.noise_group,
-                          ephemeris_group=self.ephemeris_group,
+                          epoch_group=self.epoch_group,
                           offset_group=self.offset_group,
                           transit_mask=self.transit_mask,
                           ephemeris=self.ephemeris,
@@ -662,7 +699,7 @@ class TSData:
                        noise_group=self.noise_group,
                        ephemeris=self.ephemeris,
                        n_baseline=self.n_baseline,
-                       ephemeris_group=self.ephemeris_group,
+                       epoch_group=self.epoch_group,
                        offset_group=self.offset_group)
             if self.ephemeris is not None:
                 d.mask_transit(ephemeris=self.ephemeris)
@@ -738,6 +775,11 @@ class TSDataSet:
     def offset_groups(self) -> list[int]:
         """List of offset groups."""
         return [d.offset_group for d in self.data]
+
+    @property
+    def epoch_groups(self) -> list[int]:
+        """List of epoch groups."""
+        return [d.epoch_group for d in self.data]
 
     @property
     def n_baselines(self) -> list[int]:

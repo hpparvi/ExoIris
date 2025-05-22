@@ -203,6 +203,7 @@ class TSLPF(LogPosteriorFunction):
         self.ps = ParameterSet([])
         self._init_p_star()
         self._init_p_orbit()
+        self._init_p_transit_centers()
         self._init_p_limb_darkening()
         self._init_p_radius_ratios()
         self._init_p_noise()
@@ -311,14 +312,21 @@ class TSLPF(LogPosteriorFunction):
 
     def _init_p_orbit(self):
         ps = self.ps
-        pp = [GParameter('tc', 'zero_epoch', '', NP(0.0, 0.1), (-inf, inf)),
-              GParameter('p', 'period', 'd', NP(1.0, 1e-5), (0, inf)),
+        pp = [GParameter('p', 'period', 'd', NP(1.0, 1e-5), (0, inf)),
               GParameter('b', 'impact_parameter', 'R_s', UP(0.0, 1.0), (0, inf)),
               GParameter('secw', 'sqrt(e) cos(w)', '', NP(0.0, 1e-5), (-1, 1)),
               GParameter('sesw', 'sqrt(e) sin(w)', '', NP(0.0, 1e-5), (-1, 1))]
         ps.add_global_block('orbit', pp)
         self._start_orbit = ps.blocks[-1].start
         self._sl_orbit = ps.blocks[-1].slice
+
+    def _init_p_transit_centers(self):
+        ps = self.ps
+        neps = max(self.data.epoch_groups) + 1
+        pp = [GParameter(f'tc_{i:02d}', f'zero_epoch_{i:02d}', '', NP(0.0, 0.1), (-inf, inf)) for i in range(neps)]
+        ps.add_global_block('transit_centers', pp)
+        self._start_tcs = ps.blocks[-1].start
+        self._sl_tcs = ps.blocks[-1].slice
 
     def _init_p_radius_ratios(self):
         ps = self.ps
@@ -592,22 +600,24 @@ class TSLPF(LogPosteriorFunction):
         """
         pv = atleast_2d(pv)
         ldp = self._eval_ldc(pv)
-        t0 = pv[:, 1]
-        p = pv[:, 2]
+        t0s = pv[:, self._sl_tcs]
         k = self._eval_k(pv[:, self._sl_rratios])
+        p = pv[:, 1]
         aor = as_from_rhop(pv[:, 0], p)
-        inc = i_from_ba(pv[:, 3], aor)
-        ecc = pv[:, 4] ** 2 + pv[:, 5] ** 2
-        w = arctan2(pv[:, 5], pv[:, 4])
+        inc = i_from_ba(pv[:, 2], aor)
+        ecc = pv[:, 3] ** 2 + pv[:, 4] ** 2
+        w = arctan2(pv[:, 4], pv[:, 3])
+        epids = self.data.epoch_groups
         fluxes = []
         if isinstance(self.ldmodel, LDTkLD):
             ldp, istar = self.ldmodel(self.tms[0].mu, ldp)
             ldpi = dstack([ldp, istar])
             for i, tm in enumerate(self.tms):
-                fluxes.append(tm.evaluate(k[i], ldpi[:, self.ldmodel.wlslices[i], :], t0, p, aor, inc, ecc, w, copy))
+                fluxes.append(tm.evaluate(k[i], ldpi[:, self.ldmodel.wlslices[i], :],
+                                          t0s[:, epids[i]], p, aor, inc, ecc, w, copy))
         else:
             for i, tm in enumerate(self.tms):
-                fluxes.append(tm.evaluate(k[i], ldp[i], t0, p, aor, inc, ecc, w, copy))
+                fluxes.append(tm.evaluate(k[i], ldp[i], t0s[:, epids[i]], p, aor, inc, ecc, w, copy))
 
         for i, d in enumerate(self.data):
             if d.offset_group > 0:

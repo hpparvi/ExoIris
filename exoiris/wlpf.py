@@ -15,11 +15,31 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
-from numpy import log10, diff, sqrt, floor, ceil, arange, newaxis, nanmean, isfinite, nan, where, nanstd
+from numpy import (
+    log10,
+    diff,
+    sqrt,
+    floor,
+    ceil,
+    arange,
+    newaxis,
+    nanmean,
+    isfinite,
+    nan,
+    where,
+    nanstd,
+    inf,
+    atleast_2d,
+    repeat,
+    array,
+    average,
+)
 from scipy.optimize import minimize
 
 from pytransit import BaseLPF, LinearModelBaseline
 from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_pkaiews, epoch
+from pytransit.param import GParameter, NormalPrior as NP, UniformPrior as UP
+from pytransit.lpf.lpf import map_ldc
 
 from .tslpf import TSLPF
 
@@ -27,18 +47,25 @@ class WhiteLPF(BaseLPF):
     def __init__(self, tsa: TSLPF):
         self.tsa = tsa
         fluxes, times, errors = [], [], []
-        for t, f in zip(tsa.data.times, tsa.data.fluxes):
-            mf = nanmean(f, 0)
+        for t, f, e in zip(tsa.data.times, tsa.data.fluxes, tsa.data.errors):
+            weights = where(isfinite(f) & isfinite(e), 1/e**2, 0.0)
+            mf = average(f, axis=0, weights=weights)
+            me = sqrt(1./(1./e**2).sum(0))
             m = isfinite(mf)
             times.append(t[m])
             fluxes.append(mf[m])
-            errors.append(nanstd(f, 0)[m] / sqrt(f.shape[0]))
+            errors.append(me[m])
         covs = [(t-t.mean())[:, newaxis] for t in times]
         self.std_errors = errors
+        self.neps = max(self.tsa.data.epoch_groups) + 1
 
         super().__init__('white', tsa.data.unique_noise_groups, times, fluxes,
                          covariates=covs, wnids=tsa.data.ngids, pbids=tsa.data.ngids)
-        self.set_prior('tc', tsa.ps[tsa.ps.find_pid('tc')].prior)
+
+        self.tm.epids = array(self.tsa.data.epoch_groups)
+
+        for i in range(self.neps):
+            self.set_prior(f'tc_{i:02d}', tsa.ps[tsa.ps.find_pid(f'tc_{i:02d}')].prior)
         self.set_prior('p', tsa.ps[tsa.ps.find_pid('p')].prior)
         self.set_prior('rho', tsa.ps[tsa.ps.find_pid('rho')].prior)
         self.set_prior('b', tsa.ps[tsa.ps.find_pid('b')].prior)
@@ -54,6 +81,32 @@ class WhiteLPF(BaseLPF):
     def _init_baseline(self):
         self._add_baseline_model(LinearModelBaseline(self))
 
+    def _init_p_orbit(self):
+        """Orbit parameter initialisation.
+        """
+        porbit = [
+            GParameter('p', 'period', 'd', NP(1.0, 1e-5), (0, inf)),
+            GParameter('rho', 'stellar_density', 'g/cm^3', UP(0.1, 25.0), (0, inf)),
+            GParameter('b', 'impact_parameter', 'R_s', UP(0.0, 1.0), (0, 1))]
+        self.ps.add_global_block('orbit', porbit)
+
+        ptc = [GParameter(f'tc_{i:02d}', f'transit_center_{i:02d}', '-', NP(0.0, 0.1), (-inf, inf)) for i in
+               range(self.neps)]
+        self.ps.add_global_block('tc', ptc)
+        self._pid_tc = repeat(self.ps.blocks[-1].start, self.nlc)
+        self._start_tc = self.ps.blocks[-1].start
+        self._sl_tc = self.ps.blocks[-1].slice
+
+    def transit_model(self, pv, copy=True):
+        pv = atleast_2d(pv)
+        ldc = map_ldc(pv[:, self._sl_ld])
+        zero_epoch = pv[:, self._sl_tc] - self._tref
+        period = pv[:, 0]
+        smaxis = as_from_rhop(pv[:, 1], period)
+        inclination = i_from_ba(pv[:, 2], smaxis)
+        radius_ratio = sqrt(pv[:, self._sl_k2])
+        return self.tm.evaluate(radius_ratio, ldc, zero_epoch, period, smaxis, inclination)
+
     def optimize(self, pv0=None, method='powell', maxfev: int = 5000):
             if pv0 is None:
                 if self.de is not None:
@@ -66,14 +119,14 @@ class WhiteLPF(BaseLPF):
     @property
     def transit_center(self):
         pv = self._local_minimization.x
-        return pv[0] + pv[1]*epoch(self.times[0].mean(), pv[0], pv[1])
+        return pv[3] + pv[0]*epoch(self.times[0].mean(), pv[3], pv[0])
 
     @property
     def transit_duration(self):
         pv = self._local_minimization.x
-        a = as_from_rhop(pv[2], pv[1])
-        i = i_from_ba(pv[3], a)
-        t14 = d_from_pkaiews(pv[1], sqrt(pv[4]), a, i, 0., 0., 1, 14)
+        a = as_from_rhop(pv[1], pv[0])
+        i = i_from_ba(pv[2], a)
+        t14 = d_from_pkaiews(pv[0], sqrt(pv[4]), a, i, 0., 0., 1, 14)
         return t14
 
     def plot(self, axs=None, figsize=None, ncols=2) -> Figure:
