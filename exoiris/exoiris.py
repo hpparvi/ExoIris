@@ -32,9 +32,9 @@ from astropy.table import Table
 from celerite2 import GaussianProcess, terms
 from emcee import EnsembleSampler
 from matplotlib.pyplot import subplots, setp, figure, Figure, Axes
-from numpy import (where, sqrt, clip, percentile, median, squeeze, floor, ndarray,
+from numpy import (any, where, sqrt, clip, percentile, median, squeeze, floor, ndarray, isfinite,
                    array, inf, newaxis, arange, tile, sort, argsort, concatenate, full, nan, r_, nanpercentile, log10,
-                   ceil)
+                   ceil, unique)
 from numpy.random import normal, permutation
 from pytransit import UniformPrior, NormalPrior
 from pytransit.orbits import epoch
@@ -144,6 +144,26 @@ class ExoIris:
             The noise model to use. Should be either "white" for white noise or "fixed_gp" for Gaussian Process.
         """
         data = TSDataSet([data]) if isinstance(data, TSData) else data
+
+        for d in data:
+            if any(~isfinite(d.fluxes[d.mask])):
+                raise ValueError(f"The {d.name} data set flux array contains unmasked noninfinite values.")
+
+            if any(~isfinite(d.errors[d.mask])):
+                raise ValueError(f"The {d.name} data set error array contains unmasked noninfinite values.")
+
+        ngs = array(data.noise_groups)
+        if not ((ngs.min() == 0) and (ngs.max() + 1 == unique(ngs).size)):
+            raise ValueError("The noise groups must start from 0 and be consecutive.")
+
+        ogs = array(data.offset_groups)
+        if not ((ogs.min() == 0) and (ogs.max() + 1 == unique(ogs).size)):
+            raise ValueError("The offset groups must start from 0 and be consecutive.")
+
+        egs = array(data.epoch_groups)
+        if not ((egs.min() == 0) and (egs.max() + 1 == unique(egs).size)):
+            raise ValueError("The epoch groups must start from 0 and be consecutive.")
+
         self._tsa: TSLPF = TSLPF(name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars,
                                  noise_model=noise_model, interpolation=interpolation)
         self._wa: WhiteLPF | None = None
@@ -542,10 +562,10 @@ class ExoIris:
         self._wa.optimize_global(niter, plot_convergence=False, use_tqdm=False)
         self._wa.optimize()
         pv = self._wa._local_minimization.x
-        self.period = pv[1]
+        self.period = pv[0]
         self.zero_epoch = self._wa.transit_center
         self.transit_duration = self._wa.transit_duration
-        self.data.mask_transit(pv[0], pv[1], self.transit_duration)
+        self.data.mask_transit(self.zero_epoch, self.period, self.transit_duration)
 
     def plot_white(self, axs=None, figsize: tuple[float, float] | None = None, ncols: int | None=None) -> Figure:
         """Plot the white light curve data with the best-fit model.
@@ -680,12 +700,18 @@ class ExoIris:
 
                 pv0 = self._wa._local_minimization.x
                 x0 = self._tsa.ps.sample_from_prior(npop)
-                x0[:, 0] = normal(pv0[2], 0.05, size=npop)
-                x0[:, 1] = normal(pv0[0], 1e-4, size=npop)
-                x0[:, 2] = normal(pv0[1], 1e-5, size=npop)
-                x0[:, 3] = clip(normal(pv0[3], 0.01, size=npop), 0.0, 1.0)
+                x0[:, 0] = clip(normal(pv0[1], 0.05, size=npop), 0.01, inf)
+                x0[:, 1] = clip(normal(pv0[0], 1e-4, size=npop), 0.01, inf)
+                x0[:, 2] = clip(normal(pv0[2], 1e-3, size=npop), 0.0, 1.0)
+
+                nep = max(self.data.epoch_groups) + 1
+                for i in range(nep):
+                    pida = self.ps.find_pid(f'tc_{i:02d}')
+                    pidb = self._wa.ps.find_pid(f'tc_{i:02d}')
+                    x0[:, pida] = normal(pv0[pidb], 0.001, size=npop)
+
                 sl = self._tsa._sl_rratios
-                x0[:, sl] = normal(sqrt(pv0[4]), 0.001, size=(npop, self.nk))
+                x0[:, sl] = normal(sqrt(pv0[self._wa.ps.find_pid('k2')]), 0.001, size=(npop, self.nk))
                 for i in range(sl.start, sl.stop):
                     x0[:, i] = clip(x0[:, i], 1.001*self.ps[i].prior.a, 0.999*self.ps[i].prior.b)
 
