@@ -49,8 +49,8 @@ class WhiteLPF(BaseLPF):
         fluxes, times, errors = [], [], []
         for t, f, e in zip(tsa.data.times, tsa.data.fluxes, tsa.data.errors):
             weights = where(isfinite(f) & isfinite(e), 1/e**2, 0.0)
-            mf = average(f, axis=0, weights=weights)
-            me = sqrt(1./(1./e**2).sum(0))
+            mf = average(where(isfinite(f), f, 0), axis=0, weights=weights)
+            me = sqrt(1 / weights.sum(0))
             m = isfinite(mf)
             times.append(t[m])
             fluxes.append(mf[m])
@@ -108,13 +108,13 @@ class WhiteLPF(BaseLPF):
         return self.tm.evaluate(radius_ratio, ldc, zero_epoch, period, smaxis, inclination)
 
     def optimize(self, pv0=None, method='powell', maxfev: int = 5000):
-            if pv0 is None:
-                if self.de is not None:
-                    pv0 = self.de.minimum_location
-                else:
-                    pv0 = self.ps.mean_pv
-            res = minimize(lambda pv: -self.lnposterior(pv), pv0, method=method, options={'maxfev':maxfev})
-            self._local_minimization = res
+        if pv0 is None:
+            if self.de is not None:
+                pv0 = self.de.minimum_location
+            else:
+                pv0 = self.ps.mean_pv
+        res = minimize(lambda pv: -self.lnposterior(pv), pv0, method=method, options={'maxfev':maxfev})
+        self._local_minimization = res
 
     @property
     def transit_center(self):

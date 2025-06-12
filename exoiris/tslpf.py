@@ -142,13 +142,11 @@ class TSLPF(LogPosteriorFunction):
         self._gp_time: Optional[list[ndarray]] = None
         self._gp_flux: Optional[list[ndarray]] = None
 
+        self.tms = [TSModel(ldmodel, nthreads=nthreads, **(tmpars or {})) for i in range(len(data))]
+        self.set_data(data)
         self.set_noise_model(noise_model)
 
         self.ldmodel = ldmodel
-
-        self.tms = [TSModel(ldmodel, nthreads=nthreads, **(tmpars or {})) for i in range(len(data))]
-        self.set_data(data)
-
         if isinstance(ldmodel, LDTkLD):
             for tm in self.tms:
                 tm.ldmodel = None
@@ -196,8 +194,6 @@ class TSLPF(LogPosteriorFunction):
         self.npt: list[int] = [f.shape[1] for f in self.flux]
         for i, time in enumerate(self.times):
             self.tms[i].set_data(time)
-        if self._nm in (NM_GP_FIXED, NM_GP_FREE):
-            self._init_gp()
 
     def _init_parameters(self) -> None:
         self.ps = ParameterSet([])
@@ -276,7 +272,7 @@ class TSLPF(LogPosteriorFunction):
         if self._gp is None:
             raise RuntimeError('The GP needs to be initialized before setting hyperparameters.')
 
-        for i in ([idata] or range(self.data.size)):
+        for i in ([idata] if idata is not None else range(self.data.size)):
             self._gp[i].kernel = terms.Matern32Term(sigma=sigma, rho=rho)
             self._gp[i].compute(self._gp_time[i], yerr=self._gp_ferr[i], quiet=True)
 

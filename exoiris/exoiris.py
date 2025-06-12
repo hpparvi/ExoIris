@@ -303,7 +303,7 @@ class ExoIris:
         metal = (metal.n, metal.s) if isinstance(metal, UFloat) else metal
         self._tsa.set_ldtk_prior(teff, logg, metal, dataset, width, uncertainty_multiplier)
 
-    def set_gp_hyperparameters(self, sigma: float, rho: float) -> None:
+    def set_gp_hyperparameters(self, sigma: float, rho: float, idata: None | int = None) -> None:
         """Set Gaussian Process (GP) hyperparameters assuming a Matern-3/2 kernel.
 
         Parameters
@@ -312,8 +312,10 @@ class ExoIris:
             The kernel amplitude parameter.
         rho
             The length scale parameter.
+        idata
+            The data set for which to set the hyperparameters. If None, the hyperparameters are set for all data sets.
         """
-        self._tsa.set_gp_hyperparameters(sigma, rho)
+        self._tsa.set_gp_hyperparameters(sigma, rho, idata)
 
     def set_gp_kernel(self, kernel: terms.Term) -> None:
         """Set the Gaussian Process (GP) kernel.
