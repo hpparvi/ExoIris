@@ -311,11 +311,14 @@ class TSData:
                              "Call TSData.mask_transit(...) first.")
 
         for ipb in range(self.nwl):
-            bl = poly1d(polyfit(self.time[self.transit_mask & self.mask[ipb]],
-                                self.fluxes[ipb, self.transit_mask & self.mask[ipb]],
-                                deg=deg))(self.time)
-            self.fluxes[ipb, :] /= bl
-            self.errors[ipb, :] /= bl
+            mask = self.transit_mask & self.mask[ipb]
+            if mask.sum() > 2:
+                bl = poly1d(polyfit(self.time[mask], self.fluxes[ipb, mask], deg=deg))(self.time)
+                self.fluxes[ipb, :] /= bl
+                self.errors[ipb, :] /= bl
+            else:
+                self.fluxes[ipb, :] = nan
+                self.errors[ipb, :] = nan
         self._update_data_mask()
         return self
 
