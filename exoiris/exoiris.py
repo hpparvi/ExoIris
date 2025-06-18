@@ -24,20 +24,17 @@ from typing import Optional, Callable, Any, Literal
 
 import astropy.io.fits as pf
 import astropy.units as u
-import emcee
+import matplotlib.axes
 import pandas as pd
-import pytransit.utils.de
-import seaborn as sb
 from astropy.table import Table
 from celerite2 import GaussianProcess, terms
 from emcee import EnsembleSampler
 from matplotlib.pyplot import subplots, setp, figure, Figure, Axes
 from numpy import (any, where, sqrt, clip, percentile, median, squeeze, floor, ndarray, isfinite,
-                   array, inf, newaxis, arange, tile, sort, argsort, concatenate, full, nan, r_, nanpercentile, log10,
+                   array, inf, arange, argsort, concatenate, full, nan, r_, nanpercentile, log10,
                    ceil, unique)
-from numpy.random import normal, permutation
+from numpy.random import normal
 from pytransit import UniformPrior, NormalPrior
-from pytransit.orbits import epoch
 from pytransit.param import ParameterSet
 from pytransit.utils.de import DiffEvol
 from scipy.stats import norm

@@ -108,13 +108,17 @@ class TSData:
         self.fluxes: ndarray = where(self.mask, fluxes, nan)
         self.errors: ndarray = where(self.mask, errors, nan)
         self.transit_mask: ndarray = transit_mask if transit_mask is not None else ones(time.size, dtype=bool)
-        self.ngid: int = 0
         self._ephemeris: Ephemeris | None = ephemeris
         self.n_baseline: int = n_baseline
-        self._noise_group: str = noise_group
+        self.noise_group: int = noise_group
         self.epoch_group: int = epoch_group
         self.offset_group: int = offset_group
         self._dataset: Optional['TSDataSet'] = None
+        self.minwl: float = 0.0
+        self.maxwl: float = inf
+        self.mintm: float = 0.0
+        self.maxtm: float = inf
+
         self._update()
 
         if wl_edges is None:
@@ -205,17 +209,6 @@ class TSData:
         return f"TSData Name:'{self.name}' [{self.wavelength[0]:.2f} - {self.wavelength[-1]:.2f}] nwl={self.nwl} npt={self.npt}"
 
     @property
-    def noise_group(self) -> str:
-        """Noise group name."""
-        return self._noise_group
-
-    @noise_group.setter
-    def noise_group(self, ng: str) -> None:
-        self._noise_group = ng
-        if self._dataset is not None:
-            self._dataset._update_nids()
-
-    @property
     def ephemeris(self) -> Ephemeris:
         """Ephemeris."""
         return self._ephemeris
@@ -224,6 +217,15 @@ class TSData:
     def ephemeris(self, ep: Ephemeris) -> None:
         self._ephemeris = ep
         self.mask_transit(ephemeris=ep)
+
+    @property
+    def bbox_wl(self) -> tuple[float, float]:
+        """Wavelength bounds of the bounding box."""
+        return self.minwl, self.maxwl
+
+    @property
+    def bbox_tm(self) -> tuple[float, float]:
+        return self.mintm, self.maxtm
 
     def mask_transit(self, t0: float | None = None, p: float | None = None, t14: float | None = None,
                      ephemeris : Ephemeris | None = None, elims: tuple[int, int] | None = None) -> 'TSData':
@@ -274,7 +276,10 @@ class TSData:
         """Update the internal attributes."""
         self.nwl = self.wavelength.size
         self.npt = self.time.size
-        self.wllims = self.wavelength.min(), self.wavelength.max()
+        self.minwl = self.wavelength.min()
+        self.maxwl = self.wavelength.max()
+        self.mintm = self.time.min()
+        self.maxtm = self.time.max()
         if self._ephemeris is not None:
             self.mask_transit(ephemeris=self._ephemeris)
 
@@ -650,7 +655,7 @@ class TSData:
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', numba.NumbaPerformanceWarning)
             if binning is None:
-                binning = Binning(self.wllims[0], self.wllims[1], nb=nb, bw=bw, r=r)
+                binning = Binning(self.bbox_wl[0], self.bbox_wl[1], nb=nb, bw=bw, r=r)
             bf, be = bin2d(self.fluxes, self.errors, self._wl_l_edges, self._wl_r_edges,
                            binning.bins, estimate_errors=estimate_errors)
             if not all(isfinite(be)):
@@ -726,18 +731,10 @@ class TSDataSet:
             raise ValueError('A TSData object with the same name already exists.')
         d._dataset = self
         self.data.append(d)
-        self._update_nids()
         self.wlmin = min(self.wlmin, d.wavelength.min())
         self.wlmax = max(self.wlmax, d.wavelength.max())
         self.tmin = min(self.tmin, d.time.min())
         self.tmax = max(self.tmax, d.time.max())
-
-    def _update_nids(self):
-        ngs =  pd.Categorical(self.noise_groups)
-        self.unique_noise_groups = list(ngs.categories)
-        self.ngids = ngs.codes.astype(int)
-        for i,d in enumerate(self.data):
-            d.ngid = self.ngids[i]
 
     @property
     def names(self) -> list[str]:
@@ -765,7 +762,7 @@ class TSDataSet:
         return [d.errors for d in self.data]
 
     @property
-    def noise_groups(self) -> list[str]:
+    def noise_groups(self) -> list[int]:
         """List of noise group names."""
         return [d.noise_group for d in self.data]
 
