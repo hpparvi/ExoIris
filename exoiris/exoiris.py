@@ -491,65 +491,36 @@ class ExoIris:
         """Print the model parameterization."""
         self._tsa.print_parameters(1)
 
-    def plot_setup(self, figsize: tuple[float, float] | None =None, xscale: str | None = None, xticks: Sequence | None = None) -> Figure:
+    def plot_setup(self, figsize: tuple[float, float] | None = None,
+                   ax: matplotlib.axes.Axes | None = None,
+                   xscale: str | None = None, xticks: Sequence | None = None,
+                   yshift: float = 0.1, mh:float = 0.08, side_margin: float = 0.05,
+                   lw: float = 0.5, c='k') -> Figure:
         """Plot the model setup with limb darkening knots, radius ratio knots, and data binning.
-
-        Parameters
-        ----------
-        figsize
-            The size of the figure in inches.
-        xscale
-            The scale of the x-axis. If provided, the x-axis scale of all the subplots will be set to this value.
-        xticks
-            The list of x-axis tick values for all the subplots. If provided, the x-axis ticks of all the subplots will
-            be set to these values.
-
-        Returns
-        -------
-        Figure
-            The matplotlib Figure object that contains the created subplots.
-
         """
-        using_ldtk = isinstance(self._tsa.ldmodel, LDTkLD)
-
-        if not using_ldtk:
-            figsize = figsize or (13, 4)
-            fig, axs = subplots(3, 1, figsize=figsize, sharex='all', sharey='all')
-            axl, axk, axw = axs
-
-            axl.vlines(self._tsa.ld_knots, 0.1, 0.5, ec='k')
-            axl.text(0.01, 0.90, 'Limb darkening knots', va='top', transform=axl.transAxes)
+        if ax is None:
+            fig, ax = subplots(figsize=figsize, constrained_layout=True)
         else:
-            figsize = figsize or (13, 2*4/3)
-            fig, axs = subplots(2, 1, figsize=figsize, sharex='all', sharey='all')
-            axk, axw = axs
-            axl = None
+            fig = ax.figure
 
-        axk.vlines(self._tsa.k_knots, 0.1, 0.5, ec='k')
-        axk.text(0.01, 0.90, 'Radius ratio knots', va='top', transform=axk.transAxes)
-        for ds in self.data:
-            axw.vlines(ds.wavelength, 0.1, 0.5, ec='k')
-        axw.text(0.01, 0.90, 'Wavelength bins', va='top', transform=axw.transAxes)
+        ndata = self.data.size
 
-        if not using_ldtk:
-            sb.despine(ax=axl, top=False, bottom=True, right=False)
-            sb.despine(ax=axk, top=True, bottom=True, right=False)
-        else:
-            sb.despine(ax=axk, top=False, bottom=True, right=False)
+        for i, d in enumerate(self.data):
+            ax.vlines(d.wavelength, ymin=i*yshift, ymax=i*yshift+mh, colors=c, lw=lw)
 
-        sb.despine(ax=axw, top=True, bottom=False, right=False)
-        setp(axs, xlim=(self.data.wlmin-0.02, self.data.wlmax+0.02), yticks=[], ylim=(0, 0.9))
-        setp(axw, xlabel=r'Wavelength [$\mu$m]')
-        setp(axs[0].get_xticklines(), visible=False)
-        setp(axs[0].get_xticklabels(), visible=False)
-        setp(axs[1].get_xticklines(), visible=False)
-        setp(axs[-1].get_xticklines(), visible=True)
+        i = ndata + 1
+        ax.vlines(self._tsa.ld_knots, ymin=i*yshift, ymax=i*yshift+mh, colors=c, lw=lw)
+
+        i = ndata + 3
+        ax.vlines(self.k_knots, ymin=i*yshift, ymax=i*yshift+mh, colors=c, lw=lw)
 
         if xscale:
-            setp(axs, xscale=xscale)
+            setp(ax, xscale=xscale)
         if xticks is not None:
-            [ax.set_xticks(xticks, labels=xticks) for ax in axs]
-        fig.tight_layout()
+            ax.set_xticks(xticks, labels=xticks)
+
+        setp(ax, yticks=[], xlim=(self.data.wlmin-side_margin, self.data.wlmax+side_margin), xlabel='Wavelength [$\mu$m]')
+        ax.set_yticks(concatenate([arange(ndata), arange(ndata+1, ndata+4, 2)])*yshift+0.5*mh, labels=[n.replace("_", " ") for n in self.data.names] + ["Limb darkening knots", "Radius ratio knots"])
         return fig
 
     def fit_white(self, niter: int = 500) -> None:
