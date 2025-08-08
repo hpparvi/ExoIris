@@ -23,18 +23,18 @@ from numpy import sqrt, array, concatenate
 from pytransit import LDTkLD as PTLDTkLD
 from ldtk import BoxcarFilter
 
-from .tsdata import TSData, TSDataSet
+from .tsdata import TSData, TSDataGroup
 
 
 class LDTkLD(PTLDTkLD):
-    def __init__(self, data: TSDataSet | TSData,
+    def __init__(self, data: TSDataGroup | TSData,
                  teff: tuple[float, float],
                  logg: tuple[float, float],
                  metal: tuple[float, float],
                  cache: str | Path | None = None,
                  dataset: str = 'vis-lowres') -> None:
 
-        data = TSDataSet([data]) if isinstance(data, TSData) else data
+        data = TSDataGroup([data]) if isinstance(data, TSData) else data
         wl_edges = concatenate([array([d._wl_l_edges, d._wl_r_edges]) for d in data], axis=1).T
         filters = [BoxcarFilter(f"{0.5*(wla+wlb):08.5f}", wla*1e3, wlb*1e3) for wla, wlb in wl_edges]
         super().__init__(filters, teff, logg, metal, cache, dataset)

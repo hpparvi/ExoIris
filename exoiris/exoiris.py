@@ -41,7 +41,7 @@ from scipy.stats import norm
 from uncertainties import UFloat
 
 from .ldtkld import LDTkLD
-from .tsdata import TSData, TSDataSet
+from .tsdata import TSData, TSDataGroup
 from .tslpf import TSLPF
 from .wlpf import WhiteLPF
 
@@ -70,7 +70,7 @@ def load_model(fname: Path | str, name: str | None = None):
         If the file format is invalid or does not match the expected format.
     """
     with pf.open(fname) as hdul:
-        data = TSDataSet.import_fits(hdul)
+        data = TSDataGroup.import_fits(hdul)
 
         if hdul[0].header['LDMODEL'] == 'ldtk':
             filters, teff, logg, metal, dataset = pickle.loads(codecs.decode(json.loads(hdul[0].header['LDTKLD']).encode(), "base64"))
@@ -117,7 +117,7 @@ class ExoIris:
     """The core ExoIris class providing tools for exoplanet transit spectroscopy.
     """
 
-    def __init__(self, name: str, ldmodel, data: TSDataSet | TSData, nk: int = 50, nldc: int = 10, nthreads: int = 1,
+    def __init__(self, name: str, ldmodel, data: TSDataGroup | TSData, nk: int = 50, nldc: int = 10, nthreads: int = 1,
                  tmpars: dict | None = None, noise_model: Literal["white", "fixed_gp", "free_gp"] = 'white',
                  interpolation: Literal['bspline', 'pchip', 'makima'] = 'bspline'):
         """
@@ -140,7 +140,7 @@ class ExoIris:
         noise_model
             The noise model to use. Should be either "white" for white noise or "fixed_gp" for Gaussian Process.
         """
-        data = TSDataSet([data]) if isinstance(data, TSData) else data
+        data = TSDataGroup([data]) if isinstance(data, TSData) else data
 
         for d in data:
             if any(~isfinite(d.fluxes[d.mask])):
@@ -161,7 +161,7 @@ class ExoIris:
         if not ((egs.min() == 0) and (egs.max() + 1 == unique(egs).size)):
             raise ValueError("The epoch groups must start from 0 and be consecutive.")
 
-        self._tsa: TSLPF = TSLPF(name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars,
+        self._tsa: TSLPF = TSLPF(self, name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars,
                                  noise_model=noise_model, interpolation=interpolation)
         self._wa: WhiteLPF | None = None
         self.nthreads: int = nthreads
@@ -201,7 +201,7 @@ class ExoIris:
         """
         self._tsa.set_noise_model(noise_model)
 
-    def set_data(self, data: TSData | TSDataSet) -> None:
+    def set_data(self, data: TSData | TSDataGroup) -> None:
         """Set the model data.
 
         Parameters
@@ -209,7 +209,7 @@ class ExoIris:
         data
            The spectroscopic transit light curve.
         """
-        data = TSDataSet([data]) if isinstance(data, TSData) else data
+        data = TSDataGroup([data]) if isinstance(data, TSData) else data
         self._tsa.set_data(data)
 
     def set_prior(self, parameter: Literal['radius ratios', 'baselines', 'wn multipliers'] | str,
@@ -334,7 +334,7 @@ class ExoIris:
         self._tsa.name = name
 
     @property
-    def data(self) -> TSDataSet:
+    def data(self) -> TSDataGroup:
         """Analysis data set."""
         return self._tsa.data
 
@@ -516,7 +516,7 @@ class ExoIris:
         if xticks is not None:
             ax.set_xticks(xticks, labels=xticks)
 
-        setp(ax, yticks=[], xlim=(self.data.wlmin-side_margin, self.data.wlmax+side_margin), xlabel='Wavelength [$\mu$m]')
+        setp(ax, yticks=[], xlim=(self.data.wlmin-side_margin, self.data.wlmax+side_margin), xlabel=r'Wavelength [$\mu$m]')
         ax.set_yticks(concatenate([arange(ndata), arange(ndata+1, ndata+4, 2)])*yshift+0.5*mh, labels=[n.replace("_", " ") for n in self.data.names] + ["Limb darkening knots", "Radius ratio knots"])
         return fig
 

@@ -31,7 +31,7 @@ from pytransit.param import ParameterSet, UniformPrior as UP, NormalPrior as NP,
 from scipy.interpolate import pchip_interpolate, splrep, splev, Akima1DInterpolator
 
 from .tsmodel import TransmissionSpectroscopyModel as TSModel
-from .tsdata import TSDataSet
+from .tsdata import TSDataGroup
 from .ldtkld import LDTkLD
 
 NM_WHITE = 0
@@ -124,12 +124,13 @@ def clean_knots(knots, min_distance, lmin=0, lmax=inf):
 
 
 class TSLPF(LogPosteriorFunction):
-    def __init__(self, name: str, ldmodel, data: TSDataSet, nk: int = 50, nldc: int = 10, nthreads: int = 1,
+    def __init__(self, runner, name: str, ldmodel, data: TSDataGroup, nk: int = 50, nldc: int = 10, nthreads: int = 1,
                  tmpars = None, noise_model: Literal["white", "fixed_gp", "free_gp"] = 'white',
                  interpolation: Literal['bspline', 'pchip', 'makima'] = 'bspline'):
         super().__init__(name)
-        self._original_data: TSDataSet | None = None
-        self.data: TSDataSet | None = None
+        self._runner = runner
+        self._original_data: TSDataGroup | None = None
+        self.data: TSDataGroup | None = None
         self.npb: list[int] | None= None
         self.npt: list[int] | None = None
         self.ndim: int | None = None
@@ -187,7 +188,7 @@ class TSLPF(LogPosteriorFunction):
     def errors(self) -> list[ndarray]:
         return self.data.errors
 
-    def set_data(self, data: TSDataSet):
+    def set_data(self, data: TSDataGroup):
         self._original_data = deepcopy(data)
         self.data = data
         self.npb: list[int] = [f.shape[0] for f in self.flux]
@@ -684,7 +685,7 @@ class TSLPF(LogPosteriorFunction):
         lnl = zeros(npv)
         if self._nm == NM_WHITE:
             for i, d in enumerate(self.data):
-                lnl += lnlike_normal(d.fluxes, fmod[i], d.errors, wn_multipliers[:, d.ngid], d.mask)
+                lnl += lnlike_normal(d.fluxes, fmod[i], d.errors, wn_multipliers[:, d.noise_group], d.mask)
         else:
             for j in range(npv):
                 if self._nm == NM_GP_FREE:
@@ -770,3 +771,6 @@ class TSLPF(LogPosteriorFunction):
         super().sample_mcmc(niter, thin, repeats, npop=npop, population=population, label=label, reset=reset,
                             leave=leave, save=save, use_tqdm=use_tqdm, pool=pool, lnpost=lnpost, vectorize=vectorize)
         self._mc_chains = self.sampler.chain.copy()
+
+    def save(self, overwrite: bool = True) -> None:
+        self._runner.save(overwrite=overwrite)

@@ -33,6 +33,7 @@ from numpy import (
     repeat,
     array,
     average,
+    unique,
 )
 from scipy.optimize import minimize
 
@@ -59,8 +60,9 @@ class WhiteLPF(BaseLPF):
         self.std_errors = errors
         self.neps = max(self.tsa.data.epoch_groups) + 1
 
-        super().__init__('white', tsa.data.unique_noise_groups, times, fluxes,
-                         covariates=covs, wnids=tsa.data.ngids, pbids=tsa.data.ngids)
+        pbs = unique(tsa.data.noise_groups).astype('<U21')
+        super().__init__('white', pbs, times, fluxes,
+                         covariates=covs, wnids=tsa.data.noise_groups, pbids=tsa.data.noise_groups)
 
         self.tm.epids = array(self.tsa.data.epoch_groups)
 
@@ -74,7 +76,7 @@ class WhiteLPF(BaseLPF):
             self.set_prior('k2', 'UP', pr.a**2, pr.b**2)
         if 'Normal' in str(pr.__class__):
             self.set_prior('k2', 'NP', pr.mean**2, pr.std**2)
-        ngids = tsa.data.ngids[self.lcids]
+        ngids = tsa.data.noise_groups[self.lcids]
         for i in range(tsa.data.n_noise_groups):
             self.set_prior(f'wn_loge_{i}', 'NP', log10(diff(self.ofluxa[ngids==i]).std() / sqrt(2)), 0.1)
 

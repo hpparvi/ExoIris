@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Renamed `TSDataSet` to `TSDataGroup` 
+
 ### Removed
 
 ## [0.18.0] - 2025-02-20
@@ -53,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Transit Mask Renaming:** Renamed the old `ootmask` attribute to `transit_mask` throughout the codebase for clarity. This change affects plotting, normalization, binning, and file I/O.
-- **Method Renaming:** Renamed `calculate_ootmask` in the `TSDataSet` class to `mask_transit` to reflect the updated naming convention.
+- **Method Renaming:** Renamed `calculate_ootmask` in the `TSDataGroup` class to `mask_transit` to reflect the updated naming convention.
 - **Normalization Enhancements:** Updated normalization methods (`normalize_to_poly` and `normalize_to_median`) to utilize the new `transit_mask` and `mask` attributes, improving the reliability of baseline fits.
 - **Cropping Flexibility:** Added an `inplace` parameter to both `crop_wavelength` and `crop_time` methods, allowing users to choose between modifying the existing data or returning a new cropped instance.
 - **Likelihood Function Update:** Modified the `lnlike_normal` function in `TSLPF` to accept an additional `mask` parameter and process only valid data points during likelihood calculations.

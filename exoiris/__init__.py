@@ -15,7 +15,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from .exoiris import ExoIris, load_model # noqa
-from .tsdata import TSData, TSDataSet # noqa
+from .tsdata import TSData, TSDataGroup # noqa
 from .binning import Binning # noqa
 from .ldtkld import LDTkLD # noqa
 from .tslpf import clean_knots # noqa

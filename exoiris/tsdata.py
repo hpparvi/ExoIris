@@ -15,13 +15,10 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import warnings
-import numba
-
-import pandas as pd
 from collections.abc import Sequence
-
 from typing import Union, Optional
 
+import numba
 from astropy.io import fits as pf
 from astropy.stats import mad_std
 from astropy.utils import deprecated
@@ -29,16 +26,38 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import LinearLocator, FuncFormatter
-from numpy import any, isfinite, median, where, all, zeros_like, diff, asarray, interp, arange, floor, ndarray, \
-    ceil, newaxis, inf, array, ones, poly1d, polyfit, nanpercentile, atleast_2d, nan, linspace, any, sqrt, nanmedian, \
-    nanmean
+from numpy import (
+    isfinite,
+    where,
+    all,
+    zeros_like,
+    diff,
+    asarray,
+    interp,
+    arange,
+    floor,
+    ndarray,
+    ceil,
+    newaxis,
+    inf,
+    array,
+    ones,
+    poly1d,
+    polyfit,
+    nanpercentile,
+    atleast_2d,
+    nan,
+    sqrt,
+    nanmedian,
+    nanmean,
+    unique,
+)
 from pytransit.orbits import fold
-from scipy.ndimage import median_filter
-from scipy.signal import medfilt
 
+from .binning import Binning, CompoundBinning
 from .ephemeris import Ephemeris
 from .util import bin2d
-from .binning import Binning, CompoundBinning
+
 
 class TSData:
     """
@@ -113,7 +132,7 @@ class TSData:
         self.noise_group: int = noise_group
         self.epoch_group: int = epoch_group
         self.offset_group: int = offset_group
-        self._dataset: Optional['TSDataSet'] = None
+        self._dataset: Optional['TSDataGroup'] = None
         self.minwl: float = 0.0
         self.maxwl: float = inf
         self.mintm: float = 0.0
@@ -340,7 +359,7 @@ class TSData:
         self.errors[:,:] /= n
         return self
 
-    def partition_time(self, tlims: tuple[tuple[float,float]]) -> 'TSDataSet':
+    def partition_time(self, tlims: tuple[tuple[float,float]]) -> 'TSDataGroup':
         """Partition the data into n segments defined by tlims.
 
         Parameters
@@ -610,7 +629,7 @@ class TSData:
         """
         return self.plot(ax=ax, figsize=figsize, data=where(self.transit_mask, self.fluxes, nan))
 
-    def __add__(self, other: Union['TSData', 'TSDataSet']) -> 'TSDataSet':
+    def __add__(self, other: Union['TSData', 'TSDataGroup']) -> 'TSDataGroup':
         """Combine two transmission spectra along the wavelength axis.
 
         Parameters
@@ -620,12 +639,12 @@ class TSData:
 
         Returns
         -------
-        TSDataSet
+        TSDataGroup
         """
         if isinstance(other, TSData):
-            return TSDataSet([self, other])
+            return TSDataGroup([self, other])
         else:
-            return TSDataSet([self]) + other
+            return TSDataGroup([self]) + other
 
     def bin_wavelength(self, binning: Optional[Union[Binning, CompoundBinning]] = None,
                        nb: Optional[int] = None, bw: Optional[float] = None, r: Optional[float] = None,
@@ -713,8 +732,8 @@ class TSData:
                 d.mask_transit(ephemeris=self.ephemeris)
             return d
 
-class TSDataSet:
-    """`TSDataSet` is a high-level data storage class that can contain multiple `TSData` objects.
+class TSDataGroup:
+    """`TSDataGroup` is a high-level data storage class that can contain multiple `TSData` objects.
     """
     def __init__(self, data: Sequence[TSData]):
         self.data: list[TSData] = []
@@ -722,7 +741,7 @@ class TSDataSet:
         self.wlmax: float = -inf
         self.tmin: float = inf
         self.tmax: float = -inf
-        self.ngids: ndarray = array([])
+        self._noise_groups: array | None = None
         for d in data:
             self._add_data(d)
 
@@ -731,6 +750,7 @@ class TSDataSet:
             raise ValueError('A TSData object with the same name already exists.')
         d._dataset = self
         self.data.append(d)
+        self._noise_groups = array([d.noise_group for d in self.data])
         self.wlmin = min(self.wlmin, d.wavelength.min())
         self.wlmax = max(self.wlmax, d.wavelength.max())
         self.tmin = min(self.tmin, d.time.min())
@@ -762,14 +782,14 @@ class TSDataSet:
         return [d.errors for d in self.data]
 
     @property
-    def noise_groups(self) -> list[int]:
-        """List of noise group names."""
-        return [d.noise_group for d in self.data]
+    def noise_groups(self) -> ndarray[int]:
+        """Array of noise groups."""
+        return self._noise_groups
 
     @property
     def n_noise_groups(self) -> int:
         """Number of noise groups."""
-        return len(set(self.noise_groups))
+        return len(unique(self.noise_groups))
 
     @property
     def offset_groups(self) -> list[int]:
@@ -809,7 +829,7 @@ class TSDataSet:
         return hdul
 
     @staticmethod
-    def import_fits(hdul: pf.HDUList) -> 'TSDataSet':
+    def import_fits(hdul: pf.HDUList) -> 'TSDataGroup':
         """Import all the data from a FITS HDU list.
 
         Parameters
@@ -819,14 +839,14 @@ class TSDataSet:
 
         Returns
         -------
-        TSDataSet
+        TSDataGroup
         """
         ds = hdul['DATASET']
         data = []
         for i in range(ds.header['NDATA']):
             name = ds.header[f'NAME_{i}']
             data.append(TSData.import_fits(name, hdul))
-        return TSDataSet(data)
+        return TSDataGroup(data)
 
     def mask_transit(self, tc: float, p: float, t14: float):
         for d in self.data:
@@ -839,7 +859,7 @@ class TSDataSet:
         return self.size
 
     def __repr__(self):
-        return f"TSDataSet with {self.size} groups"
+        return f"TSDataGroup with {self.size} groups"
 
     def plot(self, axs=None, vmin: float = None, vmax: float = None, ncols: int = 1, cmap=None, figsize=None, data: ndarray | None = None) -> Figure:
         """Plot all the data sets.
@@ -909,6 +929,10 @@ class TSDataSet:
 
     def __add__(self, other):
         if isinstance(other, TSData):
-            return TSDataSet(self.data + [other])
-        elif isinstance(other, TSDataSet):
-            return TSDataSet(self.data + other.data)
+            return TSDataGroup(self.data + [other])
+        elif isinstance(other, TSDataGroup):
+            return TSDataGroup(self.data + other.data)
+
+
+class TSDataSet(TSDataGroup):
+    pass

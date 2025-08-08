@@ -11,7 +11,7 @@ Constructor
 -----------
 
 The `ExoIris` class is initialized by providing a name for the analysis, selecting a limb darkening model, and passing the
-spectroscopic light curves as either a `~exoiris.tsdata.TSData` or `~exoiris.tsdata.TSDataSet` object.
+spectroscopic light curves as either a `~exoiris.tsdata.TSData` or `~exoiris.tsdata.TSDataGroup` object.
 Additional parameters can also be supplied to the initializer to refine the analysis, although these can be set
 later if preferred.
 

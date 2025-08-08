@@ -4,9 +4,10 @@ Data handling
 =============
 .. currentmodule:: exoiris.tsdata
 
-The spectroscopic light curves are given to ExoIris as a `TSData` (Transmission Spectroscopy Data) or `TSDataSet`
-object. `TSData` is a utility class that provides methods for data cleanup, binning, and cropping, while `TSDataSet`
-is a container class that can contain many `TSData` objects.
+The spectroscopic light curves are given to ExoIris as a `TSData` (Transmission Spectroscopy Data) or `TSDataGroup`
+object. `TSData` is a utility class that provides methods for data cleanup, binning, and cropping, and uncertainty
+estimation, while `TSDataGroup` is a container class that can hold multiple `TSData` objects and provides aggregate
+properties and methods.
 
 Main classes
 ------------
@@ -15,7 +16,7 @@ Main classes
     :toctree: api/
 
     TSData
-    TSDataSet
+    TSDataGroup
 
 Data wrangling
 --------------
@@ -32,6 +33,14 @@ Data wrangling
     TSData.normalize_to_poly
     TSData.partition_time
 
+Uncertainty estimation
+----------------------
+
+.. autosummary::
+    :toctree: api/
+
+    TSData.estimate_average_uncertainties
+
 Masking
 -------
 
@@ -39,6 +48,7 @@ Masking
     :toctree: api/
 
     TSData.mask_transit
+    TSDataGroup.mask_transit
 
 I/O
 ---
@@ -48,8 +58,8 @@ I/O
 
     TSData.export_fits
     TSData.import_fits
-    TSDataSet.export_fits
-    TSDataSet.import_fits
+    TSDataGroup.export_fits
+    TSDataGroup.import_fits
 
 
 Plotting
@@ -60,4 +70,4 @@ Plotting
 
     TSData.plot
     TSData.plot_white
-    TSDataSet.plot
+    TSDataGroup.plot
