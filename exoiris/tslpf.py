@@ -734,10 +734,10 @@ class TSLPF(LogPosteriorFunction):
             else:
                 pvp = rng.choice(pvs.reshape([-1, self.ndim]), size=n)
 
+        if pvp[0, self._sl_baseline][0] < 0.5:
+            pvp[:, self._sl_baseline] = rng.normal(1.0, 1e-6, size=(n, sum(self.n_baselines)))
+
         if add_noise:
-            pvp[:, 0] += rng.normal(0, 0.005, size=n)
-            pvp[:, 1] += rng.normal(0, 0.001, size=n)
-            pvp[:, 3] += rng.normal(0, 0.005, size=n)
             pvp[:, self._sl_rratios] += rng.normal(0, 1, pvp[:, self._sl_rratios].shape) * 0.002 * pvp[:, self._sl_rratios]
             pvp[:, self._sl_ld] += rng.normal(0, 1, pvp[:, self._sl_ld].shape) * 0.002 * pvp[:, self._sl_ld]
         return pvp
