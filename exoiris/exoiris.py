@@ -173,7 +173,7 @@ class ExoIris:
 
         self._tsa = TSLPF(self, name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars,
                                  noise_model=noise_model, interpolation=interpolation)
-        self._wa = WhiteLPF(self._tsa)
+        self._wa: None | WhiteLPF = None
 
         self.nthreads: int = nthreads
 
@@ -543,6 +543,7 @@ class ExoIris:
         niter : int, optional
             The number of iterations for the global optimization algorithm (default is 500).
         """
+        self._wa = WhiteLPF(self._tsa)
         self._wa.optimize_global(niter, plot_convergence=False, use_tqdm=False)
         self._wa.optimize()
         pv = self._wa._local_minimization.x
