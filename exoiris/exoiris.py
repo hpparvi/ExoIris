@@ -96,9 +96,12 @@ def load_model(fname: Path | str, name: str | None = None):
         try:
             tb = Table.read(hdul['WHITE_DATA'])
             white_ids = tb['id'].data
-            model_flux = tb['mod_flux'].data
             uids = unique(white_ids)
-            a._white_models = [model_flux[white_ids == i] for i in uids]
+            a._white_times = [tb['time'].data[white_ids == i] for i in uids]
+            a._white_fluxes = [tb['flux_obs'].data[white_ids == i] for i in uids]
+            a._white_errors = [tb['flux_obs_err'].data[white_ids == i] for i in uids]
+            a._white_models = [tb['flux_mod'].data[white_ids == i] for i in uids]
+
         except KeyError:
             pass
 
@@ -181,6 +184,10 @@ class ExoIris:
         self.zero_epoch: float | None = None
         self.transit_duration: float | None= None
         self._tref = floor(self.data.tmin)
+
+        self._white_times: None | list[ndarray] = None
+        self._white_fluxes: None | list[ndarray] = None
+        self._white_errors: None | list[ndarray] = None
         self._white_models: None | list[ndarray] = None
 
     def lnposterior(self, pvp: ndarray) -> ndarray:
@@ -413,26 +420,35 @@ class ExoIris:
     @property
     def white_times(self) -> list[ndarray]:
         """White light curve time arrays."""
-        return self._wa.times
+        if self._wa is None:
+            return self._white_times
+        else:
+            return self._wa.times
 
     @property
     def white_fluxes(self) -> list[ndarray]:
         """White light curve flux arrays."""
-        return self._wa.fluxes
+        if self._wa is None:
+            return self._white_fluxes
+        else:
+            return self._wa.fluxes
 
     @property
     def white_models(self) -> list[ndarray]:
         """Fitted white light curve flux model arrays."""
-        if self._wa._local_minimization is not None:
+        if self._wa is None:
+            return self._white_models
+        else:
             fm = self._wa.flux_model(self._wa._local_minimization.x)
             return [fm[sl] for sl in self._wa.lcslices]
-        else:
-            return self._white_models
 
     @property
     def white_errors(self) -> list[ndarray]:
         """White light curve flux error arrays."""
-        return self._wa.std_errors
+        if self._wa is None:
+            return self._white_errors
+        else:
+            return self._wa.std_errors
 
     def add_radius_ratio_knots(self, knot_wavelengths: Sequence) -> None:
         """Add radius ratio (k) knots.
@@ -1096,7 +1112,7 @@ class ExoIris:
         hdul = pf.HDUList([pri, k_knots, ld_knots, pr])
         hdul += self.data.export_fits()
 
-        if self._wa._local_minimization is not None:
+        if self._wa is not None and self._wa._local_minimization is not None:
             wa_data = pf.BinTableHDU(
                 Table(
                     [
@@ -1106,7 +1122,7 @@ class ExoIris:
                         self._wa.ofluxa,
                         concatenate(self._wa.std_errors),
                     ],
-                    names="id time mod_flux obs_flux obs_error".split(),
+                    names="id time flux_mod flux_obs flux_obs_err".split(),
                 ), name='white_data'
             )
             hdul.append(wa_data)
