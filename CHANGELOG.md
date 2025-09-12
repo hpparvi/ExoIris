@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+
+## [0.19.2] - 2025-09-12
+
 ### Added
 
 - Added a support for a free GP noise model. That is, the GP hyperparameters can be free parameters in the model.  
