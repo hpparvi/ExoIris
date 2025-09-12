@@ -92,6 +92,16 @@ def load_model(fname: Path | str, name: str | None = None):
         a.set_radius_ratio_knots(hdul['K_KNOTS'].data.astype('d'))
         a.set_limb_darkening_knots(hdul['LD_KNOTS'].data.astype('d'))
 
+        # Read the white light curve models if they exist.
+        try:
+            tb = Table.read(hdul['WHITE_DATA'])
+            white_ids = tb['id'].data
+            model_flux = tb['mod_flux'].data
+            uids = unique(white_ids)
+            a._white_models = [model_flux[white_ids == i] for i in uids]
+        except KeyError:
+            pass
+
         try:
             a.period = hdul[0].header['P']
             a.zero_epoch = hdul[0].header['T0']
@@ -161,15 +171,17 @@ class ExoIris:
         if not ((egs.min() == 0) and (egs.max() + 1 == unique(egs).size)):
             raise ValueError("The epoch groups must start from 0 and be consecutive.")
 
-        self._tsa: TSLPF = TSLPF(self, name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars,
+        self._tsa = TSLPF(self, name, ldmodel, data, nk=nk, nldc=nldc, nthreads=nthreads, tmpars=tmpars,
                                  noise_model=noise_model, interpolation=interpolation)
-        self._wa: WhiteLPF | None = None
+        self._wa = WhiteLPF(self._tsa)
+
         self.nthreads: int = nthreads
 
         self.period: float | None = None
         self.zero_epoch: float | None = None
         self.transit_duration: float | None= None
         self._tref = floor(self.data.tmin)
+        self._white_models: None | list[ndarray] = None
 
     def lnposterior(self, pvp: ndarray) -> ndarray:
         """Calculate the log posterior probability for a single parameter vector or an array of parameter vectors.
@@ -411,8 +423,11 @@ class ExoIris:
     @property
     def white_models(self) -> list[ndarray]:
         """Fitted white light curve flux model arrays."""
-        fm = self._wa.flux_model(self._wa._local_minimization.x)
-        return [fm[sl] for sl in self._wa.lcslices]
+        if self._wa._local_minimization is not None:
+            fm = self._wa.flux_model(self._wa._local_minimization.x)
+            return [fm[sl] for sl in self._wa.lcslices]
+        else:
+            return self._white_models
 
     @property
     def white_errors(self) -> list[ndarray]:
@@ -528,7 +543,6 @@ class ExoIris:
         niter : int, optional
             The number of iterations for the global optimization algorithm (default is 500).
         """
-        self._wa = WhiteLPF(self._tsa)
         self._wa.optimize_global(niter, plot_convergence=False, use_tqdm=False)
         self._wa.optimize()
         pv = self._wa._local_minimization.x
@@ -1081,6 +1095,34 @@ class ExoIris:
         hdul = pf.HDUList([pri, k_knots, ld_knots, pr])
         hdul += self.data.export_fits()
 
+        if self._wa._local_minimization is not None:
+            wa_data = pf.BinTableHDU(
+                Table(
+                    [
+                        self._wa.lcids,
+                        self._wa.timea,
+                        concatenate(self.white_models),
+                        self._wa.ofluxa,
+                        concatenate(self._wa.std_errors),
+                    ],
+                    names="id time mod_flux obs_flux obs_error".split(),
+                ), name='white_data'
+            )
+            hdul.append(wa_data)
+
+            names = []
+            counts = {}
+            for p in self._wa.ps.names:
+                if p not in counts.keys():
+                    counts[p] = 0
+                    names.append(p)
+                else:
+                    counts[p] += 1
+                    names.append(f'{p}_{counts[p]}')
+
+            wa_params = pf.BinTableHDU(Table(self._wa._local_minimization.x, names=names), name='white_params')
+            hdul.append(wa_params)
+
         if self._tsa.de is not None:
             de = pf.BinTableHDU(Table(self._tsa._de_population, names=self.ps.names), name='DE')
             de.header['npop'] = self._tsa.de.n_pop
@@ -1164,9 +1206,6 @@ class ExoIris:
         if self._tsa.noise_model not in ('fixed_gp', 'free_gp'):
             raise ValueError("The noise model must be set to 'fixed_gp' or 'free_gp' before the hyperparameter optimization.")
 
-        if self._wa is None:
-            raise ValueError("The white light curves must be fit using 'fit_white()' before the hyperparameter optimization.")
-
         if log10_rho_prior is not None:
             if isinstance(log10_rho_prior, Sequence):
                 rp = norm(*log10_rho_prior)
@@ -1192,7 +1231,7 @@ class ExoIris:
 
             match log10_sigma_bounds:
                 case None:
-                    sb =  [log10_sigma_guess-1, log10_sigma_guess+1]
+                    sb = [log10_sigma_guess - 1, log10_sigma_guess + 1]
                 case _ if isinstance(log10_sigma_bounds, Sequence):
                     sb = log10_sigma_bounds
                 case _ if isinstance(log10_sigma_bounds, float):
@@ -1200,7 +1239,7 @@ class ExoIris:
 
             match log10_rho_bounds:
                 case None:
-                    rb =  [-5, -2]
+                    rb = [-5, -2]
                 case _ if isinstance(log10_rho_bounds, Sequence):
                     rb = log10_rho_bounds
                 case _ if isinstance(log10_rho_bounds, float):
