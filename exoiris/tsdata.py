@@ -568,8 +568,8 @@ class TSData:
         axx2.set_xlabel('Exposure index')
         axx2.xaxis.set_major_locator(LinearLocator())
         axx2.xaxis.set_major_formatter('{x:.0f}')
-        fig.axx2 = axx2
-        fig.axy2 = axy2
+        ax.axx2 = axx2
+        ax.axy2 = axy2
         return fig
 
     def plot_white(self, ax: Axes | None = None, figsize: tuple[float, float] | None = None) -> Figure:
