@@ -1,4 +1,4 @@
-# ExoIris: Transmission Spectroscopy Made Easy
+# ExoIris: Fast and Flexible Transmission Spectroscopy in Python
 
 [![Docs](https://readthedocs.org/projects/exoiris/badge/)](https://exoiris.readthedocs.io)
 ![Python package](https://github.com/hpparvi/ExoIris/actions/workflows/python-package.yml/badge.svg)
@@ -6,43 +6,80 @@
 [![Licence](http://img.shields.io/badge/license-GPLv3-blue.svg?style=flat)](http://www.gnu.org/licenses/gpl-3.0.html)
 [![PyPI version](https://badge.fury.io/py/exoiris.svg)](https://pypi.org/project/ExoIris/)
 
-**ExoIris** is a user-friendly Python package designed to simplify and accelerate the analysis of transmission 
-spectroscopy data for exoplanets. The package can estimate a self-consistent medium-resolution transmission spectrum 
-with uncertainties from JWST NIRISS data in minutes, even when using a Gaussian Process-based noise model.
+**ExoIris** is a Python package for modeling exoplanet transmission spectroscopy. ExoIris removes the typical 
+limitations of the two-step workflow by modeling the full two-dimensional spectroscopic transit time series *directly*.
+It supports combining transmission spectroscopy datasets from multiple instruments observed in different epochs, yielding 
+self-consistent wavelength-independent and wavelength-dependent parameters, simplifying joint analyses, and delivering 
+results quickly.
 
 ![](doc/source/examples/e01/example1.png)
 
+## Why ExoIris?
+
+Transmission spectroscopy is often done following a **two-step workflow**: (1) fit a white light curve to infer 
+wavelength-independent parameters; (2) fit each spectroscopic light curve independently, constrained by the white-light 
+solution. This split can introduce approximations and inconsistencies.
+
+**ExoIris takes a different approach.** It models spectrophotometric time series *end-to-end*, enabling:
+
+- Self-consistent inference of shared (wavelength-independent) and spectral (wavelength-dependent) parameters.
+- **Joint** modeling of multiple datasets from different instruments and epochs.
+- Accounting for **transit timing variations** and dataset-dependent offsets within a unified framework.
+
+This design is a natural fit for **JWST-class** data, where correlated noise, multi-epoch observations, and 
+cross-instrument combinations are the norm.
+
 ## Documentation
 
-Read the docs at [exoiris.readthedocs.io](https://exoiris.readthedocs.io).
+Full documentation and tutorials: <https://exoiris.readthedocs.io>
+
+## Installation
+
+Install from PyPI:
+
+```bash
+pip install exoiris
+```
+
+Latest development version:
+
+```bash
+git clone https://github.com/hpparvi/ExoIris.git
+cd ExoIris
+pip install -e .
+```
+
+ExoIris supports Python 3.9+. See the docs for dependency details and optional extras.
 
 ## Key Features
 
-- **Fast modelling of spectroscopic transit time series**: ExoIris uses PyTransit's advanced `TSModel` transit 
-  model that is specially tailored for fast and efficient modelling of spectroscopic transit (or eclipse) time series.
-- **Flexible handling of limb darkening**: The stellar limb darkening can be modelled freely either by any of the standard 
-  limb darkening laws (quadratic, power-2, non-linear, etc.), by numerical stellar intensity profiles obtained
-  directly from stellar atmosphere models, or by an arbitrary ser-defined radially symmetric function.
-- **Handling of Correlated noise**: The noise model can be chosen between white or time-correlated noise, where the
-  time-correlated noise is modelled as a Gaussian process.
-- **Model saving and loading**: Seamless model saving and loading allows one to create a high-resolution analysis starting
-  from a saved low-resolution analysis.
-- **Full control of resolution**: ExoIris represents the transmission spectrum as a cubic spline, with complete 
-  flexibility to set and modify the number and placement of spline knots, allowing variable resolution throughout the 
-  analysis.
+- **Direct modelling of spectroscopic transit time series**  
+  Built on PyTransit’s `TSModel`, optimised for transmission spectroscopy; scales to hundreds–thousands of light curves simultaneously.
 
-## Details
+- **Flexible limb darkening**  
+  Use standard analytical laws (quadratic, power-2, non-linear), numerical intensity profiles from stellar atmosphere models, or user-defined radially symmetric functions.
 
-ExoIris uses PyTransit's `TSModel`, a transit model that is specially optimised for transmission spectroscopy and allows
-for simultaneous modelling of hundreds to thousands of spectroscopic light curves 20-30 times faster than when using 
-standard transit models not explicitly designed for transmission spectroscopy. 
+- **Robust noise treatment**  
+  Choose white noise or **time-correlated** noise via a Gaussian Process likelihood, without changing the overall workflow.
 
-A complete posterior solution for a low-resolution transmission spectrum with a data resolution of R=100 
-takes 3-5 minutes to estimate assuming white noise, or 5-15 minutes if using a Gaussian process-based likelihood
-model powered by the celerite2 package. A high-resolution spectrum of the JWST NIRISS WASP-39 b observations 
-by [Feinstein et al. (2023)](https://ui.adsabs.harvard.edu/abs/2023Natur.614..670F/abstract) with ~3800
-spectroscopic light curves (as shown above) takes about 1.5 hours to optimise and sample on a three-year-old 
-AMD Ryzen 7 5800X with eight cores.
+- **Full control of spectral resolution**  
+  The transmission spectrum is represented as a cubic spline with user-defined knots, allowing variable resolution across wavelength.
+
+- **Reproducible, incremental workflows**  
+  Save and reload models to refine a low-resolution run into a high-resolution analysis seamlessly.
+
+- **Joint multi-dataset analyses**  
+  Combine instruments and epochs in one fit, with support for transit timing variations and dataset-specific systematics and offsets.
+
+## Performance
+
+ExoIris is designed for speed and stability:
+
+- A transmission spectroscopy analysis of a single JWST/NIRISS dataset at **R ≈ 100** typically runs in **3–5 minutes** 
+  assuming white noise, or **5–15 minutes** with a GP noise model, on a standard desktop CPU.
+- A high-resolution analysis of the JWST/NIRISS **WASP-39 b** dataset (~3800 spectroscopic light curves; see Feinstein 
+  et al. 2023) can be optimised and sampled in about **1.5 hours** on an AMD Ryzen 7 5800X (8 cores, ~3-year-old desktop).
 
 ---
-&copy; 2024 Hannu Parviainen
+
+© 2025 Hannu Parviainen
