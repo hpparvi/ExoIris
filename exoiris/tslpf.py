@@ -33,6 +33,7 @@ from scipy.interpolate import pchip_interpolate, splrep, splev, Akima1DInterpola
 from .tsmodel import TransmissionSpectroscopyModel as TSModel
 from .tsdata import TSDataGroup
 from .ldtkld import LDTkLD
+from .spotmodel import SpotModel
 
 NM_WHITE = 0
 NM_GP_FIXED = 1
@@ -147,6 +148,10 @@ class TSLPF(LogPosteriorFunction):
         self.set_data(data)
         self.set_noise_model(noise_model)
 
+        self.nspots = 0
+        self.spot_models = []
+        self.spot_model_fluxes = []
+
         self.ldmodel = ldmodel
         if isinstance(ldmodel, LDTkLD):
             for tm in self.tms:
@@ -210,6 +215,36 @@ class TSLPF(LogPosteriorFunction):
         self._init_p_bias()
         self.ps.freeze()
         self.ndim = len(self.ps)
+
+    def add_spot(self, epoch_group: int,
+                 tstar: None | float = None,
+                 ref_wavelength: None | float = None,
+                 teff_limits: None | tuple[float, float] = None) -> None:
+
+        if self.nspots == 0:
+            if tstar is None or ref_wavelength is None or teff_limits is None:
+                raise ValueError('tstar, ref_wavelength, and teff_limits must be specified for the first spot.')
+            self.spot_models.append(SpotModel(self, epoch_group, tstar, ref_wavelength, teff_limits))
+        else:
+            if tstar is not None or ref_wavelength is not None or teff_limits is not None:
+                raise ValueError('tstar, ref_wavelength, and teff_limits must be None for subsequent spots.')
+            sm0 = self.spot_models[0]
+            self.spot_models.append(SpotModel(self, sm0.epoch_group, sm0.tstar, sm0.ref_wl, sm0.teff_limits))
+
+    def spot_model(self, pvp):
+        if self.nspots == 0:
+            return None
+        pvp = atleast_2d(pvp)
+        npv = pvp.shape[0]
+        if self.spot_model_fluxes == [] or self.spot_model_fluxes[0].shape[0] != npv:
+            self.spot_model_fluxes = [zeros((npv, d.fluxes.shape[0], d.fluxes.shape[1])) for d in self.data]
+        else:
+            for f in self.spot_model_fluxes:
+                f[:, :, :] = 0.0
+
+        for m in self.spot_models:
+            m.evaluate(pvp)
+        return self.spot_model_fluxes
 
     def set_noise_model(self, noise_model: str) -> None:
         """Sets the noise model for the analysis.
@@ -642,6 +677,10 @@ class TSLPF(LogPosteriorFunction):
     def flux_model(self, pv):
         transit_models = self.transit_model(pv)
         baseline_models = self.baseline_model(pv)
+        if self.nspots > 0:
+            spot_models = self.spot_model(pv)
+            for i in range(self.data.size):
+                transit_models[i][:, :, :] = clip(transit_models[i] + spot_models[i], 0.0, 1.0)
         for i in range(self.data.size):
             transit_models[i][:, :, :] *= baseline_models[i][:, :, newaxis]
         return transit_models

@@ -274,7 +274,7 @@ class TSData:
             self.transit_mask = ones(self.fluxes.shape, bool)
             self.transit_mask[:, elims[0]:elims[1]] = False
         else:
-            raise ValueError("Transit masking requires either t0, pp, and t14, ephemeris, or transit limits in exposure indices.")
+            raise ValueError("Transit masking requires either t0, p, and t14, ephemeris, or transit limits in exposure indices.")
         return self
 
     def estimate_average_uncertainties(self):

@@ -71,28 +71,38 @@ def load_model(fname: Path | str, name: str | None = None):
     """
     with pf.open(fname) as hdul:
         data = TSDataGroup.import_fits(hdul)
+        hdr = hdul[0].header
 
-        if hdul[0].header['LDMODEL'] == 'ldtk':
-            filters, teff, logg, metal, dataset = pickle.loads(codecs.decode(json.loads(hdul[0].header['LDTKLD']).encode(), "base64"))
+        # Read the limb darkening model.
+        # ==============================
+        if hdr['LDMODEL'] == 'ldtk':
+            filters, teff, logg, metal, dataset = pickle.loads(codecs.decode(json.loads(hdr['LDTKLD']).encode(), "base64"))
             ldm = LDTkLD(filters, teff, logg, metal, dataset=dataset)
         else:
-            ldm =  hdul[0].header['LDMODEL']
+            ldm =  hdr['LDMODEL']
 
+        # Read the interpolation model.
+        # =============================
         try:
-            ip = hdul[0].header['INTERP']
+            ip = hdr['INTERP']
         except KeyError:
             ip = 'bspline'
 
+        # Read the noise model.
+        # =====================
         try:
-            noise_model = hdul[0].header['NOISE']
+            noise_model = hdr['NOISE']
         except KeyError:
             noise_model = "white"
 
-        a = ExoIris(name or hdul[0].header['NAME'], ldmodel=ldm, data=data, noise_model=noise_model, interpolation=ip)
+        # Setup the analysis.
+        # ===================
+        a = ExoIris(name or hdr['NAME'], ldmodel=ldm, data=data, noise_model=noise_model, interpolation=ip)
         a.set_radius_ratio_knots(hdul['K_KNOTS'].data.astype('d'))
         a.set_limb_darkening_knots(hdul['LD_KNOTS'].data.astype('d'))
 
         # Read the white light curve models if they exist.
+        # ================================================
         try:
             tb = Table.read(hdul['WHITE_DATA'])
             white_ids = tb['id'].data
@@ -101,18 +111,30 @@ def load_model(fname: Path | str, name: str | None = None):
             a._white_fluxes = [tb['flux_obs'].data[white_ids == i] for i in uids]
             a._white_errors = [tb['flux_obs_err'].data[white_ids == i] for i in uids]
             a._white_models = [tb['flux_mod'].data[white_ids == i] for i in uids]
-
         except KeyError:
             pass
 
+        # Read the ephemeris if it exists.
+        # ================================
         try:
-            a.period = hdul[0].header['P']
-            a.zero_epoch = hdul[0].header['T0']
-            a.transit_duration = hdul[0].header['T14']
+            a.period = hdr['P']
+            a.zero_epoch = hdr['T0']
+            a.transit_duration = hdr['T14']
             [d.mask_transit(a.zero_epoch, a.period, a.transit_duration) for d in a.data]
-        except KeyError:
+        except (KeyError, ValueError):
             pass
 
+        # Read the spots if they exist.
+        # =============================
+        if 'nspots' in hdr:
+            nspots = hdr['nspots']
+            if nspots > 0:
+                a.add_spot(hdr['SP01_EG'], hdr['SP_TSTAR'], hdr['SP_REFWL'], (hdr['SP_TMIN'], hdr['SP_TMAX']))
+                for i in range(1, nspots):
+                    a.add_spot(hdr[f'SP{i+1:02d}_EG'])
+
+        # Read the priors.
+        # ================
         priors = pickle.loads(codecs.decode(json.loads(hdul['PRIORS'].header['PRIORS']).encode(), "base64"))
         a._tsa.ps = ParameterSet([pickle.loads(p) for p in priors])
         a._tsa.ps.freeze()
@@ -342,6 +364,39 @@ class ExoIris:
             The kernel to set for the GP.
         """
         self._tsa.set_gp_kernel(kernel)
+
+    def add_spot(self, epoch_group: int,
+                 tstar: None | float = None,
+                 ref_wavelength: None | float = None,
+                 teff_limits: None | tuple[float, float] = None) -> None:
+        """Add a new star spot.
+
+        This method adds a star spot and associates it with an epoch group. The first spot should also be
+        provided with effective stellar temperature, reference wavelength in which the spot amplitude
+        is defined, and temperature limits for the stellar spectrum model. Subsequent spots require only
+        the epoch group, while the rest of the parameters are set to the ones provided for the first spot.
+
+        Parameters
+        ----------
+        epoch_group
+            Identifier for the epoch group to which the spot will be added.
+        tstar
+            Effective stellar temperature.
+        ref_wavelength
+            Reference wavelength where the spot amplitude is defined.
+        teff_limits
+            Temperature limits for the spot as a tuple (min_temp, max_temp).
+
+        Returns
+        -------
+        None
+        """
+        self._tsa.add_spot(epoch_group, tstar, ref_wavelength, teff_limits)
+
+    @property
+    def nspots(self) -> int:
+        """Number of star spots."""
+        return self._tsa.nspots
 
     @property
     def name(self) -> str:
@@ -1095,10 +1150,14 @@ class ExoIris:
         pri.header['interp'] = self._tsa.interpolation
         pri.header['noise'] = self._tsa.noise_model
 
+        # Priors
+        # ======
         pr = pf.ImageHDU(name='priors')
         priors = [pickle.dumps(p) for p in self.ps]
         pr.header['priors'] = json.dumps(codecs.encode(pickle.dumps(priors), "base64").decode())
 
+        # Limb darkening
+        # ==============
         if isinstance(self._tsa.ldmodel, LDTkLD):
             ldm = self._tsa.ldmodel
             pri.header['ldmodel'] = 'ldtk'
@@ -1107,11 +1166,15 @@ class ExoIris:
         else:
             pri.header['ldmodel'] = self._tsa.ldmodel
 
+        # Knots
+        # =====
         k_knots = pf.ImageHDU(self._tsa.k_knots, name='k_knots')
         ld_knots = pf.ImageHDU(self._tsa.ld_knots, name='ld_knots')
         hdul = pf.HDUList([pri, k_knots, ld_knots, pr])
         hdul += self.data.export_fits()
 
+        # White light curve analysis
+        # ==========================
         if self._wa is not None and self._wa._local_minimization is not None:
             wa_data = pf.BinTableHDU(
                 Table(
@@ -1140,6 +1203,20 @@ class ExoIris:
             wa_params = pf.BinTableHDU(Table(self._wa._local_minimization.x, names=names), name='white_params')
             hdul.append(wa_params)
 
+        # Spots
+        # =====
+        pri.header["nspots"] = self.nspots
+        if self.nspots > 0:
+            pri.header["sp_tstar"] = self._tsa.spot_models[0].tstar
+            pri.header["sp_tstar"] = self._tsa.spot_models[0].tstar
+            pri.header["sp_refwl"] = self._tsa.spot_models[0].ref_wl
+            pri.header["sp_tmin"] = self._tsa.spot_models[0].teff_limits[0]
+            pri.header["sp_tmax"] = self._tsa.spot_models[0].teff_limits[1]
+            for i in range(self.nspots):
+                pri.header[f"sp{i+1:02d}_eg"] = self._tsa.spot_models[i].epoch_group
+
+        # Global optimization results
+        # ===========================
         if self._tsa.de is not None:
             de = pf.BinTableHDU(Table(self._tsa._de_population, names=self.ps.names), name='DE')
             de.header['npop'] = self._tsa.de.n_pop
@@ -1147,6 +1224,8 @@ class ExoIris:
             de.header['imin'] = self._tsa.de.minimum_index
             hdul.append(de)
 
+        # MCMC results
+        # ============
         if self._tsa.sampler is not None:
             mc = pf.BinTableHDU(Table(self._tsa.sampler.flatchain, names=self.ps.names), name='MCMC')
             mc.header['npop'] = self._tsa.sampler.nwalkers
