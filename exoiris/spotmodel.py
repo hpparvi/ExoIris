@@ -16,12 +16,12 @@
 
 from copy import deepcopy
 
-from numpy import exp, fabs, log, inf, array, vstack, atleast_2d
+from numpy import exp, fabs, log, inf, array, vstack, atleast_2d, nan
 from scipy.interpolate import RegularGridInterpolator
 from numba import njit
 
 from pytransit.stars import create_bt_settl_interpolator
-from pytransit.param import GParameter, NormalPrior as N, UniformPrior as U
+from pytransit.param import GParameter, UniformPrior as U
 
 from exoiris.tsdata import TSData
 from exoiris.util import bin2d
@@ -46,7 +46,7 @@ def create_interpolator(data: TSData, trange):
     wl_r_edges = wave + 0.5
 
     bflux = bin2d(flux.T, flux.T, wl_l_edges*1e-3, wl_r_edges*1e-3, vstack([data._wl_l_edges, data._wl_r_edges]).T)[0].T
-    return RegularGridInterpolator((teff, data.wavelength), bflux)
+    return RegularGridInterpolator((teff, data.wavelength), bflux, bounds_error=False, fill_value=nan)
 
 
 class SpotModel:
@@ -67,10 +67,11 @@ class SpotModel:
         lpf.nspots += 1
 
         self._init_data_and_interpolators()
-        self._init_fratios(self.tstar, self.ref_wl)
         self._init_parameters()
 
     def _init_data_and_interpolators(self):
+        ip = create_bt_settl_interpolator()
+
         for i, d in enumerate(self.lpf.data):
             if d.epoch_group == self.epoch_group:
                 self.data_ids.append(i)
@@ -78,13 +79,10 @@ class SpotModel:
                 self.wavelengths.append(d.wavelength)
                 self.sfluxes.append(create_interpolator(d, self.teff_limits))
 
-    def _init_fratios(self, tstar: float, ref_wavelength: float):
-        self.fratios = []
-        for sf in self.sfluxes:
-            fr = deepcopy(sf)
-            fr.values[:, :] = fr((tstar, fr.grid[1])) / fr.values
-            fr.values[:, :] = fr.values / fr((fr.grid[0], ref_wavelength))[:, None]
-            self.fratios.append(fr)
+                fr = deepcopy(self.sfluxes[-1])
+                fr.values[:, :] = fr((self.tstar, fr.grid[1]))[None, :] / fr.values[:, :]
+                fr.values[:, :] = fr.values[:, :] / (ip((self.tstar, self.ref_wl*1e3)) / ip((fr.grid[0], self.ref_wl*1e3))[:, None])
+                self.fratios.append(fr)
 
     def _init_parameters(self):
         i = self.lpf.nspots
