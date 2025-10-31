@@ -28,6 +28,7 @@ from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
 
 from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_pkaiews, epoch
 from pytransit.param import ParameterSet, UniformPrior as UP, NormalPrior as NP, GParameter
+from pytransit.stars import create_bt_settl_interpolator
 from scipy.interpolate import pchip_interpolate, splrep, splev, Akima1DInterpolator
 
 from .tsmodel import TransmissionSpectroscopyModel as TSModel
@@ -148,8 +149,7 @@ class TSLPF(LogPosteriorFunction):
         self.set_data(data)
         self.set_noise_model(noise_model)
 
-        self.nspots = 0
-        self.spot_models = []
+        self.spot_model: SpotModel | None = None
         self.spot_model_fluxes = []
 
         self.ldmodel = ldmodel
@@ -216,84 +216,18 @@ class TSLPF(LogPosteriorFunction):
         self.ps.freeze()
         self.ndim = len(self.ps)
 
-    def add_spot(self, epoch_group: int,
-                 tstar: None | float = None,
-                 ref_wavelength: None | float = None,
-                 teff_limits: None | tuple[float, float] = None) -> None:
-        """Adds a new star spot.
+    def initialize_spots(self, tstar: float, wlref: float) -> None:
+        self.spot_model = SpotModel(self, tstar, wlref)
 
-        For the first spot, the parameters `tstar`, `ref_wavelength`, and `teff_limits`
-        must be explicitly provided. For subsequent spots, these parameters must be
-        set to None to ensure consistency with the first spot's properties.
+    def add_spot(self, epoch_group: int) -> None:
+        """Adds a new star spot.
 
         Parameters
         ----------
         epoch_group : int
             The identifier of the epoch group to which the spot belongs.
-        tstar : float or None, optional
-            The effective temperature of the star. Must be specified for the first
-            spot, and must be None for subsequent spots.
-        ref_wavelength : float or None, optional
-            The reference wavelength of the star. Must be specified for the first
-            spot, and must be None for subsequent spots.
-        teff_limits : tuple of float or None, optional
-            The effective temperature limits of the spot. Must be specified for the
-            first spot, and must be None for subsequent spots.
-
-        Raises
-        ------
-        ValueError
-            If `tstar`, `ref_wavelength`, or `teff_limits` are not specified for the
-            first spot.
-        ValueError
-            If any of `tstar`, `ref_wavelength`, or `teff_limits` are provided for
-            subsequent spots.
         """
-        if self.nspots == 0:
-            if tstar is None or ref_wavelength is None or teff_limits is None:
-                raise ValueError('tstar, ref_wavelength, and teff_limits must be specified for the first spot.')
-            self.spot_models.append(SpotModel(self, epoch_group, tstar, ref_wavelength, teff_limits))
-        else:
-            if tstar is not None or ref_wavelength is not None or teff_limits is not None:
-                raise ValueError('tstar, ref_wavelength, and teff_limits must be None for subsequent spots.')
-            sm0 = self.spot_models[0]
-            self.spot_models.append(SpotModel(self, sm0.epoch_group, sm0.tstar, sm0.ref_wl, sm0.teff_limits))
-
-    def spot_model(self, pvp):
-        """Evaluate the spot model for the provided set of parameters and updates the fluxes.
-
-        This function computes the flux contributions from spots, based on the provided
-        parameter values (pvp), for an associated dataset. It initializes or resets the
-        spot_model_fluxes as needed to match the number of input parameter sets (pvp).
-        The function then evaluates all spot models and updates the corresponding fluxes.
-
-        Parameters
-        ----------
-        pvp : ndarray
-            A 2D array of shape (npv, nparams), where npv is the number of parameter sets,
-            and nparams is the number of parameters for each spot. The parameter values
-            defining the spots for which the flux contributions are calculated.
-
-        Returns
-        -------
-        list of ndarray or None
-            Returns a list of arrays, where each array contains the calculated flux
-            contributions for the spots. If no spots are defined (nspots == 0),
-            the function returns None.
-        """
-        if self.nspots == 0:
-            return None
-        pvp = atleast_2d(pvp)
-        npv = pvp.shape[0]
-        if self.spot_model_fluxes == [] or self.spot_model_fluxes[0].shape[0] != npv:
-            self.spot_model_fluxes = [zeros((npv, d.fluxes.shape[0], d.fluxes.shape[1])) for d in self.data]
-        else:
-            for f in self.spot_model_fluxes:
-                f[:, :, :] = 0.0
-
-        for m in self.spot_models:
-            m.evaluate(pvp)
-        return self.spot_model_fluxes
+        self.spot_model.add_spot(epoch_group)
 
     def set_noise_model(self, noise_model: str) -> None:
         """Sets the noise model for the analysis.
@@ -739,10 +673,9 @@ class TSLPF(LogPosteriorFunction):
     def flux_model(self, pv):
         transit_models = self.transit_model(pv)
         baseline_models = self.baseline_model(pv)
-        if self.nspots > 0:
-            spot_models = self.spot_model(pv)
-            for i in range(self.data.size):
-                transit_models[i][:, :, :] = clip(transit_models[i] + spot_models[i], 0.0, 1.0)
+        if self.spot_model is not None:
+            self.spot_model.apply_spots(pv, transit_models)
+            self.spot_model.apply_tlse(pv, transit_models)
         for i in range(self.data.size):
             transit_models[i][:, :, :] *= baseline_models[i][:, :, newaxis]
         return transit_models

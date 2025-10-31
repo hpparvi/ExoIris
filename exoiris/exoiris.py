@@ -365,33 +365,27 @@ class ExoIris:
         """
         self._tsa.set_gp_kernel(kernel)
 
-    def add_spot(self, epoch_group: int,
-                 tstar: None | float = None,
-                 ref_wavelength: None | float = None,
-                 teff_limits: None | tuple[float, float] = None) -> None:
-        """Add a new star spot.
+    def initialize_spots(self, tstar: float, wlref: float):
+        """Initialize star spot model using given stellar and wavelength reference values.
 
-        This method adds a star spot and associates it with an epoch group. The first spot should also be
-        provided with effective stellar temperature, reference wavelength in which the spot amplitude
-        is defined, and temperature limits for the stellar spectrum model. Subsequent spots require only
-        the epoch group, while the rest of the parameters are set to the ones provided for the first spot.
+        Parameters
+        ----------
+        tstar
+            Effective stellar temperature [K].
+        wlref
+            Reference wavelength where spot amplitude matches the amplitude parameter.
+        """
+        self._tsa.initialize_spots(tstar, wlref)
+
+    def add_spot(self, epoch_group: int) -> None:
+        """Add a new star spot and associate it with an epoch group.
 
         Parameters
         ----------
         epoch_group
             Identifier for the epoch group to which the spot will be added.
-        tstar
-            Effective stellar temperature.
-        ref_wavelength
-            Reference wavelength where the spot amplitude is defined.
-        teff_limits
-            Temperature limits for the spot as a tuple (min_temp, max_temp).
-
-        Returns
-        -------
-        None
         """
-        self._tsa.add_spot(epoch_group, tstar, ref_wavelength, teff_limits)
+        self._tsa.add_spot(epoch_group)
 
     @property
     def nspots(self) -> int:

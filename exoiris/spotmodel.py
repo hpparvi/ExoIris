@@ -16,7 +16,7 @@
 
 from copy import deepcopy
 
-from numpy import exp, fabs, log, inf, array, vstack, atleast_2d, nan
+from numpy import exp, fabs, log, inf, array, vstack, atleast_2d, nan, unique
 from scipy.interpolate import RegularGridInterpolator
 from numba import njit
 
@@ -32,15 +32,17 @@ def spot_model(x, center, amplitude, fwhm, shape):
     return amplitude*exp(-(fabs(x-center) / c)**shape)
 
 
-def create_interpolator(data: TSData, trange):
-    ip = create_bt_settl_interpolator()
-    lrange = array(data.bbox_wl) * 1e3
-    mt = (ip.grid[0] >= trange[0]) & (ip.grid[0] <= trange[1])
-    ml = (ip.grid[1] >= lrange[0]) & (ip.grid[1] <= lrange[1])
+def unocculted_spot_contamination_factor(area_ratio, flux_ratio):
+    return 1. / (1. + area_ratio*(flux_ratio-1.))
 
-    teff = ip.grid[0][mt]
-    wave = ip.grid[1][ml]
-    flux = ip.values[mt][:, ml]
+
+def bin_stellar_spectrum_model(sp: RegularGridInterpolator, data: TSData):
+    lrange = array(data.bbox_wl) * 1e3
+    ml = (sp.grid[1] >= lrange[0]) & (sp.grid[1] <= lrange[1])
+
+    teff = sp.grid[0]
+    wave = sp.grid[1][ml]
+    flux = sp.values[:, ml]
 
     wl_l_edges = wave - 0.5
     wl_r_edges = wave + 0.5
@@ -50,64 +52,74 @@ def create_interpolator(data: TSData, trange):
 
 
 class SpotModel:
-    def __init__(self, lpf: "TSLPF", epoch_group: int, tstar: float, ref_wavelength: float, teff_limits: tuple[float, float]):
-        self.lpf = lpf
-        self.epoch_group = epoch_group
-        self.teff_limits = teff_limits
-        self.tstar = tstar
-        self.ref_wl = ref_wavelength
-        self.pv_slice: None | slice = None
-
-        self.sfluxes = []
+    def __init__(self, tsa, teff: float, wlref: float):
+        self.tsa = tsa
+        self.teff = teff
+        self.wlref = wlref
+        self.model_spectrum = ms = create_bt_settl_interpolator()
         self.fratios = []
-        self.times = []
-        self.wavelengths = []
-        self.data_ids = []
+        self.nfratios = []
+        for d in tsa.data:
+            mb = bin_stellar_spectrum_model(self.model_spectrum, d)
+            fratio = RegularGridInterpolator(mb.grid, mb((teff, mb.grid[1])) / mb.values, bounds_error=False, fill_value=nan)
+            n = ms((teff, wlref*1e3)) / ms((fratio.grid[0], wlref*1e3))
+            nfratio = RegularGridInterpolator(fratio.grid, fratio.values / n[:, None], bounds_error=False, fill_value=nan)
+            self.fratios.append(fratio)
+            self.nfratios.append(nfratio)
+        self._init_tlse_parameters()
 
-        lpf.nspots += 1
+        self.nspots = 0
+        self.spot_epoch_groups = []
+        self.spot_data_ids = []
+        self.spot_pv_slices = []
 
-        self._init_data_and_interpolators()
-        self._init_parameters()
+    def _init_tlse_parameters(self):
+        ps = [GParameter('tlse_tspot', 'Effective temperature of unocculted spots', 'K', U(1200, 7000), (1200, 7000))]
+        ps.extend([GParameter(f"tlse_afrac_e{e:02d}", "Area fraction covered by unocculted spots", "", U(0,1), (0,1)) for e in unique(self.tsa.data.epoch_groups)])
+        self.tsa.ps.thaw()
+        self.tsa.ps.add_global_block(f'tlse', ps)
+        setattr(self.tsa, "_start_tlse", self.tsa.ps.blocks[-1].start)
+        setattr(self.tsa, "_sl_tlse", self.tsa.ps.blocks[-1].slice)
+        self.tlse_pv_slice = self.tsa.ps.blocks[-1].slice
+        self.tsa.ps.freeze()
 
-    def _init_data_and_interpolators(self):
-        ip = create_bt_settl_interpolator()
+    def add_spot(self, epoch_group: int):
+        self.nspots += 1
+        self.spot_epoch_groups.append(epoch_group)
+        self.spot_data_ids.append([i for i, d in enumerate(self.tsa.data) if d.epoch_group == epoch_group])
 
-        for i, d in enumerate(self.lpf.data):
-            if d.epoch_group == self.epoch_group:
-                self.data_ids.append(i)
-                self.times.append(d.time)
-                self.wavelengths.append(d.wavelength)
-                self.sfluxes.append(create_interpolator(d, self.teff_limits))
-
-                fr = deepcopy(self.sfluxes[-1])
-                fr.values[:, :] = fr((self.tstar, fr.grid[1]))[None, :] / fr.values[:, :]
-                fr.values[:, :] = fr.values[:, :] / (ip((self.tstar, self.ref_wl*1e3)) / ip((fr.grid[0], self.ref_wl*1e3))[:, None])
-                self.fratios.append(fr)
-
-    def _init_parameters(self):
-        i = self.lpf.nspots
+        i = self.nspots
         pspot = [GParameter(f"spc_{i:02d}", 'spot {i:02d} center', "d", U(0, 1), (0, inf)),
                  GParameter(f"spa_{i:02d}", 'spot {i:02d} amplitude', "", U(0, 1), (0, inf)),
                  GParameter(f"spw_{i:02d}", 'spot {i:02d} FWHM', "d", U(0, 1), (0, inf)),
                  GParameter(f"sps_{i:02d}", 'spot {i:02d} shape', "d", U(1, 5), (0, inf)),
                  GParameter(f"spt_{i:02d}", 'spot {i:02d} temperature', "K", U(3000, 6000), (0, inf))]
-        ps = self.lpf.ps
+        ps = self.tsa.ps
         ps.thaw()
         ps.add_global_block(f'spot_{i:02d}', pspot)
-        setattr(self.lpf, f"_start_spot_{i:02d}", ps.blocks[-1].start)
-        setattr(self.lpf, f"_sl_spot_{i:02d}", ps.blocks[-1].slice)
-        self.pv_slice = ps.blocks[-1].slice
+        setattr(self.tsa, f"_start_spot_{i:02d}", ps.blocks[-1].start)
+        setattr(self.tsa, f"_sl_spot_{i:02d}", ps.blocks[-1].slice)
+        self.spot_pv_slices.append(ps.blocks[-1].slice)
         ps.freeze()
 
-    def evaluate(self, pvs):
-        pvs = atleast_2d(pvs)
-        npv = pvs.shape[0]
+    def apply_tlse(self, pvp, models):
+        pvp = atleast_2d(pvp)[:, self.tlse_pv_slice]
+        npv = pvp.shape[0]
+        for d, m, fr in zip(self.tsa.data, models, self.fratios):
+            for i in range(npv):
+                tspot = pvp[i, 0]
+                farea = pvp[i, 1+d.epoch_group]
+                m[i, :, :] = (m[i, :, :] - 1.0) * unocculted_spot_contamination_factor(farea, 1/fr((tspot, fr.grid[1])))[:, None] + 1
 
-        models = self.lpf.spot_model_fluxes
+    def apply_spots(self, pvp, models):
+        pvp = atleast_2d(pvp)
+        npv = pvp.shape[0]
         if models[0].shape[0] != npv:
             raise ValueError('The _spot_models array has a wrong shape, it has not been initialized properly.')
 
-        for ipv in range(npv):
-            center, amplitude, fwhm, shape, tspot = pvs[ipv, self.pv_slice]
-            for idata, t, fr in zip(self.data_ids, self.times, self.fratios):
-                models[idata][ipv, :, :] += spot_model(t, center, amplitude, fwhm, shape) * fr((tspot, fr.grid[1]))[:, None]
+        for isp in range(self.nspots):
+            for ipv in range(npv):
+                center, amplitude, fwhm, shape, tspot = pvp[ipv, self.spot_pv_slices[isp]]
+                for idata in self.spot_data_ids[isp]:
+                    fr = self.nfratios[idata]
+                    models[idata][ipv, :, :] += spot_model(self.tsa.data[idata].time, center, amplitude, fwhm, shape) * fr((tspot, fr.grid[1]))[:, None]
