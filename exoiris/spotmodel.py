@@ -52,10 +52,11 @@ def bin_stellar_spectrum_model(sp: RegularGridInterpolator, data: TSData):
 
 
 class SpotModel:
-    def __init__(self, tsa, teff: float, wlref: float):
+    def __init__(self, tsa, teff: float, wlref: float, include_tlse: bool = True):
         self.tsa = tsa
         self.teff = teff
         self.wlref = wlref
+        self.include_tlse = include_tlse
         self.model_spectrum = ms = create_bt_settl_interpolator()
         self.fratios = []
         self.nfratios = []
@@ -66,12 +67,19 @@ class SpotModel:
             nfratio = RegularGridInterpolator(fratio.grid, fratio.values / n[:, None], bounds_error=False, fill_value=nan)
             self.fratios.append(fratio)
             self.nfratios.append(nfratio)
-        self._init_tlse_parameters()
+
+        if self.include_tlse:
+            self._init_tlse_parameters()
 
         self.nspots = 0
         self.spot_epoch_groups = []
         self.spot_data_ids = []
         self.spot_pv_slices = []
+
+    def include_tlse(self):
+        if self.include_tlse is False:
+            self.include_tlse = True
+            self._init_tlse_parameters()
 
     def _init_tlse_parameters(self):
         ps = [GParameter('tlse_tspot', 'Effective temperature of unocculted spots', 'K', U(1200, 7000), (1200, 7000))]

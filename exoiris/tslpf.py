@@ -675,7 +675,8 @@ class TSLPF(LogPosteriorFunction):
         baseline_models = self.baseline_model(pv)
         if self.spot_model is not None:
             self.spot_model.apply_spots(pv, transit_models)
-            self.spot_model.apply_tlse(pv, transit_models)
+            if self.spot_model.include_tlse:
+                self.spot_model.apply_tlse(pv, transit_models)
         for i in range(self.data.size):
             transit_models[i][:, :, :] *= baseline_models[i][:, :, newaxis]
         return transit_models
