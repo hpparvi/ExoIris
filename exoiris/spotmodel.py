@@ -16,15 +16,28 @@
 
 from copy import deepcopy
 
-from numpy import exp, fabs, log, inf, array, vstack, atleast_2d, nan, unique
+from numpy import (
+    exp,
+    fabs,
+    log,
+    inf,
+    array,
+    vstack,
+    atleast_2d,
+    nan,
+    unique,
+    linspace,
+    floor,
+)
 from scipy.interpolate import RegularGridInterpolator
 from numba import njit
 
-from pytransit.stars import create_bt_settl_interpolator
+from pytransit.stars import create_bt_settl_interpolator, create_husser2013_interpolator
 from pytransit.param import GParameter, UniformPrior as U
 
 from exoiris.tsdata import TSData
 from exoiris.util import bin2d
+
 
 @njit
 def spot_model(x, center, amplitude, fwhm, shape):
@@ -32,8 +45,29 @@ def spot_model(x, center, amplitude, fwhm, shape):
     return amplitude*exp(-(fabs(x-center) / c)**shape)
 
 
-def unocculted_spot_contamination_factor(area_ratio, flux_ratio):
-    return 1. / (1. + area_ratio*(flux_ratio-1.))
+@njit
+def interpolate_spectrum(teff, values, tgrid):
+    t0 = tgrid[0]
+    dt = tgrid[1] - tgrid[0]
+    k = (teff - t0) / dt
+    i = int(floor(k))
+    a = k - floor(k)
+    return (1.0-a)*values[i] + a*values[i+1]
+
+
+@njit
+def tlse(tphot, tspot, tfac, aspot, afac, spectra, tgrid):
+    fphot = interpolate_spectrum(tphot, spectra, tgrid)
+    fspot = interpolate_spectrum(tspot, spectra, tgrid)
+    ffac  = interpolate_spectrum(tfac, spectra, tgrid)
+    return 1.0 / (1.0 - aspot*(1.0 - fspot/fphot) - afac*(1.0 - ffac/fphot))
+
+
+def spot_contrast(tphot, tspot, spectra, spnorm):
+    fphot = interpolate_spectrum(tphot, spectra.values, spectra.grid[0])
+    fspot = interpolate_spectrum(tspot, spectra.values, spectra.grid[0])
+    norm = interpolate_spectrum(tspot, spnorm, spectra.grid[0])
+    return (fphot / fspot) / norm
 
 
 def bin_stellar_spectrum_model(sp: RegularGridInterpolator, data: TSData):
@@ -52,21 +86,25 @@ def bin_stellar_spectrum_model(sp: RegularGridInterpolator, data: TSData):
 
 
 class SpotModel:
-    def __init__(self, tsa, teff: float, wlref: float, include_tlse: bool = True):
+    def __init__(self, tsa, tphot: float, wlref: float, include_tlse: bool = True):
         self.tsa = tsa
-        self.teff = teff
+        self.tphot = tphot
         self.wlref = wlref
         self.include_tlse = include_tlse
-        self.model_spectrum = ms = create_bt_settl_interpolator()
-        self.fratios = []
-        self.nfratios = []
+
+        ms = create_bt_settl_interpolator()
+        new_teff_grid = linspace(*ms.grid[0][[0, -1]], 117)
+        new_spectrum = array([ms((t, ms.grid[1])) for t in new_teff_grid])
+        self.full_spectrum = ms = RegularGridInterpolator((new_teff_grid, ms.grid[1]), new_spectrum, bounds_error=False, fill_value=nan)
+
+        wave = ms.grid[1] / 1e3
+        m = (wave > wlref - 0.025) & (wave < wlref + 0.025)
+        spot_norm = ms.values[:, m].mean(1)
+        self.spot_norm = interpolate_spectrum(tphot, spot_norm, ms.grid[0]) / spot_norm
+
+        self.binned_spectra = []
         for d in tsa.data:
-            mb = bin_stellar_spectrum_model(self.model_spectrum, d)
-            fratio = RegularGridInterpolator(mb.grid, mb((teff, mb.grid[1])) / mb.values, bounds_error=False, fill_value=nan)
-            n = ms((teff, wlref*1e3)) / ms((fratio.grid[0], wlref*1e3))
-            nfratio = RegularGridInterpolator(fratio.grid, fratio.values / n[:, None], bounds_error=False, fill_value=nan)
-            self.fratios.append(fratio)
-            self.nfratios.append(nfratio)
+            self.binned_spectra.append(bin_stellar_spectrum_model(self.full_spectrum, d))
 
         if self.include_tlse:
             self._init_tlse_parameters()
@@ -83,7 +121,10 @@ class SpotModel:
 
     def _init_tlse_parameters(self):
         ps = [GParameter('tlse_tspot', 'Effective temperature of unocculted spots', 'K', U(1200, 7000), (1200, 7000))]
-        ps.extend([GParameter(f"tlse_afrac_e{e:02d}", "Area fraction covered by unocculted spots", "", U(0,1), (0,1)) for e in unique(self.tsa.data.epoch_groups)])
+        ps.append(GParameter('tlse_tfac', 'Effective temperature of unocculted faculae', 'K', U(1200, 7000), (1200, 7000)))
+        for e in unique(self.tsa.data.epoch_groups):
+            ps.append(GParameter(f"tlse_aspot_e{e:02d}", "Area fraction covered by unocculted spots", "", U(0,1), (0,1)))
+            ps.append(GParameter(f"tlse_afac_e{e:02d}", "Area fraction covered by unocculted faculae", "", U(0,1), (0,1)))
         self.tsa.ps.thaw()
         self.tsa.ps.add_global_block(f'tlse', ps)
         setattr(self.tsa, "_start_tlse", self.tsa.ps.blocks[-1].start)
@@ -113,11 +154,13 @@ class SpotModel:
     def apply_tlse(self, pvp, models):
         pvp = atleast_2d(pvp)[:, self.tlse_pv_slice]
         npv = pvp.shape[0]
-        for d, m, fr in zip(self.tsa.data, models, self.fratios):
+        for d, m, sp in zip(self.tsa.data, models, self.binned_spectra):
             for i in range(npv):
                 tspot = pvp[i, 0]
-                farea = pvp[i, 1+d.epoch_group]
-                m[i, :, :] = (m[i, :, :] - 1.0) * unocculted_spot_contamination_factor(farea, 1/fr((tspot, fr.grid[1])))[:, None] + 1
+                tfac = pvp[i, 1]
+                fspot = pvp[i, 2+d.epoch_group*2]
+                ffac = pvp[i, 3+d.epoch_group*2]
+                m[i, :, :] = (m[i, :, :] - 1.0) * tlse(self.tphot, tspot, tfac, fspot, ffac, sp.values, sp.grid[0])[:, None] + 1
 
     def apply_spots(self, pvp, models):
         pvp = atleast_2d(pvp)
@@ -129,5 +172,5 @@ class SpotModel:
             for ipv in range(npv):
                 center, amplitude, fwhm, shape, tspot = pvp[ipv, self.spot_pv_slices[isp]]
                 for idata in self.spot_data_ids[isp]:
-                    fr = self.nfratios[idata]
-                    models[idata][ipv, :, :] += spot_model(self.tsa.data[idata].time, center, amplitude, fwhm, shape) * fr((tspot, fr.grid[1]))[:, None]
+                    models[idata][ipv, :, :] += (spot_model(self.tsa.data[idata].time, center, amplitude, fwhm, shape) *
+                                                 spot_contrast(self.tphot, tspot, self.binned_spectra[idata], self.spot_norm)[:, None])
