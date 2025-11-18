@@ -237,8 +237,8 @@ class TSLPF(LogPosteriorFunction):
         self.ps.freeze()
         self.ndim = len(self.ps)
 
-    def initialize_spots(self, tstar: float, wlref: float) -> None:
-        self.spot_model = SpotModel(self, tstar, wlref)
+    def initialize_spots(self, tstar: float, wlref: float, include_tlse: bool = True) -> None:
+        self.spot_model = SpotModel(self, tstar, wlref, include_tlse)
 
     def add_spot(self, epoch_group: int) -> None:
         """Adds a new star spot.
@@ -475,16 +475,11 @@ class TSLPF(LogPosteriorFunction):
 
         # Check if we have spots
         # ----------------------
-        if self.nspots > 0:
-            spots = self.spot_models
-            self.spot_models = []
-            self.nspots = 0
-
-            for i, sp in enumerate(spots):
-                if i == 0:
-                    self.add_spot_model(sp.epoch_group, sp.tstar, sp.ref_wl, sp.teff_limits)
-                else:
-                    self.add_spot_model(sp.epoch_group)
+        if self.spot_model is not None:
+            spots = self.spot_model
+            self.initialize_spots(spots.tphot, spots.wlref, spots.include_tlse)
+            for eg in spots.spot_epoch_groups:
+                self.spot_model.add_spot(eg)
 
         # Set the priors back as they were
         # --------------------------------

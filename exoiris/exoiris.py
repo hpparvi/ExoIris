@@ -126,12 +126,10 @@ def load_model(fname: Path | str, name: str | None = None):
 
         # Read the spots if they exist.
         # =============================
-        if 'nspots' in hdr:
-            nspots = hdr['nspots']
-            if nspots > 0:
-                a.add_spot(hdr['SP01_EG'], hdr['SP_TSTAR'], hdr['SP_REFWL'], (hdr['SP_TMIN'], hdr['SP_TMAX']))
-                for i in range(1, nspots):
-                    a.add_spot(hdr[f'SP{i+1:02d}_EG'])
+        if 'SPOTS' in hdr and hdr['SPOTS'] is True:
+            a.initialize_spots(hdr["SP_TSTAR"], hdr["SP_REFWL"], hdr["SP_TLSE"])
+            for i in range(hdr['NSPOTS']):
+                a.add_spot(hdr[f'SP{i+1:02d}_EG'])
 
         # Read the priors.
         # ================
@@ -365,7 +363,7 @@ class ExoIris:
         """
         self._tsa.set_gp_kernel(kernel)
 
-    def initialize_spots(self, tstar: float, wlref: float):
+    def initialize_spots(self, tstar: float, wlref: float, include_tlse: bool = True):
         """Initialize star spot model using given stellar and wavelength reference values.
 
         Parameters
@@ -375,7 +373,7 @@ class ExoIris:
         wlref
             Reference wavelength where spot amplitude matches the amplitude parameter.
         """
-        self._tsa.initialize_spots(tstar, wlref)
+        self._tsa.initialize_spots(tstar, wlref, include_tlse)
 
     def add_spot(self, epoch_group: int) -> None:
         """Add a new star spot and associate it with an epoch group.
@@ -390,7 +388,10 @@ class ExoIris:
     @property
     def nspots(self) -> int:
         """Number of star spots."""
-        return self._tsa.nspots
+        if self._tsa.spot_model is None:
+            return 0
+        else:
+            return self._tsa.spot_model.nspots
 
     @property
     def name(self) -> str:
@@ -1199,15 +1200,14 @@ class ExoIris:
 
         # Spots
         # =====
-        pri.header["nspots"] = self.nspots
-        if self.nspots > 0:
-            pri.header["sp_tstar"] = self._tsa.spot_models[0].tstar
-            pri.header["sp_tstar"] = self._tsa.spot_models[0].tstar
-            pri.header["sp_refwl"] = self._tsa.spot_models[0].ref_wl
-            pri.header["sp_tmin"] = self._tsa.spot_models[0].teff_limits[0]
-            pri.header["sp_tmax"] = self._tsa.spot_models[0].teff_limits[1]
+        if self._tsa.spot_model is not None:
+            pri.header['spots'] = True
+            pri.header["sp_tstar"] = self._tsa.spot_model.tphot
+            pri.header["sp_refwl"] = self._tsa.spot_model.wlref
+            pri.header["sp_tlse"] = self._tsa.spot_model.include_tlse
+            pri.header["nspots"] = self.nspots
             for i in range(self.nspots):
-                pri.header[f"sp{i+1:02d}_eg"] = self._tsa.spot_models[i].epoch_group
+                pri.header[f"sp{i+1:02d}_eg"] = self._tsa.spot_model.spot_epoch_groups[i]
 
         # Global optimization results
         # ===========================

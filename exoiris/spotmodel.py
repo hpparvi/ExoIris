@@ -114,7 +114,7 @@ class SpotModel:
         self.spot_data_ids = []
         self.spot_pv_slices = []
 
-    def include_tlse(self):
+    def use_tlse(self):
         if self.include_tlse is False:
             self.include_tlse = True
             self._init_tlse_parameters()
