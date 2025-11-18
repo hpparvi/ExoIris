@@ -29,7 +29,14 @@ from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
 from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_pkaiews, epoch
 from pytransit.param import ParameterSet, UniformPrior as UP, NormalPrior as NP, GParameter
 from pytransit.stars import create_bt_settl_interpolator
-from scipy.interpolate import pchip_interpolate, splrep, splev, Akima1DInterpolator
+from scipy.interpolate import (
+    pchip_interpolate,
+    splrep,
+    splev,
+    Akima1DInterpolator,
+    interp1d,
+    FloaterHormannInterpolator,
+)
 
 from .tsmodel import TransmissionSpectroscopyModel as TSModel
 from .tsdata import TSDataGroup
@@ -83,6 +90,18 @@ def ip_makima(x, xk, yk):
     return Akima1DInterpolator(xk, yk, method='makima', extrapolate=True)(x)
 
 
+def ip_floaterhormann(x, xk, yk):
+    return FloaterHormannInterpolator(xk, yk)(x)
+
+
+def ip_nearest(x, xk, yk):
+    return interp1d(xk, yk, kind='nearest', bounds_error=False, fill_value='extrapolate', assume_sorted=True)(x)
+
+
+def ip_linear(x, xk, yk):
+    return interp1d(xk, yk, kind='linear', bounds_error=False, fill_value='extrapolate', assume_sorted=True)(x)
+
+
 def add_knots(x_new, x_old):
     return sort(concatenate([x_new, x_old]))
 
@@ -128,7 +147,7 @@ def clean_knots(knots, min_distance, lmin=0, lmax=inf):
 class TSLPF(LogPosteriorFunction):
     def __init__(self, runner, name: str, ldmodel, data: TSDataGroup, nk: int = 50, nldc: int = 10, nthreads: int = 1,
                  tmpars = None, noise_model: Literal["white", "fixed_gp", "free_gp"] = 'white',
-                 interpolation: Literal['bspline', 'pchip', 'makima'] = 'bspline'):
+                 interpolation: Literal['bspline', 'pchip', 'makima', 'nearest', 'linear', 'fh'] = 'makima'):
         super().__init__(name)
         self._runner = runner
         self._original_data: TSDataGroup | None = None
@@ -139,7 +158,9 @@ class TSLPF(LogPosteriorFunction):
         self._baseline_models: list[ndarray] | None = None
         self.interpolation: str = interpolation
 
-        self._ip = {'bspline': ip_bspline, 'pchip': ip_pchip, 'makima': ip_makima}[interpolation]
+        self._ip = {'bspline': ip_bspline, 'pchip': ip_pchip, 'makima': ip_makima,
+                    'nearest': ip_nearest, 'linear': ip_linear,
+                    'fh': ip_floaterhormann}[interpolation]
 
         self._gp: Optional[list[GP]] = None
         self._gp_time: Optional[list[ndarray]] = None
