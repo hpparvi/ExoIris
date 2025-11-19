@@ -90,10 +90,6 @@ def ip_makima(x, xk, yk):
     return Akima1DInterpolator(xk, yk, method='makima', extrapolate=True)(x)
 
 
-def ip_floaterhormann(x, xk, yk):
-    return FloaterHormannInterpolator(xk, yk)(x)
-
-
 def ip_nearest(x, xk, yk):
     return interp1d(xk, yk, kind='nearest', bounds_error=False, fill_value='extrapolate', assume_sorted=True)(x)
 
@@ -147,7 +143,7 @@ def clean_knots(knots, min_distance, lmin=0, lmax=inf):
 class TSLPF(LogPosteriorFunction):
     def __init__(self, runner, name: str, ldmodel, data: TSDataGroup, nk: int = 50, nldc: int = 10, nthreads: int = 1,
                  tmpars = None, noise_model: Literal["white", "fixed_gp", "free_gp"] = 'white',
-                 interpolation: Literal['bspline', 'pchip', 'makima', 'nearest', 'linear', 'fh'] = 'makima'):
+                 interpolation: Literal['bspline', 'pchip', 'makima', 'nearest', 'linear'] = 'makima'):
         super().__init__(name)
         self._runner = runner
         self._original_data: TSDataGroup | None = None
@@ -159,8 +155,7 @@ class TSLPF(LogPosteriorFunction):
         self.interpolation: str = interpolation
 
         self._ip = {'bspline': ip_bspline, 'pchip': ip_pchip, 'makima': ip_makima,
-                    'nearest': ip_nearest, 'linear': ip_linear,
-                    'fh': ip_floaterhormann}[interpolation]
+                    'nearest': ip_nearest, 'linear': ip_linear}[interpolation]
 
         self._gp: Optional[list[GP]] = None
         self._gp_time: Optional[list[ndarray]] = None
@@ -613,8 +608,8 @@ class TSLPF(LogPosteriorFunction):
             ldp = [zeros((pvp.shape[0], npb, 2)) for npb in self.npb]
             for ids in range(self.data.size):
                 for ipv in range(pvp.shape[0]):
-                    ldp[ids][ipv, :, 0] = self._ip(self.wavelengths[ids], self.ld_knots, ldk[ipv, :, 0])
-                    ldp[ids][ipv, :, 1] = self._ip(self.wavelengths[ids], self.ld_knots, ldk[ipv, :, 1])
+                    ldp[ids][ipv, :, 0] = ip_bspline(self.wavelengths[ids], self.ld_knots, ldk[ipv, :, 0])
+                    ldp[ids][ipv, :, 1] = ip_bspline(self.wavelengths[ids], self.ld_knots, ldk[ipv, :, 1])
             return ldp
 
     def transit_model(self, pv, copy=True):
