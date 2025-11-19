@@ -5,13 +5,16 @@ All notable changes to ExoIris will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.20.0] - 2025-10-17
+## [0.20.0] - 2025-11-19
 
 ### Added
-- Added the ability to model star spots. The spots are modeled as generalized Gaussians parameterized by their center
-  time, amplitude in a given reference wavelength, full width at half maximum (FWHM), spot temperature in Kelvin, and 
-  spot shape. The spot amplitude along the wavelength is modeled using the theoretical BT-Settl spectra, the stellar
+- Added the ability to model star spot crossings. The spots are modeled as generalized Gaussians parameterized by their 
+  center time, amplitude in a given reference wavelength, full width at half maximum (FWHM), spot temperature in Kelvin,
+  and spot shape. The spot amplitude along the wavelength is modeled using the theoretical BT-Settl spectra, the stellar
   effective temperature, the spot temperature, and the reference wavelength in which the spot amplitude is measured.
+- Added the ability to model the contamination from unocculted spots and faculae (the transit light source effect, 
+  or TLSE).
+- Included two new radius ratio interpolation options: "nearest" and "linear".
 
 ## [0.19.2] - 2025-09-12
 
