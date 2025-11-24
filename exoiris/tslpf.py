@@ -35,7 +35,6 @@ from scipy.interpolate import (
     splev,
     Akima1DInterpolator,
     interp1d,
-    FloaterHormannInterpolator,
 )
 
 from .tsmodel import TransmissionSpectroscopyModel as TSModel
@@ -102,6 +101,13 @@ def add_knots(x_new, x_old):
     return sort(concatenate([x_new, x_old]))
 
 
+interpolator_choices = ("bspline", "pchip", "makima", "nearest", "linear")
+
+
+interpolators = {'bspline': ip_bspline, 'pchip': ip_pchip, 'makima': ip_makima,
+            'nearest': ip_nearest, 'linear': ip_linear}
+
+
 def clean_knots(knots, min_distance, lmin=0, lmax=inf):
     """Clean the knot table by replacing groups of adjacent knots with a single knot at the group mean.
 
@@ -154,8 +160,10 @@ class TSLPF(LogPosteriorFunction):
         self._baseline_models: list[ndarray] | None = None
         self.interpolation: str = interpolation
 
-        self._ip = {'bspline': ip_bspline, 'pchip': ip_pchip, 'makima': ip_makima,
-                    'nearest': ip_nearest, 'linear': ip_linear}[interpolation]
+        if interpolation not in interpolator_choices:
+            raise ValueError(f'interpolation must be one of {interpolator_choices}')
+        self._ip = interpolators[interpolation]
+        self._ip_ld = interpolators['bspline']
 
         self._gp: Optional[list[GP]] = None
         self._gp_time: Optional[list[ndarray]] = None
@@ -608,8 +616,8 @@ class TSLPF(LogPosteriorFunction):
             ldp = [zeros((pvp.shape[0], npb, 2)) for npb in self.npb]
             for ids in range(self.data.size):
                 for ipv in range(pvp.shape[0]):
-                    ldp[ids][ipv, :, 0] = ip_bspline(self.wavelengths[ids], self.ld_knots, ldk[ipv, :, 0])
-                    ldp[ids][ipv, :, 1] = ip_bspline(self.wavelengths[ids], self.ld_knots, ldk[ipv, :, 1])
+                    ldp[ids][ipv, :, 0] = self._ip_ld(self.wavelengths[ids], self.ld_knots, ldk[ipv, :, 0])
+                    ldp[ids][ipv, :, 1] = self._ip_ld(self.wavelengths[ids], self.ld_knots, ldk[ipv, :, 1])
             return ldp
 
     def transit_model(self, pv, copy=True):
