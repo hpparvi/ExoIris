@@ -32,7 +32,8 @@ from emcee import EnsembleSampler
 from matplotlib.pyplot import subplots, setp, figure, Figure, Axes
 from numpy import (any, where, sqrt, clip, percentile, median, squeeze, floor, ndarray, isfinite,
                    array, inf, arange, argsort, concatenate, full, nan, r_, nanpercentile, log10,
-                   ceil, unique)
+                   ceil, unique, zeros)
+from numpy.typing import ArrayLike
 from numpy.random import normal
 from pytransit import UniformPrior, NormalPrior
 from pytransit.param import ParameterSet
@@ -1127,6 +1128,22 @@ class ExoIris:
                            median(ks, 0)[ix], ks.std(0)[ix],
                            median(ar, 0)[ix], ar.std(0)[ix]],
                      names = ['wavelength', 'radius_ratio', 'radius_ratio_e', 'area_ratio', 'area_ratio_e'])
+
+    def radius_ratio_spectrum(self, wavelengths: ArrayLike, knot_samples: ArrayLike | None = None) -> ndarray:
+        if knot_samples is None:
+            knot_samples = self.posterior_samples.iloc[:, self._tsa._sl_rratios].values
+        k_posteriors = zeros((knot_samples.shape[0], wavelengths.size))
+        for i, ks in enumerate(knot_samples):
+            k_posteriors[i, :] = self._tsa._ip(wavelengths, self._tsa.k_knots, ks)
+        return k_posteriors
+
+    def area_ratio_spectrum(self, wavelengths: ArrayLike, knot_samples: ArrayLike | None = None) -> ndarray:
+        if knot_samples is None:
+            knot_samples = self.posterior_samples.iloc[:, self._tsa._sl_rratios].values
+        d_posteriors = zeros((knot_samples.shape[0], wavelengths.size))
+        for i, ks in enumerate(knot_samples):
+            d_posteriors[i, :] = self._tsa._ip(wavelengths, self._tsa.k_knots, ks) ** 2
+        return d_posteriors
 
     def save(self, overwrite: bool = False) -> None:
         """Save the ExoIris analysis to a FITS file.
