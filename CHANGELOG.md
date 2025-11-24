@@ -5,6 +5,15 @@ All notable changes to ExoIris will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.0] - 2025-11-24
+
+### Added
+- Added a `loglikelihood.LogLikelihood` class for reduced-rank Gaussian log-likelihood calculation.
+- Added `ExoIris.create_loglikelihood_function` method to generate log-likelihood instances for atmospheric retrieval.
+- Added `ExoIris.radius_ratio_spectrum` and `ExoIris.area_ratio_spectrum` methods to compute posterior transmission 
+  spectrum distributions for given wavelengths.
+- Added `exoiris.util.create_mock_model` utility function for generating mock transmission spectra.
+
 ## [0.20.0] - 2025-11-19
 
 ### Added
@@ -12,8 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   center time, amplitude in a given reference wavelength, full width at half maximum (FWHM), spot temperature in Kelvin,
   and spot shape. The spot amplitude along the wavelength is modeled using the theoretical BT-Settl spectra, the stellar
   effective temperature, the spot temperature, and the reference wavelength in which the spot amplitude is measured.
-- Added the ability to model the contamination from unocculted spots and faculae (the transit light source effect, 
-  or TLSE).
+- Added the ability to model the contamination from unocculted spots and faculae (**the transit light source effect**,
+  or TLSE). This is modeled also using BT-Settl spectra following the formalism described by Rackham et al. (2018).
 - Included two new radius ratio interpolation options: "nearest" and "linear".
 
 ## [0.19.2] - 2025-09-12
