@@ -15,8 +15,10 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from numba import njit
-from numpy import zeros, sum, sqrt, linspace, vstack, concatenate, floor, dot, ndarray, nan
-
+from numpy import (zeros, sum, sqrt, linspace, vstack, concatenate, floor, dot, ndarray, nan, asarray, tile)
+from numpy._typing import ArrayLike
+from pytransit import TSModel
+from pytransit.orbits import i_from_ba
 
 @njit
 def bin2d(v, e, el, er, bins, estimate_errors: bool = False) -> tuple[ndarray, ndarray]:
@@ -117,3 +119,44 @@ def create_binning(ranges, bwidths):
         e = linspace(*r, num=n)
         bins.append(vstack([e[:-1], e[1:]]).T)
     return concatenate(bins)
+
+
+def create_mock_model(ks: ArrayLike, times: ArrayLike = None, ldc: ArrayLike = None, t0: float = 0.0, p: float =2.0, a: float =8.0, b: float =0.0) -> ndarray:
+    """Create a mock transmission spectrum observation using given parameters.
+
+    Parameters
+    ----------
+    ks
+        Array of radius ratios, one radius ratio per wavelength.
+    times
+        Array of time values to set the data points. If None, defaults to a
+        linspace of 500 points in the range [-0.1, 0.1].
+    ldc
+        Array representing the limb darkening coefficients. If None, defaults to
+        a tile of [0.4, 0.4] for each wavelength element.
+    t0
+        Transit center.
+    p
+        Orbital period.
+    a
+        Semi-major axis.
+    b
+        Impact parameter.
+
+    Returns
+    -------
+    ndarray
+        Mock spectrophotometric light curves.
+
+    """
+    ks = asarray(ks)
+    if times is None:
+        times = linspace(-0.1, 0.1, 500)
+    if ldc is None:
+        ldc = tile([0.4, 0.4], (1, ks.size, 1))
+    inc = i_from_ba(b, a)
+
+    m1 = TSModel('power-2', ng=100, nzin=50, nzlimb=50)
+    m1.set_data(times)
+    f1 = m1.evaluate(ks, ldc, t0, p, a, inc)[0]
+    return f1
