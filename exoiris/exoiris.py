@@ -45,6 +45,7 @@ from .ldtkld import LDTkLD
 from .tsdata import TSData, TSDataGroup
 from .tslpf import TSLPF
 from .wlpf import WhiteLPF
+from .loglikelihood import LogLikelihood
 
 
 def load_model(fname: Path | str, name: str | None = None):
@@ -1244,6 +1245,27 @@ class ExoIris:
             hdul.append(mc)
 
         hdul.writeto(f"{self.name}.fits", overwrite=True)
+
+    def create_loglikelihood_function(self, wavelengths: ArrayLike, kind: Literal['radius_ratio', 'depth'] = 'depth') -> LogLikelihood:
+        """Create a reduced-rank Gaussian log-likelihood function for retrieval.
+
+        Parameters
+        ----------
+        wavelengths
+            The wavelength grid used in the theoretical transmission spectra.
+
+        kind
+            The transmission spectrum type. Can be either 'radius_ratio' or 'depth'.
+
+        Returns
+        -------
+        LogLikelihood
+            An instance of LogLikelihood for analyzing the consistency of the model
+            with the provided wavelengths and chosen log-likelihood kind.
+        """
+        if self.mcmc_chains is None:
+            raise ValueError("Cannot create log-likelihood function before running the MCMC sampler.")
+        return LogLikelihood(self, wavelengths, kind)
 
     def create_initial_population(self, n: int, source: str, add_noise: bool = True) -> ndarray:
         """Create an initial parameter vector population for the DE optimisation.
