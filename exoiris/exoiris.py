@@ -211,6 +211,7 @@ class ExoIris:
         self._white_fluxes: None | list[ndarray] = None
         self._white_errors: None | list[ndarray] = None
         self._white_models: None | list[ndarray] = None
+        self.white_gp_models: None | list[ndarray] = None
 
     def lnposterior(self, pvp: ndarray) -> ndarray:
         """Calculate the log posterior probability for a single parameter vector or an array of parameter vectors.
@@ -653,6 +654,9 @@ class ExoIris:
         the data and the number of columns specified (ncol). If the provided axes array (axs)
         does not accommodate all the subplots, the behavior is undefined.
         """
+        if self.white_gp_models is None:
+            raise ValueError("White light curve GP predictions are not available. Run 'optimize_gp_hyperparameters' first.")
+
         ndata = self.data.size
 
         if axs is None:
