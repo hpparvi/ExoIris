@@ -32,7 +32,7 @@ from emcee import EnsembleSampler
 from matplotlib.pyplot import subplots, setp, figure, Figure, Axes
 from numpy import (any, where, sqrt, clip, percentile, median, squeeze, floor, ndarray, isfinite,
                    array, inf, arange, argsort, concatenate, full, nan, r_, nanpercentile, log10,
-                   ceil, unique, zeros)
+                   ceil, unique, zeros, cov)
 from numpy.typing import ArrayLike
 from numpy.random import normal
 from pytransit import UniformPrior, NormalPrior
@@ -1109,8 +1109,8 @@ class ExoIris:
         return fig
 
     @property
-    def transmission_spectrum(self) -> Table:
-        """Get the posterior transmission spectrum as a Pandas DataFrame.
+    def transmission_spectrum_table(self) -> Table:
+        """Get the posterior transmission spectrum as an Astropy Table.
 
         Raises
         ------
@@ -1130,21 +1130,95 @@ class ExoIris:
                            median(ar, 0)[ix], ar.std(0)[ix]],
                      names = ['wavelength', 'radius_ratio', 'radius_ratio_e', 'area_ratio', 'area_ratio_e'])
 
-    def radius_ratio_spectrum(self, wavelengths: ArrayLike, knot_samples: ArrayLike | None = None) -> ndarray:
-        if knot_samples is None:
-            knot_samples = self.posterior_samples.iloc[:, self._tsa._sl_rratios].values
-        k_posteriors = zeros((knot_samples.shape[0], wavelengths.size))
-        for i, ks in enumerate(knot_samples):
-            k_posteriors[i, :] = self._tsa._ip(wavelengths, self._tsa.k_knots, ks)
-        return k_posteriors
+    def transmission_spectrum_samples(self, wavelengths: ndarray | None = None, kind: Literal['radius_ratio', 'depth'] = 'depth', samples: ndarray | None = None) -> ndarray:
+        """Calculate posterior transmission spectrum samples.
 
-    def area_ratio_spectrum(self, wavelengths: ArrayLike, knot_samples: ArrayLike | None = None) -> ndarray:
-        if knot_samples is None:
-            knot_samples = self.posterior_samples.iloc[:, self._tsa._sl_rratios].values
-        d_posteriors = zeros((knot_samples.shape[0], wavelengths.size))
-        for i, ks in enumerate(knot_samples):
-            d_posteriors[i, :] = self._tsa._ip(wavelengths, self._tsa.k_knots, ks) ** 2
-        return d_posteriors
+        This method computes the posterior samples of the transmission spectrum,
+        either as radius ratios or as transit depths, depending on the specified
+        kind. It interpolates the data for given wavelengths or uses the
+        instrumental wavelength grid if none is provided. Requires that MCMC
+        sampling has been performed prior to calling this method.
+
+        Parameters
+        ----------
+        wavelengths
+            The array of wavelengths at which the spectrum should be sampled.
+            If None, the default wavelength grid defined by the instrumental data
+            will be used.
+        kind
+            Specifies the desired representation of the transmission spectrum.
+            'radius_ratio' returns the spectrum in radius ratio units, while
+            'depth' returns the spectrum in transit depth units. Default is 'depth'.
+        samples
+            Array of posterior samples to use for calculation. If None,
+            the method will use previously stored posterior samples.
+
+        Returns
+        -------
+        ndarray
+            Array containing the transmission spectrum samples for the specified
+            wavelengths. The representation (radius ratio or depth) depends on the
+            specified `kind`.
+        """
+        if self.mcmc_chains is None:
+            raise ValueError("Cannot calculate posterior transmission spectrum before running the MCMC sampler.")
+
+        if samples is None:
+            samples = self.posterior_samples.values
+
+        if wavelengths is None:
+            wavelengths = concatenate(self.data.wavelengths)
+            wavelengths.sort()
+
+        k_posteriors = zeros((samples.shape[0], wavelengths.size))
+        for i, pv in enumerate(samples):
+            k_posteriors[i, :] = self._tsa._ip(wavelengths, self._tsa.k_knots, pv[self._tsa._sl_rratios])
+
+        if kind == 'radius_ratio':
+            return k_posteriors
+        else:
+            return k_posteriors**2
+
+    def transmission_spectrum(self, wavelengths: ndarray | None = None, kind: Literal['radius_ratio', 'depth'] = 'depth', samples: ndarray | None = None, return_cov: bool = True) -> tuple[ndarray, ndarray]:
+        """Compute the transmission spectrum.
+
+        This method calculates the mean transmission spectrum values and the covariance matrix
+        (or standard deviations) for the given parameter set. The mean represents the average
+        transmission spectrum, and the covariance provides information on the uncertainties and
+        correlations between wavelengths or samples.
+
+        Parameters
+        ----------
+        wavelengths
+            Array of wavelength values at which to calculate the transmission spectrum.
+            If None, the default grid will be used.
+        kind
+            Specifies the method to represent the spectrum. 'radius_ratio' computes the
+            spectrum in terms of the planet-to-star radius ratio, while 'depth' computes
+            the spectrum in terms of transit depth.
+        samples
+            Array of samples used to compute the spectrum uncertainties. If None, previously
+            stored samples will be utilized.
+
+        return_cov : bool, optional
+            Indicates whether to return the covariance matrix of the computed transmission
+            spectrum. If True, the covariance matrix is returned along with the mean spectrum.
+            If False, the standard deviation of the spectrum is returned.
+
+        Returns
+        -------
+        tuple[ndarray, ndarray]
+            A tuple containing two arrays:
+            - The mean transmission spectrum.
+            - The covariance matrix of the spectrum (if `return_cov` is True), or the
+              standard deviation (if `return_cov` is False).
+        """
+        sp_samples = self.transmission_spectrum_samples(wavelengths, kind, samples)
+        mean = sp_samples.mean(0)
+        if return_cov:
+            return mean, cov(sp_samples, rowvar=False)
+        else:
+            return mean. sp_samples.std(0)
 
     def save(self, overwrite: bool = False) -> None:
         """Save the ExoIris analysis to a FITS file.
@@ -1246,7 +1320,7 @@ class ExoIris:
 
         hdul.writeto(f"{self.name}.fits", overwrite=True)
 
-    def create_loglikelihood_function(self, wavelengths: ArrayLike, kind: Literal['radius_ratio', 'depth'] = 'depth') -> LogLikelihood:
+    def create_loglikelihood_function(self, wavelengths: ndarray, kind: Literal['radius_ratio', 'depth'] = 'depth') -> LogLikelihood:
         """Create a reduced-rank Gaussian log-likelihood function for retrieval.
 
         Parameters
@@ -1265,7 +1339,7 @@ class ExoIris:
         """
         if self.mcmc_chains is None:
             raise ValueError("Cannot create log-likelihood function before running the MCMC sampler.")
-        return LogLikelihood(self, wavelengths, kind)
+        return LogLikelihood(wavelengths, self.transmission_spectrum_samples(wavelengths, kind))
 
     def create_initial_population(self, n: int, source: str, add_noise: bool = True) -> ndarray:
         """Create an initial parameter vector population for the DE optimisation.
