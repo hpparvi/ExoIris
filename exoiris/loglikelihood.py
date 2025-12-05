@@ -116,15 +116,8 @@ class LogLikelihood:
         else:
             model = asarray(model)
 
-        # 1. Calculate Residuals (Data - Model)
-        delta = self.spmean - model
-
-        # 2. Project into Subspace (Basis Rotation)
-        # Project the M-dimensional residual vector onto the K eigenvectors.
-        p = delta @ self.eigenvectors
-
-        # 3. Compute the Mahalanobis Distance (Chi-Squared in Subspace)
+        # Project the residuals onto the eigenvectors (Basis Rotation)
+        # and Compute the Mahalanobis Distance (Chi-Squared in Subspace).
+        p = (self.spmean - model) @ self.eigenvectors
         chisq = sum(p**2 / self.eigenvalues)
-
-        # 4. Compute the total Log-Likelihood
         return -0.5 * (chisq + self.log_det + self.log_twopi)
