@@ -1154,7 +1154,9 @@ class ExoIris:
                            median(ar, 0)[ix], ar.std(0)[ix]],
                      names = ['wavelength', 'radius_ratio', 'radius_ratio_e', 'area_ratio', 'area_ratio_e'])
 
-    def transmission_spectrum_samples(self, wavelengths: ndarray | None = None, kind: Literal['radius_ratio', 'depth'] = 'depth', samples: ndarray | None = None) -> ndarray:
+    def transmission_spectrum_samples(self, wavelengths: ndarray | None = None,
+                                      kind: Literal['radius_ratio', 'depth'] = 'depth',
+                                      samples: ndarray | None = None) -> tuple[ndarray, ndarray]:
         """Calculate posterior transmission spectrum samples.
 
         This method computes the posterior samples of the transmission spectrum,
@@ -1187,6 +1189,9 @@ class ExoIris:
         if self.mcmc_chains is None:
             raise ValueError("Cannot calculate posterior transmission spectrum before running the MCMC sampler.")
 
+        if kind not in ('radius_ratio', 'depth'):
+            raise ValueError("Invalid value for `kind`. Must be either 'radius_ratio' or 'depth'.")
+
         if samples is None:
             samples = self.posterior_samples.values
 
@@ -1199,9 +1204,9 @@ class ExoIris:
             k_posteriors[i, :] = self._tsa._ip(wavelengths, self._tsa.k_knots, pv[self._tsa._sl_rratios])
 
         if kind == 'radius_ratio':
-            return k_posteriors
+            return wavelengths, k_posteriors
         else:
-            return k_posteriors**2
+            return wavelengths, k_posteriors**2
 
     def transmission_spectrum(self, wavelengths: ndarray | None = None, kind: Literal['radius_ratio', 'depth'] = 'depth', samples: ndarray | None = None, return_cov: bool = True) -> tuple[ndarray, ndarray]:
         """Compute the transmission spectrum.
@@ -1237,12 +1242,12 @@ class ExoIris:
             - The covariance matrix of the spectrum (if `return_cov` is True), or the
               standard deviation (if `return_cov` is False).
         """
-        sp_samples = self.transmission_spectrum_samples(wavelengths, kind, samples)
+        sp_samples = self.transmission_spectrum_samples(wavelengths, kind, samples)[1]
         mean = sp_samples.mean(0)
         if return_cov:
             return mean, cov(sp_samples, rowvar=False)
         else:
-            return mean. sp_samples.std(0)
+            return mean, sp_samples.std(0)
 
     def save(self, overwrite: bool = False) -> None:
         """Save the ExoIris analysis to a FITS file.
@@ -1344,7 +1349,9 @@ class ExoIris:
 
         hdul.writeto(f"{self.name}.fits", overwrite=True)
 
-    def create_loglikelihood_function(self, wavelengths: ndarray, kind: Literal['radius_ratio', 'depth'] = 'depth') -> LogLikelihood:
+    def create_loglikelihood_function(self, wavelengths: ndarray, kind: Literal['radius_ratio', 'depth'] = 'depth',
+                                      method: Literal['svd', 'randomized_svd', 'eigh'] = 'svd',
+                                      n_max_samples: int = 10000) -> LogLikelihood:
         """Create a reduced-rank Gaussian log-likelihood function for retrieval.
 
         Parameters
@@ -1363,7 +1370,11 @@ class ExoIris:
         """
         if self.mcmc_chains is None:
             raise ValueError("Cannot create log-likelihood function before running the MCMC sampler.")
-        return LogLikelihood(wavelengths, self.transmission_spectrum_samples(wavelengths, kind))
+        return LogLikelihood(wavelengths,
+                             self.transmission_spectrum_samples(wavelengths, kind)[1],
+                             method=method,
+                             n_max_samples=n_max_samples,
+                             nk=self.nk)
 
     def create_initial_population(self, n: int, source: str, add_noise: bool = True) -> ndarray:
         """Create an initial parameter vector population for the DE optimisation.
