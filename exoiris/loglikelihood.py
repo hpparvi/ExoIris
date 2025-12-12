@@ -16,12 +16,14 @@
 from typing import Literal
 
 from numpy import full, cov, sum, ndarray, log, pi, asarray
-from numpy.linalg import eigh
+from numpy.linalg import eigh, svd
+from sklearn.utils.extmath import randomized_svd
 
 
 class LogLikelihood:
     def __init__(self, wavelength: ndarray, spectra: None | ndarray = None, spmean: None | ndarray = None,
-                 spcov: None | ndarray = None, eps: float = 1e-10):
+                 spcov: None | ndarray = None, eps: float = 1e-10, method: Literal['svd', 'randomized_svd', 'eigh'] = 'svd',
+                 n_max_samples: int = 10000, nk: int | None = None):
         """Reduced-rank Normal log-likelihood.
 
         This class constructs a statistically robust log-likelihood function for
@@ -84,13 +86,27 @@ class LogLikelihood:
             raise ValueError("Must specify either `spectra` or both `spmean` and `spcov`.")
 
         if spectra is not None:
+            spectra = spectra[:n_max_samples, :]
             self.spmean = spectra.mean(axis=0)
-            self.spcov = cov(spectra, rowvar=False)
-        else:
-            self.spmean = spmean
-            self.spcov = spcov
 
-        evals, evecs = eigh(self.spcov)
+        if method == 'svd':
+            _, sigma, evecs = svd(spectra - spectra.mean(0), full_matrices=False)
+            evals = (sigma**2) / (spectra.shape[0] - 1)
+            evecs = evecs.T
+        elif method == 'randomized_svd':
+            if nk is None:
+                raise ValueError("Must specify `nk` when using `method='randomized_svd'`.")
+            _, sigma, evecs = randomized_svd(spectra - spectra.mean(0),  n_components=nk, n_iter=5, random_state=0)
+            evals = (sigma ** 2) / (spectra.shape[0] - 1)
+            evecs = evecs.T
+        elif method == 'eigh' or (spmean is not None and spcov is not None):
+            if spectra is not None:
+                self.spcov = cov(spectra, rowvar=False)
+            else:
+                self.spmean = spmean
+                self.spcov = spcov
+            evals, evecs = eigh(self.spcov)
+
         keep = evals > eps * evals.max()
         self.eigenvalues, self.eigenvectors = evals[keep], evecs[:, keep]
         self.log_det = sum(log(self.eigenvalues))
