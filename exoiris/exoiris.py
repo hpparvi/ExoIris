@@ -897,7 +897,11 @@ class ExoIris:
             ax.set_xticks(xticks, labels=xticks)
         return ax.get_figure()
 
-    def plot_limb_darkening_parameters(self, result: Optional[str] = None, axs: Optional[tuple[Axes, Axes]] = None) -> None | Figure:
+    def plot_limb_darkening_parameters(
+        self,
+        result: None | Literal["fit", "mcmc"] = None,
+        axs: None | tuple[Axes, Axes] = None,
+    ) -> None | Figure:
         """Plot the limb darkening parameters.
 
         Parameters
@@ -926,56 +930,68 @@ class ExoIris:
         This method plots the limb darkening parameters for two-parameter limb darkening models. It supports only
         quadratic, quadratic-tri, power-2, and power-2-pm models.
         """
-        if not self._tsa.ldmodel in ('quadratic', 'quadratic-tri', 'power-2', 'power-2-pm'):
+        if not self._tsa.ldmodel in (
+            "quadratic",
+            "quadratic-tri",
+            "power-2",
+            "power-2-pm",
+        ):
             return None
 
         if axs is None:
-            fig, axs = subplots(1, 2, sharey='all', figsize=(13,4))
+            fig, axs = subplots(1, 2, sharey="all", figsize=(13, 4))
         else:
             fig = axs[0].get_figure()
 
         if result is None:
-            result = 'mcmc' if self._tsa.sampler is not None else 'fit'
-        if result not in ('fit', 'mcmc'):
+            result = "mcmc" if self._tsa.sampler is not None else "fit"
+        if result not in ("fit", "mcmc"):
             raise ValueError("Result must be either 'fit', 'mcmc', or None")
-        if result == 'mcmc' and self._tsa.sampler is None:
-            raise ValueError("Cannot plot posterior solution before running the MCMC sampler.")
+        if result == "mcmc" and not (
+            self._tsa.sampler is not None or self.mcmc_chains is not None
+        ):
+            raise ValueError(
+                "Cannot plot posterior solution before running the MCMC sampler."
+            )
 
         wavelength = concatenate(self.data.wavelengths)
         ix = argsort(wavelength)
 
-        if result == 'fit':
+        if result == "fit":
             pv = self._tsa._de_population[self._tsa._de_imin]
             ldc = squeeze(concatenate(self._tsa._eval_ldc(pv), axis=1))
-            axs[0].plot(self._tsa.ld_knots, pv[self._tsa._sl_ld][0::2], 'ok')
-            axs[0].plot(wavelength[ix], ldc[:,0][ix])
-            axs[1].plot(self._tsa.ld_knots, pv[self._tsa._sl_ld][1::2], 'ok')
-            axs[1].plot(wavelength[ix], ldc[:,1][ix])
+            axs[0].plot(self._tsa.ld_knots, pv[self._tsa._sl_ld][0::2], "ok")
+            axs[0].plot(wavelength[ix], ldc[:, 0][ix])
+            axs[1].plot(self._tsa.ld_knots, pv[self._tsa._sl_ld][1::2], "ok")
+            axs[1].plot(wavelength[ix], ldc[:, 1][ix])
         else:
-            pvp = self._tsa._mc_chains.reshape([-1, self._tsa.ndim])
-            ldc = pvp[:,self._tsa._sl_ld]
+            if self._tsa.sampler is not None:
+                pvp = self._tsa._mc_chains.reshape([-1, self._tsa.ndim])
+            else:
+                pvp = self.mcmc_chains.reshape([-1, self._tsa.ndim])
+            ldc = pvp[:, self._tsa._sl_ld]
 
-            ld1m = median(ldc[:,::2], 0)
-            ld1e = ldc[:,::2].std(0)
-            ld2m = median(ldc[:,1::2], 0)
-            ld2e = ldc[:,1::2].std(0)
+            ld1m = median(ldc[:, ::2], 0)
+            ld1e = ldc[:, ::2].std(0)
+            ld2m = median(ldc[:, 1::2], 0)
+            ld2e = ldc[:, 1::2].std(0)
 
             ldc = concatenate(self._tsa._eval_ldc(pvp), axis=1)
-            ld1p = percentile(ldc[:,:,0], [50, 16, 84], axis=0)
-            ld2p = percentile(ldc[:,:,1], [50, 16, 84], axis=0)
+            ld1p = percentile(ldc[:, :, 0], [50, 16, 84], axis=0)
+            ld2p = percentile(ldc[:, :, 1], [50, 16, 84], axis=0)
 
             axs[0].fill_between(wavelength[ix], ld1p[1, ix], ld1p[2, ix], alpha=0.5)
-            axs[0].plot(wavelength[ix], ld1p[0][ix], 'k')
+            axs[0].plot(wavelength[ix], ld1p[0][ix], "k")
             axs[1].fill_between(wavelength[ix], ld2p[1, ix], ld2p[2, ix], alpha=0.5)
-            axs[1].plot(wavelength[ix], ld2p[0][ix], 'k')
+            axs[1].plot(wavelength[ix], ld2p[0][ix], "k")
 
-            axs[0].errorbar(self._tsa.ld_knots, ld1m, ld1e, fmt='ok')
-            axs[1].errorbar(self._tsa.ld_knots, ld2m, ld2e, fmt='ok')
+            axs[0].errorbar(self._tsa.ld_knots, ld1m, ld1e, fmt="ok")
+            axs[1].errorbar(self._tsa.ld_knots, ld2m, ld2e, fmt="ok")
 
         ldp = full((self.nldp, 2, 2), nan)
         for i in range(self.nldp):
             for j in range(2):
-                p = self.ps[self._tsa._sl_ld][i*2+j].prior
+                p = self.ps[self._tsa._sl_ld][i * 2 + j].prior
                 if isinstance(p, UniformPrior):
                     ldp[i, j, 0] = p.a
                     ldp[i, j, 1] = p.b
@@ -985,11 +1001,15 @@ class ExoIris:
 
         for i in range(2):
             for j in range(2):
-                axs[i].plot(self._tsa.ld_knots, ldp[:, i, j], ':', c='C0')
+                axs[i].plot(self._tsa.ld_knots, ldp[:, i, j], ":", c="C0")
 
-        setp(axs, xlim=(wavelength.min(), wavelength.max()), xlabel=r'Wavelength [$\mu$m]')
-        setp(axs[0], ylabel='Limb darkening coefficient 1')
-        setp(axs[1], ylabel='Limb darkening coefficient 2')
+        setp(
+            axs,
+            xlim=(wavelength.min(), wavelength.max()),
+            xlabel=r"Wavelength [$\mu$m]",
+        )
+        setp(axs[0], ylabel="Limb darkening coefficient 1")
+        setp(axs[1], ylabel="Limb darkening coefficient 2")
         return fig
 
     def plot_residuals(self, result: Optional[str] = None, ax: None | Axes | Sequence[Axes] = None,
