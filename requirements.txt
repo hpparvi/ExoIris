@@ -11,3 +11,4 @@ xarray
 seaborn
 astropy
 uncertainties
+scikit-learn
