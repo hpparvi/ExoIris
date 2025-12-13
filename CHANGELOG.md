@@ -5,6 +5,22 @@ All notable changes to ExoIris will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.0] - 2025-12-13
+
+### Added
+- Added support for free-k knot configuration in spline models.
+- Added SVD solver options in the `loglikelihood.LogLikelihood` class.
+- Added `bspline-quadratic` interpolation option.
+
+### Improved
+- Improved transmission spectrum and log-likelihood methods for robustness and performance.
+- Cleaned up and refactored the `LogLikelihood` class.
+- Updated limb darkening parameter plotting.
+
+### Fixed
+- Added a safety check for uninitialized `white_gp_models` in white
+  light curve processing.
+
 ## [0.21.0] - 2025-11-24
 
 ### Added
