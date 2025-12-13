@@ -20,7 +20,7 @@ from typing import Optional, Literal
 from ldtk import BoxcarFilter, LDPSetCreator   # noqa
 from numba import njit, prange
 from numpy import zeros, log, pi, linspace, inf, atleast_2d, newaxis, clip, arctan2, ones, floor, sum, concatenate, \
-    sort, ndarray, zeros_like, array, tile, arange, squeeze, dstack
+    sort, ndarray, zeros_like, array, tile, arange, squeeze, dstack, nan, diff, all
 from numpy.random import default_rng
 from celerite2 import GaussianProcess as GP, terms
 
@@ -160,7 +160,6 @@ class TSLPF(LogPosteriorFunction):
         self.data: TSDataGroup | None = None
         self.npb: list[int] | None= None
         self.npt: list[int] | None = None
-        self.ndim: int | None = None
         self._baseline_models: list[ndarray] | None = None
         self.interpolation: str = interpolation
 
@@ -192,6 +191,7 @@ class TSLPF(LogPosteriorFunction):
         self.nk = nk
 
         self.k_knots = linspace(data.wlmin, data.wlmax, self.nk)
+        self.free_k_knot_ids = None
 
         if isinstance(ldmodel, LDTkLD):
             self.ld_knots = array([])
@@ -222,6 +222,10 @@ class TSLPF(LogPosteriorFunction):
     def errors(self) -> list[ndarray]:
         return self.data.errors
 
+    @property
+    def ndim(self) -> int:
+        return len(self.ps)
+
     def set_data(self, data: TSDataGroup):
         self._original_data = deepcopy(data)
         self.data = data
@@ -243,7 +247,6 @@ class TSLPF(LogPosteriorFunction):
         self._init_p_baseline()
         self._init_p_bias()
         self.ps.freeze()
-        self.ndim = len(self.ps)
 
     def initialize_spots(self, tstar: float, wlref: float, include_tlse: bool = True) -> None:
         self.spot_model = SpotModel(self, tstar, wlref, include_tlse)
@@ -536,6 +539,56 @@ class TSLPF(LogPosteriorFunction):
             self._mc_chains = fmcn.reshape([mco.shape[0], mco.shape[1], ndn])
             self.sampler = None
 
+    def set_free_k_knots(self, ids):
+        self.free_k_knot_ids = ids
+
+        # Remove existing parameter block if one exists
+        block_names = [b.name for b in self.ps.blocks]
+        try:
+            bid = block_names.index('free_k_knot_locations')
+            del self.ps[self.ps.blocks[bid].slice]
+            del self.ps.blocks[bid]
+        except ValueError:
+            pass
+
+        # Calculate minimum distances between knots
+        min_distances = zeros(self.nk)
+        min_distances[0] = self.k_knots[1] - self.k_knots[0]
+        min_distances[self.nk-1] = self.k_knots[self.nk-1] - self.k_knots[self.nk-2]
+        for i in range(1, self.nk-1):
+            for j in range(i):
+                min_distances[i] = min(self.k_knots[i] - self.k_knots[i-1], self.k_knots[i+1] - self.k_knots[i])
+
+        # Create new parameter block
+        ps = []
+        for kid in ids:
+            sigma = min_distances[kid]/6 if (kid+1 in ids or kid-1 in ids) else min_distances[kid]/4
+            ps.append(GParameter(f'kl_{kid:04d}', f'k knot {kid} location', 'um', NP(self.k_knots[kid], sigma), [0, inf]))
+        self.ps.thaw()
+        self.ps.add_global_block('free_k_knot_locations', ps)
+        self.ps.freeze()
+        self._start_kloc = self.ps.blocks[-1].start
+        self._sl_kloc = self.ps.blocks[-1].slice
+
+        try:
+            pid = [p.__name__ for p in self._additional_log_priors].index('k_knot_order_priors')
+            del self._additional_log_priors[pid]
+        except ValueError:
+            pass
+
+        # Add a prior on the order of the knots
+        def k_knot_order_prior(pv):
+            pv = atleast_2d(pv)
+            logp = zeros(pv.shape[0])
+            k_knots = self.k_knots.copy()
+            for i in range(pv.shape[0]):
+                k_knots[self.free_k_knot_ids] = pv[i, self._sl_kloc]
+                original_separations = diff(self.k_knots)
+                current_separations = diff(k_knots)
+                logp[i] = 1e2*(clip(current_separations / original_separations / 0.25, -inf, 1.0) - 1.).sum()
+            return logp
+        self._additional_log_priors.append(k_knot_order_prior)
+
 
     def add_ld_knots(self, knot_wavelengths) -> None:
         """Add limb darkening knots to the model.
@@ -603,9 +656,12 @@ class TSLPF(LogPosteriorFunction):
         """
         pvp = atleast_2d(pvp)
         ks = [zeros((pvp.shape[0], npb)) for npb in self.npb]
+        k_knots = self.k_knots.copy()
         for ids in range(self.data.size):
             for ipv in range(pvp.shape[0]):
-                ks[ids][ipv,:] =  self._ip(self.wavelengths[ids], self.k_knots, pvp[ipv])
+                if self.free_k_knot_ids is not None:
+                    k_knots[self.free_k_knot_ids] = pvp[ipv, self._sl_kloc]
+                ks[ids][ipv,:] =  self._ip(self.wavelengths[ids], k_knots, pvp[ipv, self._sl_rratios])
         return ks
 
     def _eval_ldc(self, pvp):
@@ -653,7 +709,7 @@ class TSLPF(LogPosteriorFunction):
         pv = atleast_2d(pv)
         ldp = self._eval_ldc(pv)
         t0s = pv[:, self._sl_tcs]
-        k = self._eval_k(pv[:, self._sl_rratios])
+        k = self._eval_k(pv)
         p = pv[:, 1]
         aor = as_from_rhop(pv[:, 0], p)
         inc = i_from_ba(pv[:, 2], aor)

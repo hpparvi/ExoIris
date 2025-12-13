@@ -133,6 +133,12 @@ def load_model(fname: Path | str, name: str | None = None):
             for i in range(hdr['NSPOTS']):
                 a.add_spot(hdr[f'SP{i+1:02d}_EG'])
 
+        # Read the free k knot indices if they exist.
+        # ==========================================
+        if 'N_FREE_K' in hdr and hdr['N_FREE_K'] > 0:
+            n_free_k = hdr['N_FREE_K']
+            a._tsa.set_free_k_knots([int(hdr[f'KK_IX_{i:03d}']) for i in range(n_free_k)])
+
         # Read the priors.
         # ================
         priors = pickle.loads(codecs.decode(json.loads(hdul['PRIORS'].header['PRIORS']).encode(), "base64"))
@@ -875,13 +881,13 @@ class ExoIris:
 
         if result == 'fit':
             pv = self._tsa._de_population[self._tsa._de_imin]
-            ks = self._tsa._eval_k(pv[self._tsa._sl_rratios])
+            ks = self._tsa._eval_k(pv)
             ar = 1e2 * concatenate([squeeze(k) for k in ks]) ** 2
             ax.plot(wavelength[ix], ar[ix], c='k')
             ax.plot(self._tsa.k_knots, 1e2 * pv[self._tsa._sl_rratios] ** 2, 'k.')
         else:
             df = pd.DataFrame(self._tsa._mc_chains.reshape([-1, self._tsa.ndim]), columns=self._tsa.ps.names)
-            ks = self._tsa._eval_k(df.iloc[:, self._tsa._sl_rratios])
+            ks = self._tsa._eval_k(df.values)
             ar = 1e2 * concatenate(ks, axis=1) ** 2
             ax.fill_between(wavelength[ix], *percentile(ar[:, ix], [16, 84], axis=0), alpha=0.25)
             ax.plot(wavelength[ix], median(ar, 0)[ix], c='k')
@@ -1146,7 +1152,7 @@ class ExoIris:
 
         pvp = self.posterior_samples
         wls = concatenate(self.data.wavelengths)
-        ks = concatenate(self._tsa._eval_k(pvp.values[:, self._tsa._sl_rratios]), axis=1)
+        ks = concatenate(self._tsa._eval_k(pvp.values), axis=1)
         ar = ks**2
         ix = argsort(wls)
         return Table(data=[wls[ix]*u.micrometer,
@@ -1265,6 +1271,13 @@ class ExoIris:
         pri.header['ndgroups'] = self.data.size
         pri.header['interp'] = self._tsa.interpolation
         pri.header['noise'] = self._tsa.noise_model
+
+        if self._tsa.free_k_knot_ids is None:
+            pri.header['n_free_k'] = 0
+        else:
+            pri.header['n_free_k'] = len(self._tsa.free_k_knot_ids)
+            for i, ix in enumerate(self._tsa.free_k_knot_ids):
+                pri.header[f'kk_ix_{i:03d}'] = ix
 
         # Priors
         # ======
