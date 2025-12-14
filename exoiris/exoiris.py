@@ -142,8 +142,11 @@ def load_model(fname: Path | str, name: str | None = None):
         # Read the priors.
         # ================
         priors = pickle.loads(codecs.decode(json.loads(hdul['PRIORS'].header['PRIORS']).encode(), "base64"))
-        a._tsa.ps = ParameterSet([pickle.loads(p) for p in priors])
-        a._tsa.ps.freeze()
+        for praw in priors:
+            p = pickle.loads(praw)
+            if p.name in a._tsa.ps.names:
+                a._tsa.set_prior(p.name, p.prior)
+
         if 'DE' in hdul:
             a._tsa._de_population = Table(hdul['DE'].data).to_pandas().values
             a._tsa._de_imin = hdul['DE'].header['IMIN']
