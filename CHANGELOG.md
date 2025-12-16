@@ -5,6 +5,15 @@ All notable changes to ExoIris will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.0] - 2025-12-16
+
+### Changed
+- Switched baseline modeling to a least-squares approach.
+
+### Fixed
+- Corrected prior loading for parameter sets.
+- Validated `samples` before posterior spectrum calculation to prevent runtime errors.
+
 ## [0.22.0] - 2025-12-13
 
 ### Added
