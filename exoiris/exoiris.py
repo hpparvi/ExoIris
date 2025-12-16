@@ -1192,7 +1192,7 @@ class ExoIris:
             wavelengths. The representation (radius ratio or depth) depends on the
             specified `kind`.
         """
-        if self.mcmc_chains is None:
+        if self.mcmc_chains is None and samples is None:
             raise ValueError("Cannot calculate posterior transmission spectrum before running the MCMC sampler.")
 
         if kind not in ('radius_ratio', 'depth'):
