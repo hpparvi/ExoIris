@@ -27,6 +27,8 @@ from matplotlib.figure import Figure
 from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import LinearLocator, FuncFormatter
 from numpy import (
+    any,
+    all,
     isfinite,
     where,
     all,
@@ -51,6 +53,9 @@ from numpy import (
     nanmedian,
     nanmean,
     unique,
+    ascontiguousarray,
+    vstack,
+    ones_like,
 )
 from pytransit.orbits import fold
 
@@ -68,7 +73,7 @@ class TSData:
                  noise_group: int = 0, wl_edges : Sequence | None = None, tm_edges : Sequence | None = None,
                  transit_mask: ndarray | None = None, ephemeris: Ephemeris | None = None, n_baseline: int = 1,
                  mask: ndarray = None, epoch_group: int = 0, offset_group: int = 0,
-                 mask_nonfinite_errors: bool = True) -> None:
+                 mask_nonfinite_errors: bool = True, covs: ndarray | None = None) -> None:
         """
         Parameters
         ----------
@@ -99,7 +104,7 @@ class TSData:
         if transit_mask is not None and transit_mask.size != time.size:
             raise ValueError("The size of the out-of-transit mask array must match the size of the time array.")
 
-        if n_baseline < 1:
+        if n_baseline < 0:
             raise ValueError("n_baseline must be greater than zero.")
 
         if noise_group < 0:
@@ -126,7 +131,18 @@ class TSData:
             self.mask &= isfinite(errors)
         self.fluxes: ndarray = where(self.mask, fluxes, nan)
         self.errors: ndarray = where(self.mask, errors, nan)
+
+        if covs is not None:
+            self.covs: ndarray = covs
+        else:
+            ctime = self.time - self.time.mean()
+            self.covs = ascontiguousarray(vstack([ones(self.time.size)]+[ctime**i for i in range(1, n_baseline+1)]).T)
+            self.covs[:, 1:] /= self.covs[:, 1:].std(axis=0)
+
         self.transit_mask: ndarray = transit_mask if transit_mask is not None else ones(time.size, dtype=bool)
+        self._wlmask: ndarray = all(self.mask, 1)
+        self._wls_with_nan: ndarray = where(~self._wlmask)[0]
+
         self._ephemeris: Ephemeris | None = ephemeris
         self.n_baseline: int = n_baseline
         self.noise_group: int = noise_group
@@ -170,6 +186,7 @@ class TSData:
         time = pf.ImageHDU(self.time, name=f'time_{self.name}')
         wave = pf.ImageHDU(self.wavelength, name=f'wave_{self.name}')
         data = pf.ImageHDU(array([self.fluxes, self.errors]), name=f'data_{self.name}')
+        covs = pf.ImageHDU(self.covs, name=f'covs_{self.name}')
         ootm = pf.ImageHDU(self.transit_mask.astype(int), name=f'ootm_{self.name}')
         mask = pf.ImageHDU(self.mask.astype(int), name=f'mask_{self.name}')
         data.header['ngroup'] = self.noise_group
@@ -177,7 +194,7 @@ class TSData:
         data.header['epgroup'] = self.epoch_group
         data.header['offgroup'] = self.offset_group
         #TODO: export ephemeris
-        return pf.HDUList([time, wave, data, ootm, mask])
+        return pf.HDUList([time, wave, data, covs, ootm, mask])
 
     @staticmethod
     def import_fits(name: str, hdul: pf.HDUList) -> 'TSData':
@@ -201,6 +218,11 @@ class TSData:
         mask = hdul[f'MASK_{name}'].data.astype(bool)
 
         try:
+            covs = hdul[f'COVS_{name}'].data.astype('d')
+        except KeyError:
+            covs = None
+
+        try:
             noise_group = hdul[f'DATA_{name}'].header['NGROUP']
         except KeyError:
             noise_group = 0
@@ -222,7 +244,8 @@ class TSData:
 
         #TODO: import ephemeris
         return TSData(time, wave, data[0], data[1], name=name, noise_group=noise_group, transit_mask=ootm,
-                      n_baseline=n_baseline, mask=mask, epoch_group=ephemeris_group, offset_group=offset_group)
+                      n_baseline=n_baseline, mask=mask, epoch_group=ephemeris_group, offset_group=offset_group,
+                      covs=covs)
 
     def __repr__(self) -> str:
         return f"TSData Name:'{self.name}' [{self.wavelength[0]:.2f} - {self.wavelength[-1]:.2f}] nwl={self.nwl} npt={self.npt}"
@@ -301,6 +324,8 @@ class TSData:
         self.maxtm = self.time.max()
         if self._ephemeris is not None:
             self.mask_transit(ephemeris=self._ephemeris)
+        self._wlmask = all(self.mask, 1)
+        self._wls_with_nan = where(~self._wlmask)[0]
 
     def _update_data_mask(self) -> None:
         self.mask = isfinite(self.fluxes)
@@ -377,7 +402,8 @@ class TSData:
                    transit_mask=self.transit_mask[m],
                    ephemeris=self.ephemeris,
                    n_baseline=self.n_baseline,
-                   mask_nonfinite_errors=self.mask_nonfinite_errors)
+                   mask_nonfinite_errors=self.mask_nonfinite_errors,
+                   covs=self.covs[m])
         for i, m in enumerate(masks[1:]):
             d = d + TSData(name=f'{self.name}_{i+2}', time=self.time[m], wavelength=self.wavelength,
                            fluxes=self.fluxes[:, m], errors=self.errors[:, m], mask=self.mask[:, m],
@@ -387,7 +413,8 @@ class TSData:
                            transit_mask=self.transit_mask[m],
                            ephemeris=self.ephemeris,
                            n_baseline=self.n_baseline,
-                           mask_nonfinite_errors=self.mask_nonfinite_errors)
+                           mask_nonfinite_errors=self.mask_nonfinite_errors,
+                           covs=self.covs[m])
         return d
 
     def crop_wavelength(self, lmin: float, lmax: float, inplace: bool = True) -> 'TSData':
@@ -448,6 +475,7 @@ class TSData:
             self.transit_mask = self.transit_mask[m]
             self._tm_l_edges = self._tm_l_edges[m]
             self._tm_r_edges = self._tm_r_edges[m]
+            self.covs = self.covs[m]
             self._update()
             return self
         else:
@@ -463,7 +491,8 @@ class TSData:
                           tm_edges=(self._tm_l_edges[m], self._tm_r_edges[m]),
                           transit_mask=self.transit_mask[m], ephemeris=self.ephemeris,
                           n_baseline=self.n_baseline,
-                          mask_nonfinite_errors=self.mask_nonfinite_errors)
+                          mask_nonfinite_errors=self.mask_nonfinite_errors,
+                          covs=self.covs[m])
 
     # TODO: separate mask into bad data mask and outlier mask.
     def mask_outliers(self, sigma: float = 5.0) -> 'TSData':
@@ -486,6 +515,8 @@ class TSData:
         self.mask &= abs(self.fluxes - fm) / fe < sigma
         self.fluxes = where(self.mask, self.fluxes, nan)
         self.errors = where(self.mask, self.errors, nan)
+        self._wlmask = all(self.mask, 1)
+        self._wls_with_nan = where(~self._wlmask)[0]
         return self
 
     @deprecated("0.10", alternative="TSData.mask_outliers")
@@ -688,7 +719,8 @@ class TSData:
                           offset_group=self.offset_group,
                           transit_mask=self.transit_mask,
                           ephemeris=self.ephemeris,
-                          n_baseline=self.n_baseline)
+                          n_baseline=self.n_baseline,
+                          covs=self.covs)
 
     def bin_time(self, binning: Optional[Union[Binning, CompoundBinning]] = None,
                        nb: Optional[int] = None, bw: Optional[float] = None,
@@ -719,6 +751,7 @@ class TSData:
                 binning = Binning(self.time.min(), self.time.max(), nb=nb, bw=bw/(24*60*60) if bw is not None else None)
             bf, be = bin2d(self.fluxes.T, self.errors.T, self._tm_l_edges, self._tm_r_edges,
                            binning.bins, estimate_errors=estimate_errors)
+            bc, _ = bin2d(self.covs, ones_like(self.covs), self._tm_l_edges, self._tm_r_edges, binning.bins, False)
             d = TSData(binning.bins.mean(1), self.wavelength, bf.T, be.T,
                        wl_edges=(self._wl_l_edges, self._wl_r_edges),
                        tm_edges=(binning.bins[:,0], binning.bins[:,1]),
@@ -727,7 +760,8 @@ class TSData:
                        ephemeris=self.ephemeris,
                        n_baseline=self.n_baseline,
                        epoch_group=self.epoch_group,
-                       offset_group=self.offset_group)
+                       offset_group=self.offset_group,
+                       covs=bc)
             if self.ephemeris is not None:
                 d.mask_transit(ephemeris=self.ephemeris)
             return d
@@ -741,7 +775,7 @@ class TSDataGroup:
         self.wlmax: float = -inf
         self.tmin: float = inf
         self.tmax: float = -inf
-        self._noise_groups: array | None = None
+        self._noise_groups: ndarray | None = None
         for d in data:
             self._add_data(d)
 
@@ -782,7 +816,7 @@ class TSDataGroup:
         return [d.errors for d in self.data]
 
     @property
-    def noise_groups(self) -> ndarray[int]:
+    def noise_groups(self) -> ndarray[int] | None:
         """Array of noise groups."""
         return self._noise_groups
 

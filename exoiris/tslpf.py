@@ -17,18 +17,35 @@
 from copy import deepcopy
 from typing import Optional, Literal
 
-from ldtk import BoxcarFilter, LDPSetCreator   # noqa
-from numba import njit, prange
-from numpy import zeros, log, pi, linspace, inf, atleast_2d, newaxis, clip, arctan2, ones, floor, sum, concatenate, \
-    sort, ndarray, zeros_like, array, tile, arange, squeeze, dstack, nan, diff, all
-from numpy.random import default_rng
 from celerite2 import GaussianProcess as GP, terms
-
+from ldtk import BoxcarFilter, LDPSetCreator  # noqa
+from numba import njit, prange
+from numpy import (
+    zeros,
+    log,
+    pi,
+    linspace,
+    inf,
+    atleast_2d,
+    newaxis,
+    clip,
+    arctan2,
+    sum,
+    concatenate,
+    sort,
+    ndarray,
+    array,
+    tile,
+    arange,
+    dstack,
+    diff,
+    ascontiguousarray,
+)
+from numpy.linalg import lstsq
+from numpy.random import default_rng
 from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
-
-from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_pkaiews, epoch
+from pytransit.orbits import as_from_rhop, i_from_ba
 from pytransit.param import ParameterSet, UniformPrior as UP, NormalPrior as NP, GParameter
-from pytransit.stars import create_bt_settl_interpolator
 from scipy.interpolate import (
     pchip_interpolate,
     splrep,
@@ -37,16 +54,27 @@ from scipy.interpolate import (
     interp1d,
 )
 
-from .tsmodel import TransmissionSpectroscopyModel as TSModel
-from .tsdata import TSDataGroup
 from .ldtkld import LDTkLD
 from .spotmodel import SpotModel
+from .tsdata import TSDataGroup
+from .tsmodel import TransmissionSpectroscopyModel as TSModel
 
 NM_WHITE = 0
 NM_GP_FIXED = 1
 NM_GP_FREE = 2
 
 noise_models = dict(white=NM_WHITE, fixed_gp=NM_GP_FIXED, free_gp=NM_GP_FREE)
+
+
+@njit
+def nlstsq(covs, res, mask, wlmask, with_nans):
+    nwl = res.shape[0]
+    nc = covs.shape[1]
+    x = zeros((nc, nwl))
+    x[:, wlmask] = lstsq(covs, ascontiguousarray(res[wlmask].T))[0]
+    for i in with_nans:
+        x[:, i] =  lstsq(covs[mask[i]], res[i, mask[i]])[0]
+    return x
 
 
 @njit(parallel=True, cache=False)
@@ -244,7 +272,6 @@ class TSLPF(LogPosteriorFunction):
         self._init_p_noise()
         if self._nm == NM_GP_FREE:
             self._init_p_gp()
-        self._init_p_baseline()
         self._init_p_bias()
         self.ps.freeze()
 
@@ -398,23 +425,6 @@ class TSLPF(LogPosteriorFunction):
             ps.add_global_block('gp_hyperparameters', pp)
             self._start_gp = ps.blocks[-1].start
             self._sl_gp = ps.blocks[-1].slice
-
-    def _init_p_baseline(self):
-        ps = self.ps
-        self.n_baselines = self.data.n_baselines
-        self.baseline_knots = []
-        pp = []
-        for i, d in enumerate(self.data):
-            if d.n_baseline== 1:
-                self.baseline_knots.append([])
-                pp.append(GParameter(f'bl_{i:02d}_c', 'baseline constant', '', NP(1.0, 1e-6), (0, inf)))
-            elif d.n_baseline > 1:
-                knots = linspace(d.wavelength.min(), d.wavelength.max(), d.n_baseline)
-                self.baseline_knots.append(knots)
-                pp.extend([GParameter(f'bl_{i:02d}_{k:08.5f}', fr'baseline at {k:08.5f} $\mu$m', '', NP(1.0, 1e-6), (0, inf)) for k in knots])
-        ps.add_global_block('baseline_coefficients', pp)
-        self._start_baseline = ps.blocks[-1].start
-        self._sl_baseline = ps.blocks[-1].slice
 
     def _init_p_bias(self):
         ps = self.ps
@@ -639,9 +649,8 @@ class TSLPF(LogPosteriorFunction):
             self.de = None
             self._de_population = pvpn
 
-    def _eval_k(self, pvp):
-        """
-        Evaluate the radius ratio model.
+    def _eval_k(self, pvp) -> list[ndarray]:
+        """Evaluate the radius ratio model.
 
         Parameters
         ----------
@@ -733,32 +742,26 @@ class TSLPF(LogPosteriorFunction):
                 fluxes[i] = biases + (1.0 - biases) * fluxes[i]
         return fluxes
 
-    def baseline_model(self, pv):
-        pv = atleast_2d(pv)[:, self._sl_baseline]
-        npv = pv.shape[0]
+    def baseline_model(self, mtransit):
+        npv = mtransit[0].shape[0]
         if self._baseline_models is None or self._baseline_models[0].shape[0] != npv:
-            self._baseline_models = [zeros((npv, d.nwl)) for d in self.data]
-        j = 0
+            self._baseline_models = [zeros(m.shape) for m in mtransit]
         for i, d in enumerate(self.data):
-            nbl = d.n_baseline
-            m = self._baseline_models[i]
-            if nbl == 1:
-                m[:, :] = pv[:, j][:, newaxis]
-            else:
-                for ipv in range(npv):
-                    m[ipv, :] = splev(d.wavelength, splrep(self.baseline_knots[i], pv[ipv, j:j+nbl], k=min(nbl-1, 3)))
-            j += nbl
+            for ipv in range(npv):
+                res = d.fluxes / mtransit[i][ipv]
+                coeffs = nlstsq(d.covs, res, d.mask, d._wlmask, d._wls_with_nan)
+                self._baseline_models[i][ipv, :, :] = (d.covs @ coeffs).T
         return self._baseline_models
 
     def flux_model(self, pv):
         transit_models = self.transit_model(pv)
-        baseline_models = self.baseline_model(pv)
+        baseline_models = self.baseline_model(transit_models)
         if self.spot_model is not None:
             self.spot_model.apply_spots(pv, transit_models)
             if self.spot_model.include_tlse:
                 self.spot_model.apply_tlse(pv, transit_models)
         for i in range(self.data.size):
-            transit_models[i][:, :, :] *= baseline_models[i][:, :, newaxis]
+            transit_models[i][:, :, :] *= baseline_models[i][:, :, :]
         return transit_models
 
     def create_pv_population(self, npop: int = 50) -> ndarray:

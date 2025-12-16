@@ -284,9 +284,6 @@ class ExoIris:
         if parameter == 'radius ratios':
             for l in self._tsa.k_knots:
                 self.set_prior(f'k_{l:08.5f}', prior, *nargs)
-        elif parameter == 'baselines':
-            for par in self.ps[self._tsa._sl_baseline]:
-                self.set_prior(par.name, prior, *nargs)
         elif parameter == 'wn multipliers':
             for par in self.ps[self._tsa._sl_wnm]:
                 self.set_prior(par.name, prior, *nargs)
@@ -1209,8 +1206,11 @@ class ExoIris:
             wavelengths.sort()
 
         k_posteriors = zeros((samples.shape[0], wavelengths.size))
+        k_knots = self._tsa.k_knots.copy()
         for i, pv in enumerate(samples):
-            k_posteriors[i, :] = self._tsa._ip(wavelengths, self._tsa.k_knots, pv[self._tsa._sl_rratios])
+            if self._tsa.free_k_knot_ids is not None:
+                k_knots[self._tsa.free_k_knot_ids] = pv[self._tsa._sl_kloc]
+            k_posteriors[i, :] = self._tsa._ip(wavelengths, k_knots, pv[self._tsa._sl_rratios])
 
         if kind == 'radius_ratio':
             return wavelengths, k_posteriors
