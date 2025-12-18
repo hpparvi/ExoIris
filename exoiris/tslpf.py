@@ -134,11 +134,11 @@ def add_knots(x_new, x_old):
     return sort(concatenate([x_new, x_old]))
 
 
-interpolator_choices = ("bspline", "pchip", "makima", "nearest", "linear", "bspline-quadratic")
+interpolator_choices = ("bspline", "pchip", "makima", "nearest", "linear", "bspline-quadratic", "bspline-cubic")
 
 
-interpolators = {'bspline': ip_bspline, 'bspline-quadratic': ip_bspline_quadratic, 'pchip': ip_pchip,
-                 'makima': ip_makima, 'nearest': ip_nearest, 'linear': ip_linear}
+interpolators = {'bspline': ip_bspline, 'bspline-cubic': ip_bspline, 'bspline-quadratic': ip_bspline_quadratic,
+                 'pchip': ip_pchip, 'makima': ip_makima, 'nearest': ip_nearest, 'linear': ip_linear}
 
 
 def clean_knots(knots, min_distance, lmin=0, lmax=inf):
@@ -182,7 +182,7 @@ def clean_knots(knots, min_distance, lmin=0, lmax=inf):
 class TSLPF(LogPosteriorFunction):
     def __init__(self, runner, name: str, ldmodel, data: TSDataGroup, nk: int = 50, nldc: int = 10, nthreads: int = 1,
                  tmpars = None, noise_model: Literal["white", "fixed_gp", "free_gp"] = 'white',
-                 interpolation: Literal['nearest', 'linear', 'pchip', 'makima', 'bspline', 'bspline-quadratic'] = 'makima'):
+                 interpolation: Literal['nearest', 'linear', 'pchip', 'makima', 'bspline', 'bspline-quadratic', 'bspline-cubic'] = 'linear'):
         super().__init__(name)
         self._runner = runner
         self._original_data: TSDataGroup | None = None
