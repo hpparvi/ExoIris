@@ -40,8 +40,9 @@ from numpy import (
     dstack,
     diff,
     ascontiguousarray,
+    nan,
 )
-from numpy.linalg import lstsq
+from numpy.linalg import lstsq, LinAlgError
 from numpy.random import default_rng
 from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
 from pytransit.orbits import as_from_rhop, i_from_ba
@@ -749,8 +750,11 @@ class TSLPF(LogPosteriorFunction):
         for i, d in enumerate(self.data):
             for ipv in range(npv):
                 res = d.fluxes / mtransit[i][ipv]
-                coeffs = nlstsq(d.covs, res, d.mask, d._wlmask, d._wls_with_nan)
-                self._baseline_models[i][ipv, :, :] = (d.covs @ coeffs).T
+                try:
+                    coeffs = nlstsq(d.covs, res, d.mask, d._wlmask, d._wls_with_nan)
+                    self._baseline_models[i][ipv, :, :] = (d.covs @ coeffs).T
+                except LinAlgError:
+                    self._baseline_models[i][ipv, :, :] = nan
         return self._baseline_models
 
     def flux_model(self, pv):
