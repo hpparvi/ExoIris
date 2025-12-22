@@ -128,7 +128,7 @@ class WhiteLPF(BaseLPF):
         pv = self._local_minimization.x
         a = as_from_rhop(pv[1], pv[0])
         i = i_from_ba(pv[2], a)
-        t14 = d_from_pkaiews(pv[0], sqrt(pv[4]), a, i, 0., 0., 1, 14)
+        t14 = d_from_pkaiews(pv[0], sqrt(pv[self._start_k2]), a, i, 0., 0., 1, 14)
         return t14
 
     def plot(self, axs=None, figsize=None, ncols=2) -> Figure:
