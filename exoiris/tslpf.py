@@ -550,7 +550,14 @@ class TSLPF(LogPosteriorFunction):
             self._mc_chains = fmcn.reshape([mco.shape[0], mco.shape[1], ndn])
             self.sampler = None
 
-    def set_free_k_knots(self, ids):
+    def set_free_k_knots(self, ids: list[int] | ndarray) -> None:
+        """Add the wavelength locations of chosen radius ratio knots as free model parameters.
+
+        Parameters
+        ----------
+        ids : list of int
+            List of radius ratio knot indices to be made free parameters.
+        """
         self.free_k_knot_ids = ids
 
         # Remove existing parameter block if one exists

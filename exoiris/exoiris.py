@@ -529,6 +529,16 @@ class ExoIris:
         """
         self._tsa.set_k_knots(knot_wavelengths)
 
+    def free_radius_ratio_knot_locations(self, knot_ids: list[int] | ndarray) -> None:
+        """Add the wavelength locations of chosen radius ratio knots to the model as free parameters.
+
+        Parameters
+        ----------
+        knot_ids
+            List of radius ratio knot indices to be made free parameters.
+        """
+        self._tsa.free_k_knot_locations(knot_ids)
+
     def create_dense_radius_ratio_block(self, wlmin: float, wlmax: float) -> None:
         """Create a block of radius ratio knots using the full data resolution.
 
