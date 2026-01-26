@@ -191,12 +191,13 @@ class TSLPF(LogPosteriorFunction):
         self.npt: list[int] | None = None
         self._baseline_models: list[ndarray] | None = None
         self.interpolation: str = interpolation
+        self.ld_interpolation: str = 'bspline-quadratic'
 
         if interpolation not in interpolator_choices:
             raise ValueError(f'interpolation must be one of {interpolator_choices}')
 
         self._ip = interpolators[interpolation]
-        self._ip_ld = interpolators['bspline']
+        self._ip_ld = interpolators[self.ld_interpolation]
 
         self._gp: Optional[list[GP]] = None
         self._gp_time: Optional[list[ndarray]] = None
@@ -468,6 +469,13 @@ class TSLPF(LogPosteriorFunction):
         """
         self.set_k_knots(concatenate([self.k_knots, knot_wavelengths]))
 
+    def set_k_interpolator(self, interpolator: str) -> None:
+        """Set the interpolator for the radius ratio (k) model."""
+        if interpolator not in interpolators.keys():
+            raise ValueError(f"Interpolator {interpolator} not recognized.")
+        self.interpolation = interpolator
+        self._ip = interpolators[interpolator]
+
     def set_k_knots(self, knot_wavelengths) -> None:
         """Set the radius ratio (k) knot wavelengths for the model.
 
@@ -607,6 +615,12 @@ class TSLPF(LogPosteriorFunction):
             return logp
         self._additional_log_priors.append(k_knot_order_prior)
 
+    def set_ld_interpolator(self, interpolator: str) -> None:
+        """Set the interpolator for the limb darkening model."""
+        if interpolator not in interpolators.keys():
+            raise ValueError(f"Interpolator {interpolator} not recognized.")
+        self.ld_interpolation = interpolator
+        self._ip_ld = interpolators[interpolator]
 
     def add_ld_knots(self, knot_wavelengths) -> None:
         """Add limb darkening knots to the model.
@@ -626,36 +640,80 @@ class TSLPF(LogPosteriorFunction):
         knot_wavelengths : array-like
             Array of knot wavelengths.
         """
+
+        # Save the old variables
+        # ----------------------
         xo = self.ld_knots
+        pso = self.ps
+        deo = self._de_population
+        mco = self._mc_chains
+        slo = self._sl_ld
+        ndo = self.ndim
+
         xn = self.ld_knots = sort(knot_wavelengths)
         self.nldc = self.ld_knots.size
 
-        pvpo = self.de.population.copy() if self.de is not None else None
-        pso = self.ps
-        sldo = self._sl_ld
         self._init_parameters()
         psn = self.ps
-        sldn = self._sl_ld
+        sln = self._sl_ld
+        ndn = self.ndim
+
+        # Check if we have spots
+        # ----------------------
+        if self.spot_model is not None:
+            spots = self.spot_model
+            self.initialize_spots(spots.tphot, spots.wlref, spots.include_tlse)
+            for eg in spots.spot_epoch_groups:
+                self.spot_model.add_spot(eg)
+
+        # Set the priors back as they were
+        # --------------------------------
         for po in pso:
             if po.name in psn.names:
                 self.set_prior(po.name, po.prior)
 
-        if self.de is not None:
-            pvpn = self.create_pv_population(pvpo.shape[0])
+        # Resample the DE parameter population
+        # ------------------------------------
+        if self._de_population is not None:
+            den = zeros((deo.shape[0], ndn))
+
             # Copy the old parameter values
             # -----------------------------
             for pid_old, p in enumerate(pso):
-                if p.name in psn:
+                if p.name in psn.names:
                     pid_new = psn.find_pid(p.name)
-                    pvpn[:, pid_new] = pvpo[:, pid_old]
+                    den[:, pid_new] = deo[:, pid_old]
+
+            # Resample the limb darkening coefficients
+            # ----------------------------------------
+            for i in range(den.shape[0]):
+                den[i, sln][0::2] = self._ip_ld(xn, xo, deo[i, slo][0::2])
+                den[i, sln][1::2] = self._ip_ld(xn, xo, deo[i, slo][1::2])
+
+            self._de_population = den
+            self.de = None
+
+        # Resample the MCMC parameter population
+        # --------------------------------------
+        if self._mc_chains is not None:
+            fmco = mco.reshape([-1, ndo])
+            fmcn = zeros((fmco.shape[0], ndn))
+
+            # Copy the old parameter values
+            # -----------------------------
+            for pid_old, p in enumerate(pso):
+                if p.name in psn.names:
+                    pid_new = psn.find_pid(p.name)
+                    fmcn[:, pid_new] = fmco[:, pid_old]
 
             # Resample the radius ratios
             # --------------------------
-            for i in range(pvpn.shape[0]):
-                pvpn[i, sldn] = self._ip(xn, xo, pvpo[i, sldo])
+            for i in range(fmcn.shape[0]):
+                fmcn[i, sln][0::2] = self._ip_ld(xn, xo, fmco[i, slo][0::2])
+                fmcn[i, sln][1::2] = self._ip_ld(xn, xo, fmco[i, slo][1::2])
 
-            self.de = None
-            self._de_population = pvpn
+            self._mc_chains = fmcn.reshape([mco.shape[0], mco.shape[1], ndn])
+            self.sampler = None
 
     def _eval_k(self, pvp) -> list[ndarray]:
         """Evaluate the radius ratio model.

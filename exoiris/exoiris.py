@@ -43,7 +43,7 @@ from uncertainties import UFloat
 
 from .ldtkld import LDTkLD
 from .tsdata import TSData, TSDataGroup
-from .tslpf import TSLPF
+from .tslpf import TSLPF, interpolators
 from .wlpf import WhiteLPF
 from .loglikelihood import LogLikelihood
 
@@ -88,7 +88,14 @@ def load_model(fname: Path | str, name: str | None = None):
         try:
             ip = hdr['INTERP']
         except KeyError:
-            ip = 'bspline'
+            ip = 'linear'
+
+        # Read the interpolation model.
+        # =============================
+        try:
+            ip_ld = hdr['INTERP_LD']
+        except KeyError:
+            ip_ld = 'bspline-quadratic'
 
         # Read the noise model.
         # =====================
@@ -100,6 +107,7 @@ def load_model(fname: Path | str, name: str | None = None):
         # Setup the analysis.
         # ===================
         a = ExoIris(name or hdr['NAME'], ldmodel=ldm, data=data, noise_model=noise_model, interpolation=ip)
+        a.set_limb_darkening_interpolator(ip_ld)
         a.set_radius_ratio_knots(hdul['K_KNOTS'].data.astype('d'))
         a.set_limb_darkening_knots(hdul['LD_KNOTS'].data.astype('d'))
 
@@ -263,15 +271,15 @@ class ExoIris:
         data = TSDataGroup([data]) if isinstance(data, TSData) else data
         self._tsa.set_data(data)
 
-    def set_prior(self, parameter: Literal['radius ratios', 'baselines', 'wn multipliers'] | str,
+    def set_prior(self, parameter: Literal['radius ratios', 'offsets', 'wn multipliers'] | str,
                   prior: str | Any, *nargs) -> None:
         """Set a prior on a model parameter.
 
         Parameters
         ----------
         parameter
-            The name of the parameter to set a prior for. Can also be 'radius ratios', 'baselines', or 'wn multipliers'
-            to set identical priors on all the radius ratios, baselines, or white noise multipliers.
+            The name of the parameter to set a prior for. Can also be 'radius ratios', 'offsets', or 'wn multipliers'
+            to set identical priors on all the radius ratios, offsets, or white noise multipliers.
 
         prior
             The prior distribution for the parameter. This can be "NP" for a normal prior, "UP" for a
@@ -286,6 +294,9 @@ class ExoIris:
                 self.set_prior(f'k_{l:08.5f}', prior, *nargs)
         elif parameter == 'wn multipliers':
             for par in self.ps[self._tsa._sl_wnm]:
+                self.set_prior(par.name, prior, *nargs)
+        elif parameter == 'offsets':
+            for par in self.ps[self._tsa._sl_bias]:
                 self.set_prior(par.name, prior, *nargs)
         else:
             self._tsa.set_prior(parameter, prior, *nargs)
@@ -509,6 +520,12 @@ class ExoIris:
         else:
             return self._wa.std_errors
 
+    def set_radius_ratio_interpolator(self, interpolator: str) -> None:
+        """Set the interpolator for the radius ratio (k) model."""
+        if interpolator not in interpolators.keys():
+            raise ValueError(f"Interpolator {interpolator} not recognized.")
+        self._tsa.set_k_interpolator(interpolator)
+
     def add_radius_ratio_knots(self, knot_wavelengths: Sequence) -> None:
         """Add radius ratio (k) knots.
 
@@ -557,6 +574,12 @@ class ExoIris:
         nk.sort()
         nk = nk[(nk >= wlmin) & (nk <= wlmax)]
         self.set_radius_ratio_knots(r_[ck[ck < nk[0]], nk, ck[ck > nk[-1]]])
+
+    def set_limb_darkening_interpolator(self, interpolator: str) -> None:
+        """Set the interpolator for the limb darkening model."""
+        if interpolator not in interpolators.keys():
+            raise ValueError(f"Interpolator {interpolator} not recognized.")
+        self._tsa.set_ld_interpolator(interpolator)
 
     def add_limb_darkening_knots(self, knot_wavelengths: Sequence) -> None:
         """Add limb darkening knots.
@@ -1283,6 +1306,7 @@ class ExoIris:
         pri.header['t14'] = self.transit_duration
         pri.header['ndgroups'] = self.data.size
         pri.header['interp'] = self._tsa.interpolation
+        pri.header['interp_ld'] = self._tsa.ld_interpolation
         pri.header['noise'] = self._tsa.noise_model
 
         if self._tsa.free_k_knot_ids is None:
