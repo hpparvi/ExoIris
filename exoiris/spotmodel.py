@@ -41,8 +41,8 @@ from exoiris.util import bin2d
 
 @njit
 def spot_model(x, center, amplitude, fwhm, shape):
-    c = fwhm / 2*(2*log(2))**(1/shape)
-    return amplitude*exp(-(fabs(x-center) / c)**shape)
+    c = log(4)**(1/shape) * fwhm
+    return amplitude*exp(-(2*fabs(x-center) / c)**shape)
 
 
 @njit
