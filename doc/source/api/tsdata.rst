@@ -28,7 +28,7 @@ Data wrangling
     TSData.bin_time
     TSData.crop_wavelength
     TSData.crop_time
-    TSData.remove_outliers
+    TSData.mask_outliers
     TSData.normalize_to_median
     TSData.normalize_to_poly
     TSData.partition_time

@@ -52,6 +52,8 @@ Documentation
    api/exoiris
    api/tsdata
    api/binning
+   api/ldtkld
+   api/utilities
 
 Support
 -------

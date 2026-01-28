@@ -64,8 +64,24 @@ transmission spectrum, and even the observational data can be changed to improve
     ExoIris.set_data
     ExoIris.set_radius_ratio_knots
     ExoIris.add_radius_ratio_knots
+    ExoIris.set_limb_darkening_knots
+    ExoIris.free_radius_ratio_knot_locations
     ExoIris.create_dense_radius_ratio_block
     ExoIris.plot_setup
+
+Interpolation configuration
+---------------------------
+
+ExoIris uses interpolation to model the wavelength-dependent radius ratio and limb darkening
+parameters. The interpolation method can be customized to balance smoothness against fidelity to the
+data. Available interpolators include: ``nearest``, ``linear``, ``pchip``, ``makima``, ``bspline``,
+``bspline-quadratic``, and ``bspline-cubic``.
+
+.. autosummary::
+    :toctree: api/
+
+    ExoIris.set_radius_ratio_interpolator
+    ExoIris.set_limb_darkening_interpolator
 
 Parameterization and priors
 ---------------------------
@@ -83,10 +99,11 @@ Noise model setup
 -----------------
 
 The noise in the spectroscopic light curves can be modeled as either white noise or time-correlated noise
-(using a Gaussian process, GP). The noise model is chosen with the `ExoIris.noise_model` method, and can be
-set to either "white" or "fixed_gp." Selecting "fixed_gp" models the noise as a time-correlated Gaussian process
-using the `celerite2` package. The corresponding `celerite2.GaussianProcess` object can be accessed directly
-via the `ExoIris.gp` attribute.
+(using a Gaussian process, GP). The noise model is chosen with the `ExoIris.set_noise_model` method, and can be
+set to ``"white"``, ``"fixed_gp"``, or ``"free_gp"``. Selecting ``"fixed_gp"`` models the noise as a time-correlated
+Gaussian process using the `celerite2` package with fixed hyperparameters, while ``"free_gp"`` allows the GP
+hyperparameters to be sampled as free parameters. The corresponding `celerite2.GaussianProcess` object can be
+accessed directly via the `ExoIris.gp` attribute.
 
 .. autosummary::
     :toctree: api/
@@ -97,6 +114,23 @@ via the `ExoIris.gp` attribute.
     ExoIris.optimize_gp_hyperparameters
     ExoIris.gp
     ExoIris.plot_white_gp_predictions
+
+Star spot modeling
+------------------
+
+ExoIris supports modeling of star spot crossings during transit and the Transit Light Source Effect (TLSE).
+Star spots can cause both localized bumps in the light curve (when the planet occults a spot) and
+wavelength-dependent baseline variations (TLSE) due to the inhomogeneous stellar surface.
+
+To use spot modeling, first initialize the spot model with `ExoIris.initialize_spots`, then add spots
+for specific epoch groups using `ExoIris.add_spot`.
+
+.. autosummary::
+    :toctree: api/
+
+    ExoIris.initialize_spots
+    ExoIris.add_spot
+    ExoIris.nspots
 
 
 First steps
@@ -155,11 +189,26 @@ Pandas `~pandas.DataFrame`.
     :toctree: api/
 
     ExoIris.transmission_spectrum
+    ExoIris.transmission_spectrum_table
     ExoIris.posterior_samples
     ExoIris.plot_fit
     ExoIris.plot_transmission_spectrum
     ExoIris.plot_residuals
     ExoIris.plot_limb_darkening_parameters
+
+Atmospheric retrieval
+---------------------
+
+ExoIris provides tools for atmospheric retrieval by creating a log-likelihood function that can be
+used with external retrieval codes. The `ExoIris.create_loglikelihood_function` method returns a
+callable that evaluates the log-likelihood for a given transmission spectrum model, accounting for
+the full covariance structure of the data.
+
+.. autosummary::
+    :toctree: api/
+
+    ExoIris.create_loglikelihood_function
+    ExoIris.transmission_spectrum_samples
 
 Utility methods
 ---------------
@@ -186,6 +235,7 @@ The following properties expose key internal states and parameters of the analys
     ExoIris.nk
     ExoIris.nldp
     ExoIris.npb
+    ExoIris.nspots
     ExoIris.ldmodel
     ExoIris.sampler
     ExoIris.optimizer

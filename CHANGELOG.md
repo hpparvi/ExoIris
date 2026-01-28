@@ -5,6 +5,23 @@ All notable changes to ExoIris will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-01-28
+
+### Added
+- Added support for setting custom interpolation models for limb darkening via `set_limb_darkening_interpolator` method.
+- Added support for setting custom interpolation models for radius ratios via `set_radius_ratio_interpolator` method.
+- Added ability to set priors for offset parameters in the analysis workflow.
+- Added interpolation type tracking in FITS header metadata (`INTERP_LD` for limb darkening interpolation).
+
+### Changed
+- Improved reinitialization logic for MCMC and differential evolution populations with updated limb darkening coefficients and knots.
+- Refactored interpolation handling in `TSLPF` to separately manage radius ratio and limb darkening interpolators.
+- Updated documentation for API methods and workflow.
+
+### Fixed
+- Fixed incorrect FWHM scaling in `spot_model` function. The scaling factor now correctly uses `log(4)^(1/shape)` for 
+  proper full width at half maximum calculations in generalized Gaussian spot models.
+
 ## [0.23.1] - 2025-12-18
 
 ### Fixed
