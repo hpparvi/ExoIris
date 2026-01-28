@@ -14,3 +14,4 @@ pandas
 xarray
 seaborn
 astropy
+scikit-learn
