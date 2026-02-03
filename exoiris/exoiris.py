@@ -170,7 +170,7 @@ class ExoIris:
     """
 
     def __init__(self, name: str, ldmodel, data: TSDataGroup | TSData, nk: int = 50, nldc: int = 10, nthreads: int = 1,
-                 tmpars: dict | None = None, noise_model: Literal["white", "fixed_gp", "free_gp"] = 'white',
+                 tmpars: dict | None = None, noise_model: Literal["white_profiled", "white_marginalized", "fixed_gp", "free_gp"] = 'white_profiled',
                  interpolation: Literal['nearest', 'linear', 'pchip', 'makima', 'bspline', 'bspline-quadratic', 'bspline-cubic'] = 'linear'):
         """
         Parameters
