@@ -76,7 +76,10 @@ def nlstsq(covs, res, mask, wlmask, with_nans):
     x = zeros((nc, nwl))
     x[:, wlmask] = lstsq(covs, ascontiguousarray(res[wlmask].T))[0]
     for i in with_nans:
-        x[:, i] =  lstsq(covs[mask[i]], res[i, mask[i]])[0]
+        try:
+            x[:, i] =  lstsq(covs[mask[i]], res[i, mask[i]])[0]
+        except:
+            x[:, i] = nan
     return x
 
 
