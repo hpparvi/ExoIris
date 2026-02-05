@@ -203,16 +203,14 @@ def bin2d(v: ndarray, e: ndarray,
                                 if w > 0:
                                     var_sum += w * (v_clean[i, j] - vmean) ** 2
 
-                        # 1. Calculate Unbiased Weighted Sample Variance (S^2)
-                        # S^2 = Sum(w*(x-mean)^2) / (V1 - V2/V1)
                         denominator = total_weight - (sum_w2 / total_weight)
                         sample_variance = var_sum / denominator
-
-                        # 2. Calculate Standard Error of the Mean
-                        # SEM = sqrt( S^2 * (V2 / V1^2) )
                         be[iwl_bin, itm_bin] = sqrt(sample_variance * (sum_w2 / (total_weight * total_weight)))
                     else:
                         be[iwl_bin, itm_bin] = nan
+                else:
+                    # Propagate input errors: SE = sqrt(sum(w² * σ²)) / sum(w)
+                    be[iwl_bin, itm_bin] = sqrt(weighted_e2_sum) / total_weight
             else:
                 bv[iwl_bin, itm_bin] = nan
                 be[iwl_bin, itm_bin] = nan
