@@ -36,7 +36,7 @@ from pytransit.stars import create_bt_settl_interpolator, create_husser2013_inte
 from pytransit.param import GParameter, UniformPrior as U
 
 from exoiris.tsdata import TSData
-from exoiris.util import bin2d
+from exoiris.bin1d import bin1d
 
 
 @njit
@@ -81,7 +81,7 @@ def bin_stellar_spectrum_model(sp: RegularGridInterpolator, data: TSData):
     wl_l_edges = wave - 0.5
     wl_r_edges = wave + 0.5
 
-    bflux = bin2d(flux.T, flux.T, wl_l_edges*1e-3, wl_r_edges*1e-3, vstack([data._wl_l_edges, data._wl_r_edges]).T)[0].T
+    bflux = bin1d(flux.T, flux.T, wl_l_edges*1e-3, wl_r_edges*1e-3, vstack([data._wl_l_edges, data._wl_r_edges]).T)[0].T
     return RegularGridInterpolator((teff, data.wavelength), bflux, bounds_error=False, fill_value=nan)
 
 

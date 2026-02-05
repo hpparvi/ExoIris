@@ -61,7 +61,7 @@ from pytransit.orbits import fold
 
 from .binning import Binning, CompoundBinning
 from .ephemeris import Ephemeris
-from .util import bin2d
+from .bin1d import bin1d
 
 
 class TSData:
@@ -706,7 +706,7 @@ class TSData:
             warnings.simplefilter('ignore', numba.NumbaPerformanceWarning)
             if binning is None:
                 binning = Binning(self.bbox_wl[0], self.bbox_wl[1], nb=nb, bw=bw, r=r)
-            bf, be = bin2d(self.fluxes, self.errors, self._wl_l_edges, self._wl_r_edges,
+            bf, be = bin1d(self.fluxes, self.errors, self._wl_l_edges, self._wl_r_edges,
                            binning.bins, estimate_errors=estimate_errors)
             if not all(isfinite(be)):
                 warnings.warn('Error estimation failed for some bins, check the error array.')
@@ -749,9 +749,9 @@ class TSData:
             warnings.simplefilter('ignore', numba.NumbaPerformanceWarning)
             if binning is None:
                 binning = Binning(self.time.min(), self.time.max(), nb=nb, bw=bw/(24*60*60) if bw is not None else None)
-            bf, be = bin2d(self.fluxes.T, self.errors.T, self._tm_l_edges, self._tm_r_edges,
+            bf, be = bin1d(self.fluxes.T, self.errors.T, self._tm_l_edges, self._tm_r_edges,
                            binning.bins, estimate_errors=estimate_errors)
-            bc, _ = bin2d(self.covs, ones_like(self.covs), self._tm_l_edges, self._tm_r_edges, binning.bins, False)
+            bc, _ = bin1d(self.covs, ones_like(self.covs), self._tm_l_edges, self._tm_r_edges, binning.bins, False)
             d = TSData(binning.bins.mean(1), self.wavelength, bf.T, be.T,
                        wl_edges=(self._wl_l_edges, self._wl_r_edges),
                        tm_edges=(binning.bins[:,0], binning.bins[:,1]),
