@@ -896,7 +896,7 @@ class TSLPF(LogPosteriorFunction):
                     lnl[j] += self._gp[i].log_likelihood(self._gp_flux[i] - fmod[i][j][self.data[i].mask])
         return lnl if npv > 1 else lnl[0]
 
-    def create_initial_population(self, n: int, source: str, add_noise: bool = True) -> ndarray:
+    def create_initial_population(self, n: int, source: str, add_noise: bool = False) -> ndarray:
         """Create an initial parameter vector population for DE.
 
         Parameters
@@ -906,7 +906,7 @@ class TSLPF(LogPosteriorFunction):
         source : str
             Source of the initial population. Must be either 'fit' or 'mcmc'.
         add_noise : bool, optional
-            Flag indicating whether to add noise to the initial population. Default is True.
+            Flag indicating whether to add noise to the initial population. Default is False.
 
         Returns
         -------
@@ -936,12 +936,9 @@ class TSLPF(LogPosteriorFunction):
             else:
                 pvp = rng.choice(pvs.reshape([-1, self.ndim]), size=n)
 
-        if pvp[0, self._sl_baseline][0] < 0.5:
-            pvp[:, self._sl_baseline] = rng.normal(1.0, 1e-6, size=(n, sum(self.n_baselines)))
-
         if add_noise:
-            pvp[:, self._sl_rratios] += rng.normal(0, 1, pvp[:, self._sl_rratios].shape) * 0.002 * pvp[:, self._sl_rratios]
-            pvp[:, self._sl_ld] += rng.normal(0, 1, pvp[:, self._sl_ld].shape) * 0.002 * pvp[:, self._sl_ld]
+            pvp[:, self._sl_rratios] += rng.normal(0, 1e-4, pvp[:, self._sl_rratios].shape)
+            pvp[:, self._sl_ld] += rng.normal(0, 1e-3, pvp[:, self._sl_ld].shape)
         return pvp
 
     def optimize_global(self, niter=200, npop=50, population=None, pool=None, lnpost=None, vectorize=True,
