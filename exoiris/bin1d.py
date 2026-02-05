@@ -15,7 +15,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from numba import njit
-from numpy import *
+from numpy import zeros, isfinite, where, nan, sqrt, ndarray, sum
 
 @njit
 def bin1d(v, e, el, er, bins, estimate_errors: bool = False) -> tuple[ndarray, ndarray]:
