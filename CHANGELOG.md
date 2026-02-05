@@ -5,6 +5,18 @@ All notable changes to ExoIris will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - Unreleased
+
+### Added
+- Added `TSData.create_white_light_curve()` method for creating white light curves with weighted averaging.
+- Added `white_profiled` and `white_marginalized` noise model options in TSLPF:
+  - `white_profiled` (default): computes likelihood with baseline coefficients estimated via least-squares profiling
+  - `white_marginalized`: uses analytically marginalized log-likelihood that integrates out baseline coefficients
+- Added `TSData.bin()` method for combined wavelength and time binning.
+
+### Fixed
+- Several minor bugs.
+
 ## [1.0.0] - 2026-01-28
 
 ### Added
