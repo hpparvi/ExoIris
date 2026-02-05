@@ -749,7 +749,6 @@ class TSData:
                           noise_group=self.noise_group,
                           epoch_group=self.epoch_group,
                           offset_group=self.offset_group,
-                          transit_mask=self.transit_mask,
                           ephemeris=self.ephemeris,
                           n_baseline=self.n_baseline,
                           covs=bc)

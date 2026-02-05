@@ -82,11 +82,16 @@ def bin1d(v, e, el, er, bins, estimate_errors: bool = False) -> tuple[ndarray, n
         weights[il:ir+1, :] /= weights[il:ir+1, :].sum(0)
         npt += (nonfin_weights[il:ir+1, :]-1.0).sum(0)
         ws = sum(weights[il:ir+1, :], 0)
+        ws2 = sum(weights[il:ir+1, :]**2, 0)
         ws = where(ws > 0, ws, nan)
         bv[ibin] = vmean = sum(weights[il:ir+1, :] * v[il:ir+1,:], 0) / ws
 
         if estimate_errors:
-            be[ibin, :] = where(npt > 2, sqrt(sum(weights[il:ir+1, :] * (v[il:ir+1,:] - vmean)**2, 0) / ws) / sqrt(npt), nan)
+            var_sum = sum(weights[il:ir+1, :] * (v[il:ir+1, :] - vmean)**2, 0)
+            denominator = ws - ws2 / ws
+            sample_variance = var_sum / denominator
+            be[ibin, :] = where((npt > 1) & (ws**2 > ws2),
+                                sqrt(sample_variance * ws2 / (ws * ws)), nan)
         else:
             be[ibin] = sqrt(sum(weights[il:ir+1, :]**2 * e2[il:ir+1,:], 0)) / ws
     return bv, be
