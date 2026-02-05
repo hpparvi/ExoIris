@@ -170,7 +170,7 @@ class ExoIris:
     """
 
     def __init__(self, name: str, ldmodel, data: TSDataGroup | TSData, nk: int = 50, nldc: int = 10, nthreads: int = 1,
-                 tmpars: dict | None = None, noise_model: Literal["white", "fixed_gp", "free_gp"] = 'white',
+                 tmpars: dict | None = None, noise_model: Literal["white_profiled", "white_marginalized", "fixed_gp", "free_gp"] = 'white_profiled',
                  interpolation: Literal['nearest', 'linear', 'pchip', 'makima', 'bspline', 'bspline-quadratic', 'bspline-cubic'] = 'linear'):
         """
         Parameters
@@ -1449,42 +1449,6 @@ class ExoIris:
             If the source is not 'fit' or 'mcmc'.
         """
         return self._tsa.create_initial_population(n, source, add_noise)
-
-    def add_noise_to_solution(self, result: str = 'fit') -> None:
-        """Add noise to the global optimization result or MCMC parameter posteriors.
-
-        Add noise to the global optimization result or MCMC parameter posteriors. You may want to do this if you
-        create a new analysis from another one, for example, by adding radius ratio knots or changing the intrinsic
-        data resolution.
-
-        Parameters
-        ----------
-        result
-            Determines which result to add noise to. Default is 'fit'.
-
-        Raises
-        ------
-        ValueError
-            If the 'result' argument is not 'fit' or 'mcmc'.
-        """
-        if result == 'fit':
-            pvp = self._tsa._de_population[:, :].copy()
-        elif result == 'mcmc':
-            pvp = self._tsa._mc_chains[:, -1, :].copy()
-        else:
-            raise ValueError("The 'result' argument must be either 'fit' or 'mcmc'")
-
-        npv = pvp.shape[0]
-        pvp[:, 0] += normal(0, 0.005, size=npv)
-        pvp[:, 1] += normal(0, 0.001, size=npv)
-        pvp[:, 3] += normal(0, 0.005, size=npv)
-        pvp[:, self._tsa._sl_rratios] += normal(0, 1, pvp[:, self._tsa._sl_rratios].shape) * 0.002 * pvp[:, self._tsa._sl_rratios]
-        pvp[:, self._tsa._sl_ld] += normal(0, 1, pvp[:, self._tsa._sl_ld].shape) * 0.002 * pvp[:, self._tsa._sl_ld]
-
-        if result == 'fit':
-            self._tsa._de_population[:, :] = pvp
-        else:
-            pvp = self._tsa._mc_chains[:, -1, :] = pvp
 
     def optimize_gp_hyperparameters(self,
                                     log10_sigma_bounds: float | tuple[float, float] | None = None,

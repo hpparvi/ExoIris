@@ -56,12 +56,14 @@ from numpy import (
     ascontiguousarray,
     vstack,
     ones_like,
+    average,
 )
 from pytransit.orbits import fold
 
 from .binning import Binning, CompoundBinning
 from .ephemeris import Ephemeris
-from .util import bin2d
+from .bin1d import bin1d
+from .bin2d import bin2d
 
 
 class TSData:
@@ -603,6 +605,14 @@ class TSData:
         ax.axy2 = axy2
         return fig
 
+    def create_white_light_curve(self, data=None) -> ndarray:
+        """Create a white light curve."""
+        if data is not None and data.shape != self.fluxes.shape:
+            raise ValueError("The data must have the same shape as the 2D flux array.")
+        data = data if data is not None else self.fluxes
+        weights = where(isfinite(data) & isfinite(self.errors), 1/self.errors**2, 0.0)
+        return average(where(isfinite(data), data, 0), axis=0, weights=weights)
+
     def plot_white(self, ax: Axes | None = None, figsize: tuple[float, float] | None = None) -> Figure:
         """Plot a white light curve.
 
@@ -623,7 +633,7 @@ class TSData:
             fig = ax.figure
         tref = floor(self.time.min())
 
-        ax.plot(self.time, nanmean(self.fluxes, 0))
+        ax.plot(self.time, self.create_white_light_curve())
         if self.ephemeris is not None:
             [ax.axvline(tl, ls='--', c='k') for tl in self.ephemeris.transit_limits(self.time.mean())]
 
@@ -677,6 +687,76 @@ class TSData:
         else:
             return TSDataGroup([self]) + other
 
+    def bin(self,
+            wave_binning: Optional[Union[Binning, CompoundBinning]] = None,
+            time_binning: Optional[Union[Binning, CompoundBinning]] = None,
+            wave_nb: Optional[int] = None, wave_bw: Optional[float] = None, wave_r: Optional[float] = None,
+            time_nb: Optional[int] = None, time_bw: Optional[float] = None,
+            estimate_errors: bool = False) -> 'TSData':
+        """Bin the data along the wavelength axis.
+
+        Bin the data along the wavelength and/or time axes. If binning is not specified, a Binning object is created using the
+        minimum and maximum time and wavelength values.
+
+        Parameters
+        ----------
+        binning
+            The binning method to use.
+        nb
+            Number of bins.
+        bw
+            Bin width.
+        r
+            Bin resolution.
+        estimate_errors
+            Should the uncertainties be estimated from the data.
+
+        Returns
+        -------
+        TSData
+        """
+
+        if wave_binning is None and wave_nb is None and wave_bw is None and wave_r is None:
+            return self.bin_time(time_binning, time_nb, time_bw, estimate_errors=estimate_errors)
+        if time_binning is None and time_nb is None and time_bw is None:
+            return self.bin_wavelength(wave_binning, wave_nb, wave_bw, wave_r, estimate_errors=estimate_errors)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', numba.NumbaPerformanceWarning)
+            if wave_binning is None:
+                wave_binning = Binning(self.bbox_wl[0], self.bbox_wl[1], nb=wave_nb, bw=wave_bw, r=wave_r)
+            if time_binning is None:
+                time_binning = Binning(self.time.min(), self.time.max(), nb=time_nb, bw=time_bw/(24*60*60) if time_bw is not None else None)
+
+            bf, be, bn = bin2d(self.fluxes, self.errors,
+                               self._wl_l_edges, self._wl_r_edges,
+                               self._tm_l_edges, self._tm_r_edges,
+                               wave_binning.bins, time_binning.bins,
+                               estimate_errors=estimate_errors)
+
+            bc, _ = bin1d(self.covs, ones_like(self.covs),
+                          self._tm_l_edges, self._tm_r_edges,
+                          time_binning.bins,
+                          estimate_errors=False)
+
+            if not all(isfinite(be)):
+                warnings.warn('Error estimation failed for some bins, check the error array.')
+
+            d = TSData(time_binning.bins.mean(1), wave_binning.bins.mean(1), bf, be,
+                          name=self.name,
+                          wl_edges=(wave_binning.bins[:, 0], wave_binning.bins[:, 1]),
+                          tm_edges=(time_binning.bins[:, 0], time_binning.bins[:, 1]),
+                          noise_group=self.noise_group,
+                          epoch_group=self.epoch_group,
+                          offset_group=self.offset_group,
+                          ephemeris=self.ephemeris,
+                          n_baseline=self.n_baseline,
+                          covs=bc)
+            if self.ephemeris is not None:
+                d.mask_transit(ephemeris=self.ephemeris)
+            return d
+
+
     def bin_wavelength(self, binning: Optional[Union[Binning, CompoundBinning]] = None,
                        nb: Optional[int] = None, bw: Optional[float] = None, r: Optional[float] = None,
                        estimate_errors: bool = False) -> 'TSData':
@@ -706,7 +786,7 @@ class TSData:
             warnings.simplefilter('ignore', numba.NumbaPerformanceWarning)
             if binning is None:
                 binning = Binning(self.bbox_wl[0], self.bbox_wl[1], nb=nb, bw=bw, r=r)
-            bf, be = bin2d(self.fluxes, self.errors, self._wl_l_edges, self._wl_r_edges,
+            bf, be = bin1d(self.fluxes, self.errors, self._wl_l_edges, self._wl_r_edges,
                            binning.bins, estimate_errors=estimate_errors)
             if not all(isfinite(be)):
                 warnings.warn('Error estimation failed for some bins, check the error array.')
@@ -749,9 +829,9 @@ class TSData:
             warnings.simplefilter('ignore', numba.NumbaPerformanceWarning)
             if binning is None:
                 binning = Binning(self.time.min(), self.time.max(), nb=nb, bw=bw/(24*60*60) if bw is not None else None)
-            bf, be = bin2d(self.fluxes.T, self.errors.T, self._tm_l_edges, self._tm_r_edges,
+            bf, be = bin1d(self.fluxes.T, self.errors.T, self._tm_l_edges, self._tm_r_edges,
                            binning.bins, estimate_errors=estimate_errors)
-            bc, _ = bin2d(self.covs, ones_like(self.covs), self._tm_l_edges, self._tm_r_edges, binning.bins, False)
+            bc, _ = bin1d(self.covs, ones_like(self.covs), self._tm_l_edges, self._tm_r_edges, binning.bins, False)
             d = TSData(binning.bins.mean(1), self.wavelength, bf.T, be.T,
                        wl_edges=(self._wl_l_edges, self._wl_r_edges),
                        tm_edges=(binning.bins[:,0], binning.bins[:,1]),

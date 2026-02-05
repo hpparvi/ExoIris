@@ -55,17 +55,19 @@ from scipy.interpolate import (
     interp1d,
 )
 
+from .lmlikelihood import marginalized_loglike_mbl2d
 from .ldtkld import LDTkLD
 from .spotmodel import SpotModel
 from .tsdata import TSDataGroup
 from .tsmodel import TransmissionSpectroscopyModel as TSModel
 
-NM_WHITE = 0
+NM_WHITE_MARGINALIZED = 0
 NM_GP_FIXED = 1
 NM_GP_FREE = 2
+NM_WHITE_PROFILED = 3
 
-noise_models = dict(white=NM_WHITE, fixed_gp=NM_GP_FIXED, free_gp=NM_GP_FREE)
-
+noise_models = dict(white=NM_WHITE_PROFILED, white_profiled=NM_WHITE_PROFILED, white_marginalized=NM_WHITE_MARGINALIZED,
+                    fixed_gp=NM_GP_FIXED, free_gp=NM_GP_FREE)
 
 @njit
 def nlstsq(covs, res, mask, wlmask, with_nans):
@@ -74,7 +76,10 @@ def nlstsq(covs, res, mask, wlmask, with_nans):
     x = zeros((nc, nwl))
     x[:, wlmask] = lstsq(covs, ascontiguousarray(res[wlmask].T))[0]
     for i in with_nans:
-        x[:, i] =  lstsq(covs[mask[i]], res[i, mask[i]])[0]
+        try:
+            x[:, i] =  lstsq(covs[mask[i]], res[i, mask[i]])[0]
+        except:
+            x[:, i] = nan
     return x
 
 
@@ -181,7 +186,7 @@ def clean_knots(knots, min_distance, lmin=0, lmax=inf):
 
 class TSLPF(LogPosteriorFunction):
     def __init__(self, runner, name: str, ldmodel, data: TSDataGroup, nk: int = 50, nldc: int = 10, nthreads: int = 1,
-                 tmpars = None, noise_model: Literal["white", "fixed_gp", "free_gp"] = 'white',
+                 tmpars = None, noise_model: Literal["white_profiled", "white_marginalized", "fixed_gp", "free_gp"] = 'white_profiled',
                  interpolation: Literal['nearest', 'linear', 'pchip', 'makima', 'bspline', 'bspline-quadratic', 'bspline-cubic'] = 'linear'):
         super().__init__(name)
         self._runner = runner
@@ -296,7 +301,7 @@ class TSLPF(LogPosteriorFunction):
         Parameters
         ----------
         noise_model : str
-            The noise model to be used. Must be one of the following: white, fixed_gp, free_gp.
+            The noise model to be used. Must be one of the following: white_profiled, white_marginalized, fixed_gp, free_gp.
 
         Raises
         ------
@@ -304,7 +309,7 @@ class TSLPF(LogPosteriorFunction):
             If noise_model is not one of the specified options.
         """
         if noise_model not in noise_models.keys():
-            raise ValueError('noise_model must be one of: white, fixed_gp, free_gp')
+            raise ValueError('noise_model must be one of: white_profiled, white_marginalized, fixed_gp, free_gp')
         self.noise_model = noise_model
         self._nm = noise_models[noise_model]
         if self._nm in (NM_GP_FIXED, NM_GP_FREE):
@@ -822,15 +827,16 @@ class TSLPF(LogPosteriorFunction):
                     self._baseline_models[i][ipv, :, :] = nan
         return self._baseline_models
 
-    def flux_model(self, pv):
+    def flux_model(self, pv, include_baseline: bool = True):
         transit_models = self.transit_model(pv)
-        baseline_models = self.baseline_model(transit_models)
         if self.spot_model is not None:
             self.spot_model.apply_spots(pv, transit_models)
             if self.spot_model.include_tlse:
                 self.spot_model.apply_tlse(pv, transit_models)
-        for i in range(self.data.size):
-            transit_models[i][:, :, :] *= baseline_models[i][:, :, :]
+        if include_baseline:
+            baseline_models = self.baseline_model(transit_models)
+            for i in range(self.data.size):
+                transit_models[i][:, :, :] *= baseline_models[i][:, :, :]
         return transit_models
 
     def create_pv_population(self, npop: int = 50) -> ndarray:
@@ -867,13 +873,22 @@ class TSLPF(LogPosteriorFunction):
         """
         pv = atleast_2d(pv)
         npv = pv.shape[0]
-        fmod = self.flux_model(pv)
         wn_multipliers = pv[:, self._sl_wnm]
         lnl = zeros(npv)
-        if self._nm == NM_WHITE:
+        if self._nm == NM_WHITE_MARGINALIZED:
+            fmod = self.flux_model(pv, include_baseline=False)
+            for ipv in range(npv):
+                try:
+                    for i, d in enumerate(self.data):
+                        lnl[ipv] += marginalized_loglike_mbl2d(d.fluxes, fmod[i][ipv], d.errors*wn_multipliers[ipv, d.noise_group], d.covs, d.mask)
+                except LinAlgError:
+                    lnl[ipv] = -inf
+        elif self._nm == NM_WHITE_PROFILED:
+            fmod = self.flux_model(pv, include_baseline=True)
             for i, d in enumerate(self.data):
                 lnl += lnlike_normal(d.fluxes, fmod[i], d.errors, wn_multipliers[:, d.noise_group], d.mask)
         else:
+            fmod = self.flux_model(pv)
             for j in range(npv):
                 if self._nm == NM_GP_FREE:
                     self.set_gp_hyperparameters(*pv[j, self._sl_gp])
@@ -881,7 +896,7 @@ class TSLPF(LogPosteriorFunction):
                     lnl[j] += self._gp[i].log_likelihood(self._gp_flux[i] - fmod[i][j][self.data[i].mask])
         return lnl if npv > 1 else lnl[0]
 
-    def create_initial_population(self, n: int, source: str, add_noise: bool = True) -> ndarray:
+    def create_initial_population(self, n: int, source: str, add_noise: bool = False) -> ndarray:
         """Create an initial parameter vector population for DE.
 
         Parameters
@@ -891,7 +906,7 @@ class TSLPF(LogPosteriorFunction):
         source : str
             Source of the initial population. Must be either 'fit' or 'mcmc'.
         add_noise : bool, optional
-            Flag indicating whether to add noise to the initial population. Default is True.
+            Flag indicating whether to add noise to the initial population. Default is False.
 
         Returns
         -------
@@ -921,12 +936,9 @@ class TSLPF(LogPosteriorFunction):
             else:
                 pvp = rng.choice(pvs.reshape([-1, self.ndim]), size=n)
 
-        if pvp[0, self._sl_baseline][0] < 0.5:
-            pvp[:, self._sl_baseline] = rng.normal(1.0, 1e-6, size=(n, sum(self.n_baselines)))
-
         if add_noise:
-            pvp[:, self._sl_rratios] += rng.normal(0, 1, pvp[:, self._sl_rratios].shape) * 0.002 * pvp[:, self._sl_rratios]
-            pvp[:, self._sl_ld] += rng.normal(0, 1, pvp[:, self._sl_ld].shape) * 0.002 * pvp[:, self._sl_ld]
+            pvp[:, self._sl_rratios] += rng.normal(0, 1e-4, pvp[:, self._sl_rratios].shape)
+            pvp[:, self._sl_ld] += rng.normal(0, 1e-3, pvp[:, self._sl_ld].shape)
         return pvp
 
     def optimize_global(self, niter=200, npop=50, population=None, pool=None, lnpost=None, vectorize=True,
