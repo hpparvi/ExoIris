@@ -3,6 +3,7 @@ nbsphinx
 furo
 numpydoc
 sphinx-copybutton
+sphinx-design
 pytransit
 ldtk
 numpy

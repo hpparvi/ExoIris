@@ -22,6 +22,7 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.autosectionlabel',
     'sphinx_copybutton',
+    'sphinx_design',
     'nbsphinx',
     'numpydoc'
 ]
