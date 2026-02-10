@@ -9,7 +9,7 @@ naive approach fails in a subtle but important way.
 The Rank-Deficiency Problem
 ---------------------------
 
-ExoIris parameterises the transmission spectrum using :math:`K` spline knots, which are then
+ExoIris parameterises the transmission spectrum with :math:`K` radius-ratio  knots, which are then
 interpolated to :math:`M` data wavelengths. Since :math:`M \gg K`, the posterior samples live in
 a :math:`K`-dimensional subspace of the :math:`M`-dimensional wavelength space. The full
 :math:`M \times M` covariance matrix is therefore singular: it has only :math:`K` non-zero eigenvalues.
