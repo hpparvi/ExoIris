@@ -4,6 +4,7 @@ furo
 numpydoc
 sphinx-copybutton
 sphinx-design
+sphinx-book-theme
 pytransit
 ldtk
 numpy

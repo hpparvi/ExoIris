@@ -35,7 +35,10 @@ numpydoc_show_class_members = False
 
 pygments_style = 'sphinx'
 
-html_theme = 'furo'
+#html_theme = 'furo'
+html_theme = 'sphinx_book_theme'
+#html_theme = 'pydata_sphinx_theme'
+
 html_title = f'ExoIris v{version}'
 html_theme_options = {
     'sidebar_hide_name': False,
