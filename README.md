@@ -7,9 +7,10 @@
 [![PyPI version](https://badge.fury.io/py/exoiris.svg)](https://pypi.org/project/ExoIris/)
 [![DOI](https://zenodo.org/badge/805355873.svg)](https://doi.org/10.5281/zenodo.18598641)
 
-**ExoIris** models exoplanet transmission spectroscopy end-to-end — fitting the full 2D spectroscopic transit time series 
-directly instead of following the traditional two-step workflow. It delivers self-consistent results across wavelengths, 
-instruments, and epochs, and is designed for JWST-class data.
+**ExoIris** is a Python package for exoplanet transmission spectroscopy that models the full 2D spectroscopic transit time
+series directly, replacing the traditional two-step workflow. It jointly fits spectrophotometric datasets from different
+instruments and epochs in a single self-consistent analysis — and does so fast, completing a typical JWST transmission 
+spectrum in tens of minutes on a standard desktop.
 
 See the [documentation & Tutorials](https://exoiris.readthedocs.io) for details, examples, and API reference.
 
