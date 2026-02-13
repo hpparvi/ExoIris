@@ -13,10 +13,8 @@ release = exoiris.__version__
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
-#    'sphinx_automodapi.automodapi',
     'sphinx.ext.mathjax',
     'sphinx.ext.intersphinx',
-    'sphinx.ext.imgmath',
     'sphinx.ext.viewcode',
     'sphinx.ext.githubpages',
     'sphinx.ext.napoleon',
@@ -35,15 +33,18 @@ numpydoc_show_class_members = False
 
 pygments_style = 'sphinx'
 
-#html_theme = 'furo'
 html_theme = 'sphinx_book_theme'
-#html_theme = 'pydata_sphinx_theme'
-
 html_title = f'ExoIris v{version}'
-html_theme_options = {
-    'sidebar_hide_name': False,
-}
 html_static_path = ['_static']
+html_css_files = [
+    'custom.css',
+]
+
+mathjax3_config = {
+    'chtml': {
+        'displayAlign': 'center',
+    },
+}
 
 default_role = 'py:obj'
 
