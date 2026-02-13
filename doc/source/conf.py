@@ -5,7 +5,7 @@ import exoiris
 
 project = 'ExoIris'
 author = 'Hannu Parviainen'
-copyright = '2024, Hannu Parviainen'
+copyright = '2024-2026, Hannu Parviainen'
 
 version = ".".join(exoiris.__version__.split('.')[:2])
 release = exoiris.__version__

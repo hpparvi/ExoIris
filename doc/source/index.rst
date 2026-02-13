@@ -29,6 +29,8 @@ A complete analysis,
 including optimization and MCMC sampling, typically takes minutes to tens of minutes, though the most complex
 multi-instrument analyses may take up to a few hours. See the feature overview below for details.
 
+.. image:: examples/e01/example1.png
+
 .. grid:: 3
    :gutter: 2
 
