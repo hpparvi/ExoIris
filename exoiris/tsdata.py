@@ -693,7 +693,7 @@ class TSData:
             wave_nb: Optional[int] = None, wave_bw: Optional[float] = None, wave_r: Optional[float] = None,
             time_nb: Optional[int] = None, time_bw: Optional[float] = None,
             estimate_errors: bool = False) -> 'TSData':
-        """Bin the data along the wavelength axis.
+        """Bin the data along the wavelength and/or time axes.
 
         Bin the data along the wavelength and/or time axes. If binning is not specified, a Binning object is created using the
         minimum and maximum time and wavelength values.

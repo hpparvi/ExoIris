@@ -24,6 +24,7 @@ Data wrangling
 .. autosummary::
     :toctree: api/
 
+    TSData.bin
     TSData.bin_wavelength
     TSData.bin_time
     TSData.crop_wavelength
