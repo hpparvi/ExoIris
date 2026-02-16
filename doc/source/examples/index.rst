@@ -11,6 +11,8 @@ Tutorials
    e01/03_increasing_data_resolution.ipynb
    e01/04_gaussian_processes.ipynb
    e01/05a_ldtkldm.ipynb
+   e01/06_spot_crossing.ipynb
+   e01/07_transit_light_source_effect.ipynb
    e01/A2_full_data_resolution.ipynb
 
 .. Model Parametrization
