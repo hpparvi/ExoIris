@@ -170,3 +170,43 @@ def marginalized_loglike_mbl2d(
         logdetsigma = np.sum(np.log(err[i, m] * err[i, m]))
         lnlike += -0.5 * (quad + logdetsigma + logdetk + mask[i].sum() * np.log(2.0 * np.pi))
     return lnlike
+
+
+@njit
+def marginalized_loglike_mbl_bb(
+        obs: np.ndarray,
+        mod: np.ndarray,
+        err: np.ndarray,
+        covs: np.ndarray,
+        weights: np.ndarray,
+        mask: np.ndarray,
+        tau: float = 1e6,
+) -> float:
+    """Marginalized log-likelihood for broadband data.
+
+    Band-integrates a 2D transit model using filter transmission weights,
+    then delegates to the 1D marginalized likelihood.
+
+    Parameters
+    ----------
+    obs : ndarray of shape (npt,)
+        Observed broadband flux.
+    mod : ndarray of shape (nwl, npt)
+        2D transit model (without baseline).
+    err : ndarray of shape (npt,)
+        Broadband flux errors (already scaled by noise multiplier).
+    covs : ndarray of shape (npt, k)
+        Baseline design matrix.
+    weights : ndarray of shape (nwl,)
+        Normalized filter transmission weights.
+    mask : ndarray of shape (npt,)
+        Boolean time mask (True = valid).
+    tau : float
+        Prior width for baseline coefficients.
+    """
+    nwl, npt = mod.shape
+    mod_bb = np.zeros(npt)
+    for iwl in range(nwl):
+        for it in range(npt):
+            mod_bb[it] += weights[iwl] * mod[iwl, it]
+    return marginalized_loglike_mbl1d(obs[mask], mod_bb[mask], covs[mask], err[mask], tau)
