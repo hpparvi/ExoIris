@@ -55,7 +55,8 @@ from scipy.interpolate import (
     interp1d,
 )
 
-from .lmlikelihood import marginalized_loglike_mbl2d
+from .bbdata import BBData
+from .lmlikelihood import marginalized_loglike_mbl2d, marginalized_loglike_mbl_bb
 from .ldtkld import LDTkLD
 from .spotmodel import SpotModel
 from .tsdata import TSDataGroup
@@ -81,6 +82,39 @@ def nlstsq(covs, res, mask, wlmask, with_nans):
         except:
             x[:, i] = nan
     return x
+
+
+@njit(parallel=True, cache=False)
+def lnlike_normal_bb(o, m, e, w, f, mask):
+    nwl = w.shape[0]
+    nt = o.shape[0]
+
+    if m.ndim == 2:
+        la, lb, lc = 0.0, 0.0, 0.0
+        for it in range(nt):
+            if mask[it]:
+                mbb = 0.0
+                for iwl in range(nwl):
+                    mbb += w[iwl] * m[iwl, it]
+                la += log(f[0] * e[it])
+                lb += log(2 * pi)
+                lc += (o[it] - mbb) ** 2 / (f[0] * e[it]) ** 2
+        return -la - 0.5 * lb - 0.5 * lc
+    if m.ndim == 3:
+        npv = m.shape[0]
+        lnlike = zeros(npv)
+        for i in prange(npv):
+            la, lb, lc = 0.0, 0.0, 0.0
+            for it in range(nt):
+                if mask[it]:
+                    mbb = 0.0
+                    for iwl in range(nwl):
+                        mbb += w[iwl] * m[i, iwl, it]
+                    la += log(f[i] * e[it])
+                    lb += log(2 * pi)
+                    lc += (o[it] - mbb) ** 2 / (f[i] * e[it]) ** 2
+            lnlike[i] = -la - 0.5 * lb - 0.5 * lc
+        return lnlike
 
 
 @njit(parallel=True, cache=False)
@@ -819,12 +853,22 @@ class TSLPF(LogPosteriorFunction):
             self._baseline_models = [zeros(m.shape) for m in mtransit]
         for i, d in enumerate(self.data):
             for ipv in range(npv):
-                res = d.fluxes / mtransit[i][ipv]
-                try:
-                    coeffs = nlstsq(d.covs, res, d.mask, d._wlmask, d._wls_with_nan)
-                    self._baseline_models[i][ipv, :, :] = (d.covs @ coeffs).T
-                except LinAlgError:
-                    self._baseline_models[i][ipv, :, :] = nan
+                if isinstance(d, BBData):
+                    mod_bb = (d._weights[:, None] * mtransit[i][ipv]).sum(axis=0)
+                    res_bb = d._bb_flux / mod_bb
+                    try:
+                        coeffs = lstsq(d.covs[d._bb_mask], res_bb[d._bb_mask], rcond=None)[0]
+                        baseline_1d = d.covs @ coeffs
+                        self._baseline_models[i][ipv, :, :] = baseline_1d[None, :]
+                    except LinAlgError:
+                        self._baseline_models[i][ipv, :, :] = nan
+                else:
+                    res = d.fluxes / mtransit[i][ipv]
+                    try:
+                        coeffs = nlstsq(d.covs, res, d.mask, d._wlmask, d._wls_with_nan)
+                        self._baseline_models[i][ipv, :, :] = (d.covs @ coeffs).T
+                    except LinAlgError:
+                        self._baseline_models[i][ipv, :, :] = nan
         return self._baseline_models
 
     def flux_model(self, pv, include_baseline: bool = True):
@@ -880,13 +924,21 @@ class TSLPF(LogPosteriorFunction):
             for ipv in range(npv):
                 try:
                     for i, d in enumerate(self.data):
-                        lnl[ipv] += marginalized_loglike_mbl2d(d.fluxes, fmod[i][ipv], d.errors*wn_multipliers[ipv, d.noise_group], d.covs, d.mask)
+                        if isinstance(d, BBData):
+                            lnl[ipv] += marginalized_loglike_mbl_bb(
+                                d._bb_flux, fmod[i][ipv], d._bb_errors * wn_multipliers[ipv, d.noise_group],
+                                d.covs, d._weights, d._bb_mask)
+                        else:
+                            lnl[ipv] += marginalized_loglike_mbl2d(d.fluxes, fmod[i][ipv], d.errors*wn_multipliers[ipv, d.noise_group], d.covs, d.mask)
                 except LinAlgError:
                     lnl[ipv] = -inf
         elif self._nm == NM_WHITE_PROFILED:
             fmod = self.flux_model(pv, include_baseline=True)
             for i, d in enumerate(self.data):
-                lnl += lnlike_normal(d.fluxes, fmod[i], d.errors, wn_multipliers[:, d.noise_group], d.mask)
+                if isinstance(d, BBData):
+                    lnl += lnlike_normal_bb(d._bb_flux, fmod[i], d._bb_errors, d._weights, wn_multipliers[:, d.noise_group], d._bb_mask)
+                else:
+                    lnl += lnlike_normal(d.fluxes, fmod[i], d.errors, wn_multipliers[:, d.noise_group], d.mask)
         else:
             fmod = self.flux_model(pv)
             for j in range(npv):

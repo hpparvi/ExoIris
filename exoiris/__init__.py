@@ -16,6 +16,7 @@
 
 from .exoiris import ExoIris, load_model # noqa
 from .tsdata import TSData, TSDataGroup # noqa
+from .bbdata import BBData # noqa
 from .binning import Binning # noqa
 from .ldtkld import LDTkLD # noqa
 from .tslpf import clean_knots # noqa

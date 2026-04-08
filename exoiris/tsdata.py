@@ -16,6 +16,7 @@
 
 import warnings
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Union, Optional
 
 import numba
@@ -64,6 +65,20 @@ from .binning import Binning, CompoundBinning
 from .ephemeris import Ephemeris
 from .bin1d import bin1d
 from .bin2d import bin2d
+
+
+def _load(fname: Path | str) -> "TSData | TSDataGroup":
+    fname = Path(fname)
+    with pf.open(fname) as hdul:
+        if 'BBDATA' in hdul[0].header:
+            from .bbdata import BBData
+            return BBData.import_fits(hdul[0].header['BBDATA'], hdul)
+        elif 'TSDATA' in hdul[0].header:
+            return TSData.import_fits(hdul[0].header['TSDATA'], hdul)
+        elif 'TSDGROUP' in hdul[0].header:
+            return TSDataGroup.import_fits(hdul)
+        else:
+            raise ValueError(f"'{fname.name}' is not a proper TSData or TSDataGroup file.")
 
 
 class TSData:
@@ -248,6 +263,15 @@ class TSData:
         return TSData(time, wave, data[0], data[1], name=name, noise_group=noise_group, transit_mask=ootm,
                       n_baseline=n_baseline, mask=mask, epoch_group=ephemeris_group, offset_group=offset_group,
                       covs=covs)
+
+    def save(self, fname: Path, overwrite: bool = True):
+        hdul = pf.HDUList([pf.PrimaryHDU()] + self.export_fits())
+        hdul[0].header['TSDATA'] = self.name
+        hdul.writeto(fname, overwrite=overwrite)
+
+    @staticmethod
+    def load(fname: Path | str) -> "TSData | TSDataGroup":
+        return _load(fname)
 
     def __repr__(self) -> str:
         return f"TSData Name:'{self.name}' [{self.wavelength[0]:.2f} - {self.wavelength[-1]:.2f}] nwl={self.nwl} npt={self.npt}"
@@ -959,7 +983,11 @@ class TSDataGroup:
         data = []
         for i in range(ds.header['NDATA']):
             name = ds.header[f'NAME_{i}']
-            data.append(TSData.import_fits(name, hdul))
+            if f'FLUX_{name}' in hdul and hdul[f'FLUX_{name}'].header.get('BBDATA', False):
+                from .bbdata import BBData
+                data.append(BBData.import_fits(name, hdul))
+            else:
+                data.append(TSData.import_fits(name, hdul))
         return TSDataGroup(data)
 
     def mask_transit(self, tc: float, p: float, t14: float):
@@ -974,6 +1002,15 @@ class TSDataGroup:
 
     def __repr__(self):
         return f"TSDataGroup with {self.size} groups"
+
+    def save(self, fname: Path, overwrite: bool = True):
+        hdul = pf.HDUList([pf.PrimaryHDU()] + self.export_fits())
+        hdul[0].header['tsdgroup'] = True
+        hdul.writeto(fname, overwrite=overwrite)
+
+    @staticmethod
+    def load(fname: Path | str) -> "TSData | TSDataGroup":
+        return _load(fname)
 
     def plot(self, axs=None, vmin: float = None, vmax: float = None, ncols: int = 1, cmap=None, figsize=None, data: ndarray | None = None) -> Figure:
         """Plot all the data sets.
