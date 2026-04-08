@@ -70,7 +70,10 @@ from .bin2d import bin2d
 def _load(fname: Path | str) -> "TSData | TSDataGroup":
     fname = Path(fname)
     with pf.open(fname) as hdul:
-        if 'TSDATA' in hdul[0].header:
+        if 'BBDATA' in hdul[0].header:
+            from .bbdata import BBData
+            return BBData.import_fits(hdul[0].header['BBDATA'], hdul)
+        elif 'TSDATA' in hdul[0].header:
             return TSData.import_fits(hdul[0].header['TSDATA'], hdul)
         elif 'TSDGROUP' in hdul[0].header:
             return TSDataGroup.import_fits(hdul)
@@ -980,7 +983,11 @@ class TSDataGroup:
         data = []
         for i in range(ds.header['NDATA']):
             name = ds.header[f'NAME_{i}']
-            data.append(TSData.import_fits(name, hdul))
+            if f'FLUX_{name}' in hdul and hdul[f'FLUX_{name}'].header.get('BBDATA', False):
+                from .bbdata import BBData
+                data.append(BBData.import_fits(name, hdul))
+            else:
+                data.append(TSData.import_fits(name, hdul))
         return TSDataGroup(data)
 
     def mask_transit(self, tc: float, p: float, t14: float):

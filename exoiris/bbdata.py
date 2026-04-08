@@ -14,9 +14,12 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from pathlib import Path
 from typing import Sequence
 
-from numpy import asarray, ndarray, interp, linspace, tile, all as np_all
+import astropy.io.fits as pf
+from numpy import asarray, ndarray, interp, linspace, tile, all as np_all, array
+
 from .ephemeris import Ephemeris
 from .tsdata import TSData
 
@@ -76,6 +79,11 @@ class BBData(TSData):
         flux = asarray(flux, dtype=float)
         errors = asarray(errors, dtype=float)
 
+        # Store the original filter profile for serialisation
+        self._filter_wavelength: ndarray = wavelength.copy()
+        self._filter_transmission: ndarray = transmission.copy()
+        self._n_wl: int = n_wl
+
         # Identify the effective bandpass (transmission > 1% of peak)
         threshold = 0.01 * transmission.max()
         in_band = transmission >= threshold
@@ -120,3 +128,100 @@ class BBData(TSData):
 
         # 1D time mask: valid if all wavelength bins are unmasked at that time
         self._bb_mask: ndarray = np_all(self.mask, axis=0)
+
+    def export_fits(self) -> pf.HDUList:
+        """Generate a `~astropy.io.fits.HDUList` containing HDUs storing the broadband data.
+
+        Returns
+        -------
+        ~astropy.io.fits.HDUList
+        """
+        time = pf.ImageHDU(self.time, name=f'time_{self.name}')
+        flux = pf.ImageHDU(self._bb_flux, name=f'flux_{self.name}')
+        errs = pf.ImageHDU(self._bb_errors, name=f'errs_{self.name}')
+        fwav = pf.ImageHDU(self._filter_wavelength, name=f'fwav_{self.name}')
+        ftrn = pf.ImageHDU(self._filter_transmission, name=f'ftrn_{self.name}')
+        covs = pf.ImageHDU(self.covs, name=f'covs_{self.name}')
+        ootm = pf.ImageHDU(self.transit_mask.astype(int), name=f'ootm_{self.name}')
+        mask = pf.ImageHDU(self._bb_mask.astype(int), name=f'mask_{self.name}')
+
+        flux.header['BBDATA'] = True
+        flux.header['NWL'] = self._n_wl
+        flux.header['NGROUP'] = self.noise_group
+        flux.header['NBASEL'] = self.n_baseline
+        flux.header['EPGROUP'] = self.epoch_group
+        flux.header['OFFGROUP'] = self.offset_group
+
+        return pf.HDUList([time, flux, errs, fwav, ftrn, covs, ootm, mask])
+
+    @staticmethod
+    def import_fits(name: str, hdul: pf.HDUList) -> 'BBData':
+        """Import a broadband data set from a `~astropy.io.fits.HDUList`.
+
+        Parameters
+        ----------
+        name
+            The name of the dataset to be imported.
+        hdul
+            The `~astropy.io.fits.HDUList` containing the data.
+
+        Returns
+        -------
+        BBData
+        """
+        time = hdul[f'TIME_{name}'].data.astype('d')
+        flux = hdul[f'FLUX_{name}'].data.astype('d')
+        errors = hdul[f'ERRS_{name}'].data.astype('d')
+        fwav = hdul[f'FWAV_{name}'].data.astype('d')
+        ftrn = hdul[f'FTRN_{name}'].data.astype('d')
+        ootm = hdul[f'OOTM_{name}'].data.astype(bool)
+        mask = hdul[f'MASK_{name}'].data.astype(bool)
+
+        try:
+            covs = hdul[f'COVS_{name}'].data.astype('d')
+        except KeyError:
+            covs = None
+
+        header = hdul[f'FLUX_{name}'].header
+        n_wl = header['NWL']
+        noise_group = header.get('NGROUP', 0)
+        epoch_group = header.get('EPGROUP', 0)
+        offset_group = header.get('OFFGROUP', 0)
+        n_baseline = header.get('NBASEL', 1)
+
+        return BBData(
+            time=time, wavelength=fwav, transmission=ftrn, n_wl=n_wl,
+            flux=flux, errors=errors, name=name, noise_group=noise_group,
+            transit_mask=ootm, n_baseline=n_baseline, mask=mask,
+            epoch_group=epoch_group, offset_group=offset_group, covs=covs,
+        )
+
+    def save(self, fname: Path, overwrite: bool = True):
+        """Save the broadband data to a FITS file.
+
+        Parameters
+        ----------
+        fname
+            Output file path.
+        overwrite
+            Whether to overwrite an existing file.
+        """
+        hdul = pf.HDUList([pf.PrimaryHDU()] + self.export_fits())
+        hdul[0].header['BBDATA'] = self.name
+        hdul.writeto(fname, overwrite=overwrite)
+
+    @staticmethod
+    def load(fname: Path | str) -> "BBData":
+        """Load a BBData object from a FITS file.
+
+        Parameters
+        ----------
+        fname
+            Path to the FITS file.
+
+        Returns
+        -------
+        BBData
+        """
+        from .tsdata import _load
+        return _load(fname)
