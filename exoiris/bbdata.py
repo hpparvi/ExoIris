@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Sequence
 
 import astropy.io.fits as pf
-from numpy import asarray, ndarray, interp, linspace, tile, all as np_all, array
+from numpy import asarray, average, ndarray, interp, linspace, tile, all as np_all, array
 
 from .ephemeris import Ephemeris
 from .tsdata import TSData
@@ -129,6 +129,13 @@ class BBData(TSData):
         # 1D time mask: valid if all wavelength bins are unmasked at that time
         self._bb_mask: ndarray = np_all(self.mask, axis=0)
 
+    def create_white_light_curve(self, data=None) -> ndarray:
+        """Create a white light curve."""
+        if data is not None and data.shape != self.fluxes.shape:
+            raise ValueError("The data must have the same shape as the 2D flux array.")
+        data = data if data is not None else self.fluxes
+        return average(data, axis=0, weights=self._weights)
+
     def export_fits(self) -> pf.HDUList:
         """Generate a `~astropy.io.fits.HDUList` containing HDUs storing the broadband data.
 
@@ -211,7 +218,7 @@ class BBData(TSData):
         hdul.writeto(fname, overwrite=overwrite)
 
     @staticmethod
-    def load(fname: Path | str) -> "BBData":
+    def load(fname: Path | str, noise_group: int | None = None) -> "BBData":
         """Load a BBData object from a FITS file.
 
         Parameters
@@ -224,4 +231,7 @@ class BBData(TSData):
         BBData
         """
         from .tsdata import _load
-        return _load(fname)
+        d = _load(fname)
+        if noise_group is not None:
+            d.noise_group = noise_group
+        return d
