@@ -523,6 +523,51 @@ class TSData:
                           mask_nonfinite_errors=self.mask_nonfinite_errors,
                           covs=self.covs[m])
 
+    def remove_fully_masked(self, inplace: bool = True) -> 'TSData':
+        """Drop wavelength rows and time columns that are fully masked.
+
+        A row or column is fully masked when every element of `self.mask` in it
+        is False. All wavelength- and time-indexed arrays are sliced
+        consistently, and derived attributes are refreshed via `_update`.
+
+        Parameters
+        ----------
+        inplace
+            If True, modify the current object in place and return `self`.
+            Otherwise return a new `TSData` object.
+        """
+        kw = any(self.mask, axis=1)
+        kt = any(self.mask, axis=0)
+        if inplace:
+            self.wavelength = self.wavelength[kw]
+            self.time = self.time[kt]
+            self.fluxes = self.fluxes[kw][:, kt]
+            self.errors = self.errors[kw][:, kt]
+            self.mask = self.mask[kw][:, kt]
+            self.transit_mask = self.transit_mask[kt]
+            self.covs = self.covs[kt]
+            self._wl_l_edges = self._wl_l_edges[kw]
+            self._wl_r_edges = self._wl_r_edges[kw]
+            self._tm_l_edges = self._tm_l_edges[kt]
+            self._tm_r_edges = self._tm_r_edges[kt]
+            self._update()
+            return self
+        else:
+            return TSData(name=self.name, time=self.time[kt],
+                          wavelength=self.wavelength[kw],
+                          fluxes=self.fluxes[kw][:, kt],
+                          errors=self.errors[kw][:, kt],
+                          mask=self.mask[kw][:, kt],
+                          noise_group=self.noise_group,
+                          epoch_group=self.epoch_group,
+                          offset_group=self.offset_group,
+                          wl_edges=(self._wl_l_edges[kw], self._wl_r_edges[kw]),
+                          tm_edges=(self._tm_l_edges[kt], self._tm_r_edges[kt]),
+                          transit_mask=self.transit_mask[kt], ephemeris=self.ephemeris,
+                          n_baseline=self.n_baseline,
+                          mask_nonfinite_errors=self.mask_nonfinite_errors,
+                          covs=self.covs[kt])
+
     # TODO: separate mask into bad data mask and outlier mask.
     def mask_outliers(self, sigma: float = 5.0) -> 'TSData':
         """Mask outliers along the wavelength axis.
