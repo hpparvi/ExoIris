@@ -270,8 +270,11 @@ class TSData:
         hdul.writeto(fname, overwrite=overwrite)
 
     @staticmethod
-    def load(fname: Path | str) -> "TSData | TSDataGroup":
-        return _load(fname)
+    def load(fname: Path | str, noise_group: int | None = None) -> "TSData | TSDataGroup":
+        d = _load(fname)
+        if noise_group is not None:
+            d.noise_group = noise_group
+        return d
 
     def __repr__(self) -> str:
         return f"TSData Name:'{self.name}' [{self.wavelength[0]:.2f} - {self.wavelength[-1]:.2f}] nwl={self.nwl} npt={self.npt}"
@@ -693,6 +696,15 @@ class TSData:
         ~matplotlib.figure.Figure
         """
         return self.plot(ax=ax, figsize=figsize, data=where(self.transit_mask, self.fluxes, nan))
+
+    def plot_mean_error(self, ax: Axes | None = None, figsize: tuple[float, float] | None = None) -> Figure:
+        if ax is None:
+            fig, ax = subplots(figsize=figsize, constrained_layout=True)
+        else:
+            fig = ax.figure
+        ax.plot(self.wavelength, self.errors.mean(1)*1e6)
+        setp(ax, xlabel=r'Wavelength [$\mu$m]', ylabel='Mean flux error [ppm]')
+        return fig
 
     def __add__(self, other: Union['TSData', 'TSDataGroup']) -> 'TSDataGroup':
         """Combine two transmission spectra along the wavelength axis.

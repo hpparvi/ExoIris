@@ -166,7 +166,7 @@ def ip_nearest(x, xk, yk):
 
 
 def ip_linear(x, xk, yk):
-    return interp1d(xk, yk, kind='linear', bounds_error=False, fill_value='extrapolate', assume_sorted=True)(x)
+    return interp1d(xk, yk, kind='linear', bounds_error=False, fill_value='extrapolate', assume_sorted=True)(clip(x, xk[0], xk[-1]))
 
 
 def add_knots(x_new, x_old):
