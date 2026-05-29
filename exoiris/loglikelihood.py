@@ -108,7 +108,7 @@ class LogLikelihood:
             evals, evecs = eigh(self.spcov)
 
         keep = evals > eps * evals.max()
-        self.eigenvalues, self.eigenvectors = evals[keep], evecs[:, keep]
+        self.eigenvalues, self.eigenvectors = evals[keep][:nk], evecs[:, keep][:, :nk]
         self.log_det = sum(log(self.eigenvalues))
         self.log_twopi = self.eigenvalues.size * log(2*pi)
 
