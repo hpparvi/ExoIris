@@ -88,10 +88,10 @@ class PRTRetrieval(LogPosteriorFunction):
     def _init_p_temperature(self):
         self.ps.thaw()
         if self.temperature_profile == 'isothermal':
-            ps = [GParameter('tp_teq', 'equilibrium temperature', 'K', UP(800, 1200), (500, 3500))]
+            ps = [GParameter('tp_teq', 'equilibrium temperature', 'K', UP(400, 1200), (300, 3500))]
         elif self.temperature_profile == 'guillot':
-            ps = [GParameter('tp_teq', 'equilibrium temperature', 'K', UP(800, 1200), (500, 3500)),
-                  GParameter('tp_tin', 'intrinsinc temperature', 'K', UP(800, 1200), (500, 3500)),
+            ps = [GParameter('tp_teq', 'equilibrium temperature', 'K', UP(400, 1200), (300, 3500)),
+                  GParameter('tp_tin', 'intrinsinc temperature', 'K', UP(400, 1200), (300, 3500)),
                   GParameter('tp_mo', 'guillot profile mean opacity', 'K', UP(0, 1), (0, 1)),
                   GParameter('tp_g', 'guillot profile gamma', 'K', UP(0, 1), (0, 1))]
         self.ps.add_global_block('temperature_profile', ps)
