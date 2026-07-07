@@ -19,10 +19,8 @@ import warnings
 from contextlib import redirect_stdout
 import numpy as np
 
-from petitRADTRANS.radtrans import Radtrans
 from petitRADTRANS import physical_constants as cst
 from petitRADTRANS.spectral_model import SpectralModel
-from petitRADTRANS.retrieval.data import Data
 
 with warnings.catch_warnings():
     warnings.simplefilter('ignore')
@@ -32,9 +30,12 @@ with warnings.catch_warnings():
 
 class PRTRetrieval(LogPosteriorFunction):
     def __init__(self, name: str, line_species, ei: ExoIris, rstar: float, mplanet: float, temperature_profile='isothermal',
-                 pres: int = 100, r: int | None = None, quiet: bool = False):
+                 cloud_model='deck', pres: int = 100, r: int | None = None, quiet: bool = False):
         super().__init__(name)
-        self._line_names = line_species
+        if temperature_profile not in ('isothermal', 'guillot'):
+            raise ValueError(f"temperature_profile must be 'isothermal' or 'guillot', not '{temperature_profile}'")
+        if cloud_model not in ('deck', 'powerlaw'):
+            raise ValueError(f"cloud_model must be 'deck' or 'powerlaw', not '{cloud_model}'")
         if r is None:
             self.line_species = line_species
         else:
@@ -43,6 +44,7 @@ class PRTRetrieval(LogPosteriorFunction):
         self.rstar = rstar
         self.mplanet = mplanet
         self.temperature_profile = temperature_profile
+        self.cloud_model = cloud_model
         self.pres = pres
         self.ei = ei
         self.r = r
@@ -79,7 +81,12 @@ class PRTRetrieval(LogPosteriorFunction):
 
     def _init_p_clouds(self):
         self.ps.thaw()
-        ps = [GParameter('pc', 'Cloud top pressure', '', UP(-6, 2), (-6, 2))]
+        if self.cloud_model == 'deck':
+            ps = [GParameter('cd_pc', 'log10 cloud top pressure', '', UP(-6, 2), (-6, 2)),
+                  GParameter('cd_haze', 'log10 haze factor', '', UP(0, 3), (0, 3))]
+        else:
+            ps = [GParameter('cd_k350', 'log10 opacity at 350 nm', '', UP(-8, 4), (-8, 4)),
+                  GParameter('cd_gamma', 'power-law opacity coefficient', '', UP(-13, 0), (-13, 0))]
         self.ps.add_global_block('clouds', ps)
         self.ps.freeze()
         self._sl_clouds = self.ps.blocks[-1].slice
@@ -89,18 +96,19 @@ class PRTRetrieval(LogPosteriorFunction):
         self.ps.thaw()
         if self.temperature_profile == 'isothermal':
             ps = [GParameter('tp_teq', 'equilibrium temperature', 'K', UP(400, 1200), (300, 3500))]
-        elif self.temperature_profile == 'guillot':
+        else:
             ps = [GParameter('tp_teq', 'equilibrium temperature', 'K', UP(400, 1200), (300, 3500)),
-                  GParameter('tp_tin', 'intrinsinc temperature', 'K', UP(400, 1200), (300, 3500)),
-                  GParameter('tp_mo', 'guillot profile mean opacity', 'K', UP(0, 1), (0, 1)),
-                  GParameter('tp_g', 'guillot profile gamma', 'K', UP(0, 1), (0, 1))]
+                  GParameter('tp_tin', 'intrinsic temperature', 'K', UP(400, 1200), (300, 3500)),
+                  GParameter('tp_mo', 'guillot profile mean opacity', '', UP(0, 1), (0, 1)),
+                  GParameter('tp_g', 'guillot profile gamma', '', UP(0, 1), (0, 1))]
         self.ps.add_global_block('temperature_profile', ps)
+        self.ps.freeze()
         self._sl_tprof = self.ps.blocks[-1].slice
         self._st_tprof = self.ps.blocks[-1].start
 
     def _init_p_species(self):
         self.ps.thaw()
-        ps = [GParameter(n, n, '', UP(-12, -0.2), [-12, 0]) for n in self.line_species]
+        ps = [GParameter(n, n, '', UP(-12, -0.2), (-12, -0.2)) for n in self.line_species]
         self.ps.add_global_block('line_species', ps)
         self.ps.freeze()
         self._sl_species = self.ps.blocks[-1].slice
@@ -119,6 +127,18 @@ class PRTRetrieval(LogPosteriorFunction):
         return pars
 
     def _create_model(self):
+        if self.temperature_profile == 'isothermal':
+            temperature_parameters = {}
+        else:
+            temperature_parameters = {'intrinsic_temperature': 200.0,
+                                      'guillot_temperature_profile_infrared_mean_opacity_solar_metallicity': 0.01,
+                                      'guillot_temperature_profile_gamma': 0.4}
+        if self.cloud_model == 'deck':
+            cloud_parameters = {'opaque_cloud_top_pressure': 1e-2,
+                                'haze_factor': 10.0}
+        else:
+            cloud_parameters = {'power_law_opacity_350nm': 0.01,
+                                'power_law_opacity_coefficient': -4.0}
         self.sm = SpectralModel(
             pressures=np.logspace(-6, 2, self.pres),
             line_species=self.line_species,
@@ -130,30 +150,28 @@ class PRTRetrieval(LogPosteriorFunction):
             planet_mass=self.mplanet * cst.m_jup,
             reference_gravity=391,
             reference_pressure=1e-2,
-            temperature_profile=self.temperature_profile,
+            temperature_profile_mode=self.temperature_profile,
             temperature=1000,
-            # cloud_mode='power_law',
-            # power_law_opacity_350nm = 0.01,
-            # power_law_opacity_coefficient = -4.0,
-            # opaque_cloud_top_pressure=1e-3,
-            # cloud_fraction=1.0,
-            haze_factor=100.0,
-            # co_ratio=1,
             use_equilibrium_chemistry=False,
             imposed_mass_fractions={s: 1e-4 for s in self.line_species},
-            filling_species={'H2': 37, 'He': 12}
+            filling_species={'H2': 37, 'He': 12},
+            **temperature_parameters,
+            **cloud_parameters
         )
 
     def model(self, pv=None):
         if pv is not None:
-
             self.sm.model_parameters.update(self._c_temperature_profile(pv))
             self.sm.model_parameters['planet_radius'] = pv[self._st_planet] * cst.r_jup_mean
             self.sm.model_parameters['reference_gravity'] = 10 ** pv[self._st_planet + 1]
-            self.sm.model_parameters['opaque_cloud_top_pressure'] = 10 ** pv[self._st_clouds]
+            if self.cloud_model == 'deck':
+                self.sm.model_parameters['opaque_cloud_top_pressure'] = 10 ** pv[self._st_clouds]
+                self.sm.model_parameters['haze_factor'] = 10 ** pv[self._st_clouds + 1]
+            else:
+                self.sm.model_parameters['power_law_opacity_350nm'] = 10 ** pv[self._st_clouds]
+                self.sm.model_parameters['power_law_opacity_coefficient'] = pv[self._st_clouds + 1]
             for i, ls in enumerate(self.line_species):
                 self.sm.model_parameters['imposed_mass_fractions'][ls] = 10 ** pv[self._st_species + i]
-            self.sm.update_spectral_calculation_parameters(**self.sm.model_parameters)
         wavelengths, radii = self.sm.calculate_spectrum(mode='transmission')
         return wavelengths[0] * 1e4, radii[0]
 
