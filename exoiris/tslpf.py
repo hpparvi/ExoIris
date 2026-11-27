@@ -26,6 +26,11 @@ from numpy import (
     pi,
     linspace,
     inf,
+    isfinite,
+    full,
+    ones,
+    where,
+    atleast_1d,
     atleast_2d,
     newaxis,
     clip,
@@ -72,15 +77,27 @@ noise_models = dict(white=NM_WHITE_PROFILED, white_profiled=NM_WHITE_PROFILED, w
 
 @njit
 def nlstsq(covs, res, mask, wlmask, with_nans):
+    """Least-squares baseline coefficients for each wavelength.
+
+    The coefficients are NaN for the wavelengths that cannot be solved: fully masked ones and
+    ones with non-finite residuals. The inputs are validated here instead of letting ``lstsq``
+    raise, because numba does not release the arrays a jitted function has allocated when an
+    exception is raised, whether or not the exception is caught.
+    """
     nwl = res.shape[0]
     nc = covs.shape[1]
-    x = zeros((nc, nwl))
-    x[:, wlmask] = lstsq(covs, ascontiguousarray(res[wlmask].T))[0]
+    x = full((nc, nwl), nan)
+    if wlmask.any():
+        r = ascontiguousarray(res[wlmask].T)
+        if not isfinite(r).all():
+            return x
+        x[:, wlmask] = lstsq(covs, r)[0]
     for i in with_nans:
-        try:
-            x[:, i] =  lstsq(covs[mask[i]], res[i, mask[i]])[0]
-        except:
-            x[:, i] = nan
+        m = mask[i]
+        if m.any():
+            r = res[i, m]
+            if isfinite(r).all():
+                x[:, i] = lstsq(covs[m], r)[0]
     return x
 
 
@@ -274,6 +291,9 @@ class TSLPF(LogPosteriorFunction):
         self._mc_chains: Optional[ndarray] = None
 
         self._init_parameters()
+
+        if ldmodel == 'quadratic-tri':
+            self._additional_log_priors.append(self._ld_domain_prior)
 
     @property
     def flux(self) -> list[ndarray]:
@@ -478,11 +498,11 @@ class TSLPF(LogPosteriorFunction):
         self._sl_bias = ps.blocks[-1].slice
 
     def set_ldtk_prior(self, teff, logg, metal, dataset: str = 'visir-lowres', width: float = 50,
-                       uncertainty_multiplier: float = 10):
+                       uncertainty_multiplier: float = 10, nsamples: int = 1000, likelihood: str = 'diagonal'):
         hw = 0.5 * width
         filters = [BoxcarFilter('a', wlc - hw, wlc + hw) for wlc in 1e3 * self.ld_knots]
         sc = LDPSetCreator(teff, logg, metal, filters=filters, dataset=dataset)
-        ps = sc.create_profiles()
+        ps = sc.create_profiles(nsamples=nsamples, likelihood=likelihood)
 
         match self.ldmodel:
             case 'power-2':
@@ -795,6 +815,30 @@ class TSLPF(LogPosteriorFunction):
                     ldp[ids][ipv, :, 1] = self._ip_ld(self.wavelengths[ids], self.ld_knots, ldk[ipv, :, 1])
             return ldp
 
+    def _ld_domain_prior(self, pv) -> ndarray:
+        """Log prior rejecting limb darkening coefficients outside the domain of the model.
+
+        The triangular quadratic limb darkening parametrisation (Kipping 2013) is defined only for
+        coefficients between zero and one. The coefficients are interpolated in wavelength, and
+        the interpolated values can leave the domain even when all the knot values are inside it,
+        so the test is done for the coefficients evaluated at the data wavelengths.
+
+        Parameters
+        ----------
+        pv
+            Parameter vector array with a shape [npv, np].
+
+        Returns
+        -------
+        ndarray
+            Zero for the parameter vectors inside the domain and -inf for the ones outside it.
+        """
+        pv = atleast_2d(pv)
+        valid = ones(pv.shape[0], dtype=bool)
+        for ldc in self._eval_ldc(pv):
+            valid &= ((ldc >= 0.0) & (ldc <= 1.0)).all(axis=(1, 2))
+        return where(valid, 0.0, -inf)
+
     def transit_model(self, pv, copy=True):
         """Evaluates the transit model for parameter vector pv.
 
@@ -853,6 +897,12 @@ class TSLPF(LogPosteriorFunction):
             self._baseline_models = [zeros(m.shape) for m in mtransit]
         for i, d in enumerate(self.data):
             for ipv in range(npv):
+                # A non-finite transit model makes the numba-compiled least-squares solver raise
+                # a LinAlgError, and numba does not free the arrays a jitted function has allocated
+                # when an exception propagates out of it. Bail out before calling the solver.
+                if not isfinite(mtransit[i][ipv]).all():
+                    self._baseline_models[i][ipv, :, :] = nan
+                    continue
                 if isinstance(d, BBData):
                     mod_bb = (d._weights[:, None] * mtransit[i][ipv]).sum(axis=0)
                     res_bb = d._bb_flux / mod_bb
@@ -922,6 +972,12 @@ class TSLPF(LogPosteriorFunction):
         if self._nm == NM_WHITE_MARGINALIZED:
             fmod = self.flux_model(pv, include_baseline=False)
             for ipv in range(npv):
+                # Reject non-finite models here rather than letting the numba-compiled likelihood
+                # raise a LinAlgError: an exception propagating out of a jitted function leaks
+                # all the arrays the function has allocated.
+                if not all([isfinite(fmod[i][ipv]).all() for i in range(self.data.size)]):
+                    lnl[ipv] = -inf
+                    continue
                 try:
                     for i, d in enumerate(self.data):
                         if isinstance(d, BBData):
@@ -947,6 +1003,32 @@ class TSLPF(LogPosteriorFunction):
                 for i in range(self.data.size):
                     lnl[j] += self._gp[i].log_likelihood(self._gp_flux[i] - fmod[i][j][self.data[i].mask])
         return lnl if npv > 1 else lnl[0]
+
+    def lnposterior(self, pv) -> ndarray | float:
+        """Log posterior for parameter vector pv.
+
+        The likelihood is evaluated only for the parameter vectors with a finite log prior, so
+        the vectors rejected by the prior do not cost a model evaluation.
+
+        Parameters
+        ----------
+        pv : array-like
+            Either a 1D parameter vector or a 2D parameter vector array with a shape [npv, np].
+
+        Returns
+        -------
+        lnposterior : ndarray or float
+            The log posterior, -inf for the parameter vectors with a non-finite log posterior.
+        """
+        pvp = atleast_2d(pv)
+        lnp = atleast_1d(self.lnprior(pvp)).astype('d')
+        valid = isfinite(lnp)
+        if valid.all():
+            lnp += self.lnlikelihood(pvp)
+        elif valid.any():
+            lnp[valid] += self.lnlikelihood(pvp[valid])
+        lnp[~isfinite(lnp)] = -inf
+        return lnp if pvp.shape[0] > 1 else lnp[0]
 
     def create_initial_population(self, n: int, source: str, add_noise: bool = False) -> ndarray:
         """Create an initial parameter vector population for DE.

@@ -17,11 +17,53 @@
 import numpy as np
 from numba import njit
 
+# The linear algebra below is written out by hand rather than delegated to ``np.linalg`` because
+# the numba implementations of the ``np.linalg`` routines raise a ``LinAlgError`` on non-finite
+# or non-positive-definite input, and numba does not release the arrays a jitted function has
+# allocated when an exception propagates out of it. A likelihood that fails for a part of the
+# parameter space would leak memory on every evaluation there. The matrices are tiny (the number
+# of baseline covariates squared), so the explicit loops are also faster than the LAPACK calls.
+
+@njit
+def _cholesky(a: np.ndarray) -> tuple[np.ndarray, bool]:
+    """Cholesky factorisation of a symmetric matrix that reports failure instead of raising.
+
+    Returns the lower-triangular factor and a flag that is False if the matrix is not
+    positive definite or contains non-finite values, in which case the factor is not valid.
+    """
+    n = a.shape[0]
+    l = np.zeros((n, n))
+    for j in range(n):
+        d = a[j, j]
+        for p in range(j):
+            d -= l[j, p] * l[j, p]
+        if not (d > 0.0 and np.isfinite(d)):
+            return l, False
+        l[j, j] = np.sqrt(d)
+        for i in range(j + 1, n):
+            s = a[i, j]
+            for p in range(j):
+                s -= l[i, p] * l[j, p]
+            l[i, j] = s / l[j, j]
+    return l, True
+
+
 @njit
 def _chol_solve(l: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Solve L L^T x = b given lower-triangular L."""
-    y = np.linalg.solve(l, b)
-    return np.linalg.solve(l.T, y)
+    """Solve L L^T x = b given lower-triangular L with a strictly positive diagonal."""
+    n = l.shape[0]
+    x = b.copy()
+    for i in range(n):
+        s = x[i]
+        for p in range(i):
+            s -= l[i, p] * x[p]
+        x[i] = s / l[i, i]
+    for i in range(n - 1, -1, -1):
+        s = x[i]
+        for p in range(i + 1, n):
+            s -= l[p, i] * x[p]
+        x[i] = s / l[i, i]
+    return x
 
 
 @njit
@@ -80,13 +122,10 @@ def marginalized_loglike_mbl1d(
     -------
     float
         The marginalized log-likelihood value. If drop_constant is True, this
-        omits θ-independent normalization terms.
-
-    Raises
-    ------
-    numpy.linalg.LinAlgError
-        If Lambda or the internal matrix K is not positive definite (Cholesky
-        decomposition fails). No other validation is performed.
+        omits θ-independent normalization terms. Returns -inf if the internal
+        matrix K is not positive definite or contains non-finite values (which
+        happens, for example, with a non-finite model or zero uncertainties).
+        The function does not raise, see the note on the linear algebra helpers.
 
     Notes
     -----
@@ -131,7 +170,9 @@ def marginalized_loglike_mbl1d(
     wphi = w[:, None] * phi
     k = np.eye(ncov) + tau2 * (phi.T @ wphi)
     c = phi.T @ (w * obs)
-    lk = np.linalg.cholesky(k)
+    lk, ok = _cholesky(k)
+    if not ok:
+        return -np.inf
     obswobs = np.dot(w * obs, obs)
     kinvc = _chol_solve(lk, c)
     quad = obswobs - tau2 * np.dot(c, kinvc)
@@ -162,7 +203,9 @@ def marginalized_loglike_mbl2d(
         wphi = w[i, m, None] * phi
         k = np.eye(ncov) + tau2 * (phi.T @ wphi)
         c = phi.T @ (w[i, m] * obs[i, m])
-        lk = np.linalg.cholesky(k)
+        lk, ok = _cholesky(k)
+        if not ok:
+            return -np.inf
         obswobs = np.dot(w[i, m] * obs[i, m], obs[i, m])
         kinvc = _chol_solve(lk, c)
         quad = obswobs - tau2 * np.dot(c, kinvc)

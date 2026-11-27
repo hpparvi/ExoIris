@@ -333,7 +333,8 @@ class ExoIris:
                        teff: UFloat | tuple[float, float],
                        logg: UFloat | tuple[float, float],
                        metal: UFloat | tuple[float, float],
-                       dataset: str = 'visir-lowres', width: float = 50.0, uncertainty_multiplier: float = 10.0):
+                       dataset: str = 'visir-lowres', width: float = 50.0, uncertainty_multiplier: float = 10.0,
+                       nsamples: int = 1000, likelihood: str = 'diagonal'):
         """Set priors on the limb darkening parameters using LDTk.
 
         Sets priors on the limb darkening parameters based on theoretical stellar models using LDTk.
@@ -352,12 +353,19 @@ class ExoIris:
             The passband width in nanometers. Default is 50.
         uncertainty_multiplier
             The uncertainty multiplier to adjust the width of the prior. Default is 10.
+        nsamples
+            The number of stellar parameter samples LDTk draws to create the limb darkening
+            profiles. Default is 1000.
+        likelihood
+            The LDTk likelihood used to fit the limb darkening coefficients, either 'diagonal'
+            or 'reduced-rank'. Default is 'diagonal', since the coefficients fitted with
+            'reduced-rank' can vary strongly between calls.
 
         """
         teff = (teff.n, teff.s) if isinstance(teff, UFloat) else teff
         logg = (logg.n, logg.s) if isinstance(logg, UFloat) else logg
         metal = (metal.n, metal.s) if isinstance(metal, UFloat) else metal
-        self._tsa.set_ldtk_prior(teff, logg, metal, dataset, width, uncertainty_multiplier)
+        self._tsa.set_ldtk_prior(teff, logg, metal, dataset, width, uncertainty_multiplier, nsamples, likelihood)
 
     def set_gp_hyperparameters(self, sigma: float, rho: float, idata: None | int = None) -> None:
         """Set Gaussian Process (GP) hyperparameters assuming a Matern-3/2 kernel.
