@@ -17,6 +17,7 @@
 import codecs
 import json
 import pickle
+import warnings
 from collections.abc import Sequence
 from multiprocessing import Pool
 from pathlib import Path
@@ -110,6 +111,12 @@ def load_model(fname: Path | str, name: str | None = None):
         a.set_limb_darkening_interpolator(ip_ld)
         a.set_radius_ratio_knots(hdul['K_KNOTS'].data.astype('d'))
         a.set_limb_darkening_knots(hdul['LD_KNOTS'].data.astype('d'))
+
+        # Read the GP hyperparameters if they exist.
+        # ==========================================
+        for i in range(data.size):
+            if f'GPSIG{i:03d}' in hdr:
+                a.set_gp_hyperparameters(hdr[f'GPSIG{i:03d}'], hdr[f'GPRHO{i:03d}'], i)
 
         # Read the white light curve models if they exist.
         # ================================================
@@ -1335,6 +1342,18 @@ class ExoIris:
             pri.header['n_free_k'] = len(self._tsa.free_k_knot_ids)
             for i, ix in enumerate(self._tsa.free_k_knot_ids):
                 pri.header[f'kk_ix_{i:03d}'] = ix
+
+        # GP hyperparameters
+        # ==================
+        # The hyperparameters of the free_gp noise model are model parameters and are not stored here.
+        if self._tsa.noise_model == 'fixed_gp':
+            for i, gp in enumerate(self._tsa._gp):
+                if isinstance(gp.kernel, terms.Matern32Term):
+                    pri.header[f'gpsig{i:03d}'] = float(gp.kernel.sigma)
+                    pri.header[f'gprho{i:03d}'] = float(gp.kernel.rho)
+                else:
+                    warnings.warn(f"The GP kernel of data set {i} is not a Matern-3/2 kernel and is not saved. "
+                                  f"Set the kernel again after loading the model.")
 
         # Priors
         # ======

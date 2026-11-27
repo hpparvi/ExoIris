@@ -106,6 +106,9 @@ class LogLikelihood:
                 self.spmean = spmean
                 self.spcov = spcov
             evals, evecs = eigh(self.spcov)
+            # eigh sorts the eigenvalues in ascending order, the SVD in descending order.
+            # The largest eigenvalues must come first for the truncation to `nk` below.
+            evals, evecs = evals[::-1], evecs[:, ::-1]
 
         keep = evals > eps * evals.max()
         self.eigenvalues, self.eigenvectors = evals[keep][:nk], evecs[:, keep][:, :nk]

@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The save files now store the wavelength and time bin edges of the data sets and the hyperparameters of the
+  `fixed_gp` noise model. Files saved with earlier versions can still be read.
+
 ### Changed
+- Changing the radius ratio knots now removes the free radius ratio knot locations with a warning, because the
+  locations refer to the knots by index.
 - `ExoIris.save` now follows its `overwrite` argument and raises an `OSError` if the file exists and `overwrite` is
   False, which is the default. The method always overwrote an existing file before.
 
@@ -20,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sampling continued from a loaded model did not start from the last step of the saved chains.
 - Fixed `ExoIris.save` dropping the optimizer population and the MCMC chains from a model read with `load_model`, and
   after the radius ratio or limb darkening knots were changed.
+- Fixed the GP noise models using outdated data. The GPs kept the fluxes, uncertainties, and masks from the time the
+  noise model was set, so the baseline normalization was not seen and masking outliers raised an error.
+- Fixed `ExoIris.create_initial_population` with the `mcmc` source, which drew the population from the whole chain
+  instead of taking the last step.
+- Fixed `LogLikelihood` with the `eigh` method keeping the smallest eigenvalues instead of the largest when the
+  number of eigenvalues was limited.
+- Fixed the spot and TLSE models reading arbitrary memory for temperatures outside the stellar spectrum grid. A
+  temperature outside the grid now gives a NaN model that the likelihood rejects, and `ExoIris.initialize_spots`
+  raises a `ValueError` for a photosphere temperature outside the grid.
+- Fixed the free radius ratio knot locations being lost when the knots were changed. The model kept reading the
+  locations from unrelated parameters. Changing the limb darkening knots now keeps the free knot locations.
+- Fixed the knot order prior being added again each time the free radius ratio knot locations were set.
 
 ## [1.2.0] - 2026-11-27
 

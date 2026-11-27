@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Sequence
 
 import astropy.io.fits as pf
-from numpy import asarray, average, ndarray, interp, isfinite, linspace, tile, all as np_all
+from numpy import array, asarray, average, ndarray, interp, isfinite, linspace, tile, all as np_all
 
 from .ephemeris import Ephemeris
 from .tsdata import TSData, TSDataGroup
@@ -308,6 +308,8 @@ class BBData(TSData):
         covs = pf.ImageHDU(self.covs, name=f'covs_{self.name}')
         ootm = pf.ImageHDU(self.transit_mask.astype(int), name=f'ootm_{self.name}')
         mask = pf.ImageHDU(self._bb_mask.astype(int), name=f'mask_{self.name}')
+        # The wavelength edges follow from the filter profile, so only the time edges are stored.
+        tmed = pf.ImageHDU(array([self._tm_l_edges, self._tm_r_edges]), name=f'tmed_{self.name}')
 
         flux.header['BBDATA'] = True
         flux.header['NWL'] = self._n_wl
@@ -316,7 +318,7 @@ class BBData(TSData):
         flux.header['EPGROUP'] = self.epoch_group
         flux.header['OFFGROUP'] = self.offset_group
 
-        return pf.HDUList([time, flux, errs, fwav, ftrn, covs, ootm, mask])
+        return pf.HDUList([time, flux, errs, fwav, ftrn, covs, ootm, mask, tmed])
 
     @staticmethod
     def import_fits(name: str, hdul: pf.HDUList) -> 'BBData':
@@ -353,12 +355,16 @@ class BBData(TSData):
         offset_group = header.get('OFFGROUP', 0)
         n_baseline = header.get('NBASEL', 1)
 
-        return BBData(
+        bb = BBData(
             time=time, wavelength=fwav, transmission=ftrn, n_wl=n_wl,
             flux=flux, errors=errors, name=name, noise_group=noise_group,
             transit_mask=ootm, n_baseline=n_baseline, mask=mask,
             epoch_group=epoch_group, offset_group=offset_group, covs=covs,
         )
+        # The time edges are missing from the files saved before they were stored.
+        if f'TMED_{name}' in hdul:
+            bb._tm_l_edges, bb._tm_r_edges = hdul[f'TMED_{name}'].data.astype('d')
+        return bb
 
     def save(self, fname: Path, overwrite: bool = True):
         """Save the broadband data to a FITS file.

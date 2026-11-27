@@ -207,12 +207,14 @@ class TSData:
         covs = pf.ImageHDU(self.covs, name=f'covs_{self.name}')
         ootm = pf.ImageHDU(self.transit_mask.astype(int), name=f'ootm_{self.name}')
         mask = pf.ImageHDU(self.mask.astype(int), name=f'mask_{self.name}')
+        wled = pf.ImageHDU(array([self._wl_l_edges, self._wl_r_edges]), name=f'wled_{self.name}')
+        tmed = pf.ImageHDU(array([self._tm_l_edges, self._tm_r_edges]), name=f'tmed_{self.name}')
         data.header['ngroup'] = self.noise_group
         data.header['nbasel'] = self.n_baseline
         data.header['epgroup'] = self.epoch_group
         data.header['offgroup'] = self.offset_group
         #TODO: export ephemeris
-        return pf.HDUList([time, wave, data, covs, ootm, mask])
+        return pf.HDUList([time, wave, data, covs, ootm, mask, wled, tmed])
 
     @staticmethod
     def import_fits(name: str, hdul: pf.HDUList) -> 'TSData':
@@ -240,6 +242,18 @@ class TSData:
         except KeyError:
             covs = None
 
+        # The bin edges are missing from the files saved before they were stored. The edges are
+        # then estimated from the bin centres.
+        try:
+            wl_edges = tuple(hdul[f'WLED_{name}'].data.astype('d'))
+        except KeyError:
+            wl_edges = None
+
+        try:
+            tm_edges = tuple(hdul[f'TMED_{name}'].data.astype('d'))
+        except KeyError:
+            tm_edges = None
+
         try:
             noise_group = hdul[f'DATA_{name}'].header['NGROUP']
         except KeyError:
@@ -263,7 +277,7 @@ class TSData:
         #TODO: import ephemeris
         return TSData(time, wave, data[0], data[1], name=name, noise_group=noise_group, transit_mask=ootm,
                       n_baseline=n_baseline, mask=mask, epoch_group=ephemeris_group, offset_group=offset_group,
-                      covs=covs)
+                      covs=covs, wl_edges=wl_edges, tm_edges=tm_edges)
 
     def save(self, fname: Path, overwrite: bool = True):
         """Save the data set to a FITS file.

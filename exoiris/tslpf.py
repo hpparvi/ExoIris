@@ -15,6 +15,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from copy import deepcopy
+import warnings
 from typing import Optional, Literal
 
 from celerite2 import GaussianProcess as GP, terms
@@ -46,6 +47,7 @@ from numpy import (
     diff,
     ascontiguousarray,
     nan,
+    array_equal,
 )
 from numpy.linalg import lstsq, LinAlgError
 from numpy.random import default_rng
@@ -385,18 +387,42 @@ class TSLPF(LogPosteriorFunction):
         self._gp_ferr = []
         self._gp = []
         for d in self.data:
-            if isinstance(d, BBData):
-                # The rows of a broadband data set are copies of a single light curve,
-                # so the GP is conditioned on the 1D light curve rather than on the rows.
-                self._gp_time.append(d.time[d._bb_mask])
-                self._gp_flux.append(d._bb_flux[d._bb_mask])
-                self._gp_ferr.append(d._bb_errors[d._bb_mask])
-            else:
-                self._gp_time.append((tile(d.time[newaxis, :], (d.nwl, 1)) + arange(d.nwl)[:, newaxis])[d.mask])
-                self._gp_flux.append(d.fluxes[d.mask])
-                self._gp_ferr.append(d.errors[d.mask])
-            self._gp.append(GP(terms.Matern32Term(sigma=self._gp_flux[-1].std(), rho=0.1)))
-            self._gp[-1].compute(self._gp_time[-1], yerr=self._gp_ferr[-1], quiet=True)
+            time, flux, ferr = self._gp_data(d)
+            self._gp_time.append(time)
+            self._gp_flux.append(flux)
+            self._gp_ferr.append(ferr)
+            self._gp.append(GP(terms.Matern32Term(sigma=flux.std(), rho=0.1)))
+            self._gp[-1].compute(time, yerr=ferr, quiet=True)
+
+    @staticmethod
+    def _gp_data(d) -> tuple[ndarray, ndarray, ndarray]:
+        """The unmasked times, fluxes, and uncertainties of a data set as the 1D arrays used by its GP."""
+        if isinstance(d, BBData):
+            # The rows of a broadband data set are copies of a single light curve,
+            # so the GP is conditioned on the 1D light curve rather than on the rows.
+            return d.time[d._bb_mask], d._bb_flux[d._bb_mask], d._bb_errors[d._bb_mask]
+        time = (tile(d.time[newaxis, :], (d.nwl, 1)) + arange(d.nwl)[:, newaxis])[d.mask]
+        return time, d.fluxes[d.mask], d.errors[d.mask]
+
+    def _update_gp_data(self) -> None:
+        """Bring the GP arrays up to date with the data.
+
+        The GPs work on copies of the data, and the data can change after the GPs have been
+        initialized: the baseline normalization and outlier masking modify the data sets in place,
+        and `set_data` replaces them. The fluxes are always refreshed, and a GP is recomputed only
+        if the times or uncertainties of its data set have changed. The kernels are kept unless
+        the number of data sets has changed.
+        """
+        if len(self._gp) != self.data.size:
+            self._init_gp()
+            return
+        for i, d in enumerate(self.data):
+            time, flux, ferr = self._gp_data(d)
+            self._gp_flux[i] = flux
+            if not (array_equal(time, self._gp_time[i]) and array_equal(ferr, self._gp_ferr[i])):
+                self._gp_time[i] = time
+                self._gp_ferr[i] = ferr
+                self._gp[i].compute(time, yerr=ferr, quiet=True)
 
     def set_gp_hyperparameters(self, sigma: float, rho: float, idata: int | None = None) -> None:
         """Sets the Gaussian Process hyperparameters assuming a Matern32 kernel.
@@ -568,6 +594,13 @@ class TSLPF(LogPosteriorFunction):
         xn = self.k_knots = clean_knots(sort(knot_wavelengths), 1e-5)
         self.nk = self.k_knots.size
 
+        # The free knot locations refer to the knots by index, and the indices are not valid
+        # for the new knots.
+        if self.free_k_knot_ids is not None:
+            warnings.warn("Changing the radius ratio knots removes the free knot locations. "
+                          "Free the knot locations again for the new knots.")
+            self._clear_free_k_knots()
+
         self._init_parameters()
         psn = self.ps
         sln = self._sl_rratios
@@ -666,11 +699,7 @@ class TSLPF(LogPosteriorFunction):
         self._start_kloc = self.ps.blocks[-1].start
         self._sl_kloc = self.ps.blocks[-1].slice
 
-        try:
-            pid = [p.__name__ for p in self._additional_log_priors].index('k_knot_order_priors')
-            del self._additional_log_priors[pid]
-        except ValueError:
-            pass
+        self._remove_k_knot_order_prior()
 
         # Add a prior on the order of the knots
         def k_knot_order_prior(pv):
@@ -684,6 +713,15 @@ class TSLPF(LogPosteriorFunction):
                 logp[i] = 1e2*(clip(current_separations / original_separations / 0.25, -inf, 1.0) - 1.).sum()
             return logp
         self._additional_log_priors.append(k_knot_order_prior)
+
+    def _remove_k_knot_order_prior(self) -> None:
+        self._additional_log_priors[:] = [p for p in self._additional_log_priors
+                                          if getattr(p, '__name__', '') != 'k_knot_order_prior']
+
+    def _clear_free_k_knots(self) -> None:
+        """Forget the free radius ratio knot locations and remove the prior on their order."""
+        self.free_k_knot_ids = None
+        self._remove_k_knot_order_prior()
 
     def set_ld_interpolator(self, interpolator: str) -> None:
         """Set the interpolator for the limb darkening model."""
@@ -724,6 +762,12 @@ class TSLPF(LogPosteriorFunction):
         self.nldc = self.ld_knots.size
 
         self._init_parameters()
+
+        # The parameter set was rebuilt without the free knot locations. The radius ratio knots
+        # have not changed, so the locations are added back. Their priors and values are copied
+        # from the old parameter set below.
+        if self.free_k_knot_ids is not None:
+            self.set_free_k_knots(self.free_k_knot_ids)
         psn = self.ps
         sln = self._sl_ld
         ndn = self.ndim
@@ -1008,6 +1052,7 @@ class TSLPF(LogPosteriorFunction):
                 else:
                     lnl += lnlike_normal(d.fluxes, fmod[i], d.errors, wn_multipliers[:, d.noise_group], d.mask)
         else:
+            self._update_gp_data()
             fmod = self.flux_model(pv)
             for j in range(npv):
                 if self._nm == NM_GP_FREE:
@@ -1081,7 +1126,7 @@ class TSLPF(LogPosteriorFunction):
                 pvp = rng.choice(pvs, size=n)
         else:
             pvs = self._mc_chains
-            if n == pvs.shape[2]:
+            if n == pvs.shape[0]:
                 pvp = pvs[:,-1,:].copy()
             else:
                 pvp = rng.choice(pvs.reshape([-1, self.ndim]), size=n)

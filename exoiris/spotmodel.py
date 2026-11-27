@@ -57,11 +57,18 @@ def spot_model(x, center, amplitude, fwhm, shape):
 
 @njit
 def interpolate_spectrum(teff, values, tgrid):
+    """Interpolate a spectrum linearly in temperature on a uniform temperature grid.
+
+    Returns NaNs for a temperature outside the grid. Numba does not check the array bounds, so
+    an index outside the grid would read arbitrary memory instead of raising.
+    """
+    if not (teff >= tgrid[0] and teff <= tgrid[-1]):
+        return values[0] * nan
     t0 = tgrid[0]
     dt = tgrid[1] - tgrid[0]
     k = (teff - t0) / dt
-    i = int(floor(k))
-    a = k - floor(k)
+    i = min(int(floor(k)), tgrid.size - 2)
+    a = k - i
     return (1.0-a)*values[i] + a*values[i+1]
 
 
@@ -106,6 +113,10 @@ class SpotModel:
         new_teff_grid = linspace(*ms.grid[0][[0, -1]], 117)
         new_spectrum = array([ms((t, ms.grid[1])) for t in new_teff_grid])
         self.full_spectrum = ms = RegularGridInterpolator((new_teff_grid, ms.grid[1]), new_spectrum, bounds_error=False, fill_value=nan)
+
+        if not (new_teff_grid[0] <= tphot <= new_teff_grid[-1]):
+            raise ValueError(f"The photosphere temperature ({tphot} K) is outside the temperature range of the "
+                             f"stellar spectrum grid ({new_teff_grid[0]:.0f} - {new_teff_grid[-1]:.0f} K).")
 
         wave = ms.grid[1] / 1e3
         m = (wave > wlref - 0.025) & (wave < wlref + 0.025)
