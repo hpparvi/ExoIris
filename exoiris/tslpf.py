@@ -368,7 +368,9 @@ class TSLPF(LogPosteriorFunction):
         self._nm = noise_models[noise_model]
         if self._nm in (NM_GP_FIXED, NM_GP_FREE):
             self._init_gp()
-        if self._nm == NM_GP_FREE:
+        # The parameter set does not exist yet when this is called from the constructor.
+        # In that case, the GP hyperparameters are added by _init_parameters.
+        if self._nm == NM_GP_FREE and getattr(self, 'ps', None) is not None:
             self.ps.thaw()
             self._init_p_gp()
             self.ps.freeze()
@@ -480,9 +482,11 @@ class TSLPF(LogPosteriorFunction):
 
     def _init_p_gp(self):
         ps = self.ps
-        if not hasattr(self, '_sl_gp'):
-            pp = [GParameter('gp_log_sigma', 'GP log sigma', '', NP(0.0, 0.01), (-inf, inf)),
-                  GParameter('gp_log_rho', 'GP log rho', '', NP(0.0, 0.01), (-inf, inf))]
+        # Check the parameter set rather than the instance: the parameter set is rebuilt
+        # when the knots change, and the GP hyperparameters must be added to the new one.
+        if not any(b.name == 'gp_hyperparameters' for b in ps.blocks):
+            pp = [GParameter('gp_log_sigma', 'GP log10 sigma', '', NP(0.0, 0.01), (-inf, inf)),
+                  GParameter('gp_log_rho', 'GP log10 rho', '', NP(0.0, 0.01), (-inf, inf))]
             ps.add_global_block('gp_hyperparameters', pp)
             self._start_gp = ps.blocks[-1].start
             self._sl_gp = ps.blocks[-1].slice
@@ -999,7 +1003,7 @@ class TSLPF(LogPosteriorFunction):
             fmod = self.flux_model(pv)
             for j in range(npv):
                 if self._nm == NM_GP_FREE:
-                    self.set_gp_hyperparameters(*pv[j, self._sl_gp])
+                    self.set_gp_hyperparameters(*10**pv[j, self._sl_gp])
                 for i in range(self.data.size):
                     lnl[j] += self._gp[i].log_likelihood(self._gp_flux[i] - fmod[i][j][self.data[i].mask])
         return lnl if npv > 1 else lnl[0]

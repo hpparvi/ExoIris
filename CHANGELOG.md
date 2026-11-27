@@ -40,6 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed a `ZeroDivisionError` in `ExoIris.fit_white` and `TSData.create_white_light_curve` for data with fully masked
   exposures. `TSData.create_white_light_curve` now returns a NaN for a fully masked exposure.
 - Fixed the white light curve uncertainties of `BBData`, which were too small by a factor of sqrt(`n_wl`).
+- Fixed a crash when creating an `ExoIris` object with the `free_gp` noise model.
+- Fixed the `free_gp` noise model losing its hyperparameters when the radius ratio or limb darkening knots were
+  changed.
+- Fixed the `free_gp` likelihood, which used the `gp_log_sigma` and `gp_log_rho` parameters as the kernel amplitude
+  and length scale without exponentiating them. The parameters are base-10 logarithms.
+- Fixed a `ZeroDivisionError` in the spot model for a zero spot width or shape. A zero-width spot now has no effect,
+  and a negative width or a non-positive shape gives a NaN model that the likelihood rejects.
 - Updated the transit model to work with the current PyTransit RoadRunner model.
 - Fixed the bounds of the species abundance parameters and the units of the Guillot profile parameters in
   `PRTRetrieval`.

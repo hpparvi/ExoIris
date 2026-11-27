@@ -28,6 +28,8 @@ from numpy import (
     unique,
     linspace,
     floor,
+    full,
+    zeros,
 )
 from scipy.interpolate import RegularGridInterpolator
 from numba import njit
@@ -41,6 +43,14 @@ from exoiris.bin1d import bin1d
 
 @njit
 def spot_model(x, center, amplitude, fwhm, shape):
+    """Generalized Gaussian spot crossing profile.
+
+    Returns NaNs for a negative width or a non-positive shape, and zeros for a zero width.
+    """
+    if not (fwhm >= 0.0 and shape > 0.0):
+        return full(x.shape, nan)
+    if fwhm == 0.0:
+        return zeros(x.shape)
     c = log(4)**(1/shape) * fwhm
     return amplitude*exp(-(2*fabs(x-center) / c)**shape)
 

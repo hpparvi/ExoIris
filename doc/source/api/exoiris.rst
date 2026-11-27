@@ -65,7 +65,6 @@ transmission spectrum, and even the observational data can be changed to improve
     ExoIris.set_radius_ratio_knots
     ExoIris.add_radius_ratio_knots
     ExoIris.set_limb_darkening_knots
-    ExoIris.add_limb_darkening_knots
     ExoIris.free_radius_ratio_knot_locations
     ExoIris.create_dense_radius_ratio_block
     ExoIris.plot_setup
