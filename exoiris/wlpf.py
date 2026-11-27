@@ -34,11 +34,13 @@ from numpy import (
     array,
     errstate,
     unique,
+    arctan2,
 )
 from scipy.optimize import minimize
 
 from pytransit import BaseLPF, LinearModelBaseline
-from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_pkaiews, epoch
+from pytransit.orbits import as_from_rhop, d_from_pkaiews, epoch
+from meepmeep.backends.numba.utils import i_from_baew
 from pytransit.param import GParameter, NormalPrior as NP, UniformPrior as UP
 from pytransit.lpf.lpf import map_ldc
 
@@ -83,6 +85,8 @@ class WhiteLPF(BaseLPF):
         self.set_prior('p', tsa.ps[tsa.ps.find_pid('p')].prior)
         self.set_prior('rho', tsa.ps[tsa.ps.find_pid('rho')].prior)
         self.set_prior('b', tsa.ps[tsa.ps.find_pid('b')].prior)
+        self.set_prior('secw', tsa.ps[tsa.ps.find_pid('secw')].prior)
+        self.set_prior('sesw', tsa.ps[tsa.ps.find_pid('sesw')].prior)
         pr = tsa.ps[tsa._sl_rratios][0].prior
         if 'Uniform' in str(pr.__class__):
             self.set_prior('k2', 'UP', pr.a**2, pr.b**2)
@@ -112,15 +116,29 @@ class WhiteLPF(BaseLPF):
         self._start_tc = self.ps.blocks[-1].start
         self._sl_tc = self.ps.blocks[-1].slice
 
+        # The eccentricity parameters come after the transit centres to keep the period, stellar
+        # density, and impact parameter as the first three parameters.
+        pecc = [GParameter('secw', 'sqrt(e) cos(w)', '', NP(0.0, 1e-5), (-1, 1)),
+                GParameter('sesw', 'sqrt(e) sin(w)', '', NP(0.0, 1e-5), (-1, 1))]
+        self.ps.add_global_block('eccentricity', pecc)
+        self._start_ecc = self.ps.blocks[-1].start
+
+    def _orbit(self, pv):
+        """Period, scaled semi-major axis, inclination, eccentricity, and argument of periastron."""
+        period = pv[:, 0]
+        smaxis = as_from_rhop(pv[:, 1], period)
+        secw, sesw = pv[:, self._start_ecc], pv[:, self._start_ecc + 1]
+        ecc = secw**2 + sesw**2
+        w = arctan2(sesw, secw)
+        return period, smaxis, i_from_baew(pv[:, 2], smaxis, ecc, w), ecc, w
+
     def transit_model(self, pv, copy=True):
         pv = atleast_2d(pv)
         ldc = map_ldc(pv[:, self._sl_ld])
         zero_epoch = pv[:, self._sl_tc] - self._tref
-        period = pv[:, 0]
-        smaxis = as_from_rhop(pv[:, 1], period)
-        inclination = i_from_ba(pv[:, 2], smaxis)
+        period, smaxis, inc, ecc, w = self._orbit(pv)
         radius_ratio = sqrt(pv[:, self._sl_k2])
-        return self.tm.evaluate(radius_ratio, ldc, zero_epoch, period, smaxis, inclination)
+        return self.tm.evaluate(radius_ratio, ldc, zero_epoch, period, smaxis, inc, ecc, w)
 
     def optimize(self, pv0=None, method='powell', maxfev: int = 5000):
         if pv0 is None:
@@ -134,22 +152,21 @@ class WhiteLPF(BaseLPF):
     @property
     def transit_center(self):
         pv = self._local_minimization.x
-        return pv[3] + pv[0]*epoch(self.times[0].mean(), pv[3], pv[0])
+        tc = pv[self._start_tc]
+        return tc + pv[0]*epoch(self.times[0].mean(), tc, pv[0])
 
     @property
     def transit_duration(self):
         pv = self._local_minimization.x
-        a = as_from_rhop(pv[1], pv[0])
-        i = i_from_ba(pv[2], a)
-        t14 = d_from_pkaiews(pv[0], sqrt(pv[self._start_k2]), a, i, 0., 0., 1, 14)
-        return t14
+        p, a, i, e, w = [v[0] for v in self._orbit(atleast_2d(pv))]
+        return d_from_pkaiews(p, sqrt(pv[self._start_k2]), a, i, e, w, 1, 14)
 
     def plot(self, axs=None, figsize=None, ncols=2) -> Figure:
         if axs is None:
             nrows = int(ceil(self.nlc / ncols))
             fig, axs = subplots(nrows, ncols, figsize=figsize, sharey='all', squeeze=False, constrained_layout=True)
         else:
-            fig = axs[0].get_figure()
+            fig = axs.flat[0].get_figure()
 
         tref = floor(self.timea.min())
         fm = self.flux_model(self._local_minimization.x)

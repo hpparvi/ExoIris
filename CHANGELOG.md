@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - The save files now store the wavelength and time bin edges of the data sets and the hyperparameters of the
   `fixed_gp` noise model. Files saved with earlier versions can still be read.
+- The save files now store GP kernels set with `ExoIris.set_gp_kernel`. Only the Matern-3/2 hyperparameters were
+  stored before.
+- Added an `idata` argument to `ExoIris.set_gp_kernel` for setting the kernel of a single data set.
+- `ExoIris.set_ldtk_prior` now supports the `power-2-pm` limb darkening model.
+- Added the `secw` and `sesw` eccentricity parameters to the white light curve model. They take their priors from
+  the main model.
 
 ### Changed
 - Changing the radius ratio knots now removes the free radius ratio knot locations with a warning, because the
@@ -24,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is not how the flux blocked by the planet changes. The spot temperatures from earlier fits are not valid for the
   new model, and the fits with spots need to be rerun. A spot with the temperature of the photosphere gives a NaN
   model that the likelihood rejects.
+- The default prior on the spot temperature now ends at the photosphere temperature instead of 6000 K, and starts
+  at 3000 K or 1000 K below the photosphere temperature, whichever is lower. The spot amplitude is positive, which
+  describes a spot cooler than the photosphere.
 - `TSLPF.set_data` now raises a `ValueError` if the new data has a different number of data sets than the old data.
 
 ### Deprecated
@@ -75,6 +84,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed adding to a `CompoundBinning` modifying the original object, and `Binning + CompoundBinning` putting the
   bins in the wrong order.
 - Fixed `util.create_binning` creating one bin too few for each range.
+- Fixed the white light curve fit assuming a circular orbit. With an eccentric orbit and an informative prior on the
+  stellar density, the fit gave a wrong transit duration, out-of-transit mask, and starting point for the
+  optimization.
+- Fixed `ExoIris.plot_white` and `ExoIris.plot_white_gp_predictions` failing when given an array of axes.
+- Fixed the spot parameter descriptions, which showed the format code instead of the spot number.
+- Fixed the invalid escape sequence warnings given when importing `exoiris`.
 - Fixed the spot centre parameters rejecting zero and negative times whatever their prior, which made it impossible
   to fit a spot before the transit centre for data with times relative to the transit centre.
 - Fixed the white light curve fit using a too narrow prior on the squared radius ratio when the radius ratios have a

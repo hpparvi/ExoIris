@@ -183,11 +183,14 @@ class SpotModel:
         self.spot_data_ids.append([i for i, d in enumerate(self.tsa.data) if d.epoch_group == epoch_group])
 
         i = self.nspots
-        pspot = [GParameter(f"spc_{i:02d}", 'spot {i:02d} center', "d", U(0, 1), (-inf, inf)),
-                 GParameter(f"spa_{i:02d}", 'spot {i:02d} amplitude', "", U(0, 1), (0, inf)),
-                 GParameter(f"spw_{i:02d}", 'spot {i:02d} FWHM', "d", U(0, 1), (0, inf)),
-                 GParameter(f"sps_{i:02d}", 'spot {i:02d} shape', "d", U(1, 5), (0, inf)),
-                 GParameter(f"spt_{i:02d}", 'spot {i:02d} temperature', "K", U(3000, 6000), (0, inf))]
+        # The amplitude of a spot is positive, which describes a spot cooler than the photosphere.
+        # The temperature prior ends at the photosphere temperature and starts 1000 K or more below it.
+        tmin = max(self.full_spectrum.grid[0][0], min(3000.0, self.tphot - 1000.0))
+        pspot = [GParameter(f"spc_{i:02d}", f'spot {i:02d} center', "d", U(0, 1), (-inf, inf)),
+                 GParameter(f"spa_{i:02d}", f'spot {i:02d} amplitude', "", U(0, 1), (0, inf)),
+                 GParameter(f"spw_{i:02d}", f'spot {i:02d} FWHM', "d", U(0, 1), (0, inf)),
+                 GParameter(f"sps_{i:02d}", f'spot {i:02d} shape', "", U(1, 5), (0, inf)),
+                 GParameter(f"spt_{i:02d}", f'spot {i:02d} temperature', "K", U(tmin, self.tphot), (0, inf))]
         ps = self.tsa.ps
         ps.thaw()
         ps.add_global_block(f'spot_{i:02d}', pspot)

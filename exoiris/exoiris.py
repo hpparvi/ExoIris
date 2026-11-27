@@ -33,7 +33,7 @@ from emcee import EnsembleSampler
 from matplotlib.pyplot import subplots, setp, figure, Figure, Axes
 from numpy import (any, where, sqrt, clip, percentile, median, squeeze, floor, ndarray, isfinite,
                    array, inf, arange, argsort, concatenate, full, nan, r_, nanpercentile, log10,
-                   ceil, unique, zeros, cov)
+                   ceil, unique, zeros, cov, asarray)
 from numpy.typing import ArrayLike
 from numpy.random import normal
 from pytransit import UniformPrior, NormalPrior
@@ -118,6 +118,8 @@ def load_model(fname: Path | str, name: str | None = None):
         for i in range(data.size):
             if f'GPSIG{i:03d}' in hdr:
                 a.set_gp_hyperparameters(hdr[f'GPSIG{i:03d}'], hdr[f'GPRHO{i:03d}'], i)
+            elif f'GPKER{i:03d}' in hdr:
+                a.set_gp_kernel(pickle.loads(codecs.decode(json.loads(hdr[f'GPKER{i:03d}']).encode(), "base64")), i)
 
         # Read the white light curve models if they exist.
         # ================================================
@@ -394,15 +396,17 @@ class ExoIris:
         """
         self._tsa.set_gp_hyperparameters(sigma, rho, idata)
 
-    def set_gp_kernel(self, kernel: terms.Term) -> None:
+    def set_gp_kernel(self, kernel: terms.Term, idata: None | int = None) -> None:
         """Set the Gaussian Process (GP) kernel.
 
         Parameters
         ----------
         kernel
             The kernel to set for the GP.
+        idata
+            The index of the data set to set the kernel for. If None, the kernel is set for all data sets.
         """
-        self._tsa.set_gp_kernel(kernel)
+        self._tsa.set_gp_kernel(kernel, idata)
 
     def initialize_spots(self, tstar: float, wlref: float, include_tlse: bool = True):
         """Initialize star spot model using given stellar and wavelength reference values.
@@ -724,7 +728,7 @@ class ExoIris:
             nrow = int(ceil(ndata / ncol))
             fig, axs = subplots(nrow, ncol, sharey='all', constrained_layout=True, squeeze=False, figsize=figsize)
         else:
-            fig = axs[0].axes
+            axs = asarray(axs)
 
         for i in range(ndata):
             tref = floor(self.white_times[i][0])
@@ -827,6 +831,14 @@ class ExoIris:
                     pida = self.ps.find_pid(f'tc_{i:02d}')
                     pidb = self._wa.ps.find_pid(f'tc_{i:02d}')
                     x0[:, pida] = normal(pv0[pidb], 0.001, size=npop)
+
+                # The stellar density from the white light curve fit belongs to the eccentricity of the
+                # same fit. Centre the eccentricity parameters on it, keeping a hundredth of the scatter
+                # of the prior samples.
+                for name in ('secw', 'sesw'):
+                    pida = self.ps.find_pid(name)
+                    x0[:, pida] = clip(pv0[self._wa.ps.find_pid(name)] + 0.01*(x0[:, pida] - x0[:, pida].mean()),
+                                       -0.99, 0.99)
 
                 sl = self._tsa._sl_rratios
                 x0[:, sl] = normal(sqrt(pv0[self._wa.ps.find_pid('k2')]), 0.001, size=(npop, self.nk))
@@ -1356,8 +1368,7 @@ class ExoIris:
                     pri.header[f'gpsig{i:03d}'] = float(gp.kernel.sigma)
                     pri.header[f'gprho{i:03d}'] = float(gp.kernel.rho)
                 else:
-                    warnings.warn(f"The GP kernel of data set {i} is not a Matern-3/2 kernel and is not saved. "
-                                  f"Set the kernel again after loading the model.")
+                    pri.header[f'gpker{i:03d}'] = json.dumps(codecs.encode(pickle.dumps(gp.kernel), "base64").decode())
 
         # Priors
         # ======

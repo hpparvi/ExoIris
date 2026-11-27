@@ -14,8 +14,8 @@ ExoIris: Easy Exoplanet Transmission Spectroscopy
 .. image:: https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg
    :target: https://github.com/hpparvi/ExoIris/blob/main/CODE_OF_CONDUCT.md
 
-.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.18598642.svg
-  :target: https://doi.org/10.5281/zenodo.18598642
+.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.18598641.svg
+  :target: https://doi.org/10.5281/zenodo.18598641
 
 .. image:: https://img.shields.io/badge/AJ-10.3847%2F1538--3881%2Fae47ee-blue.svg
    :target: https://iopscience.iop.org/article/10.3847/1538-3881/ae47ee/meta

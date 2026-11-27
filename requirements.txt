@@ -1,4 +1,5 @@
 pytransit >= 2.9.2
+meepmeep >= 1.1.0
 ldtk >= 1.9.3
 numpy
 scipy

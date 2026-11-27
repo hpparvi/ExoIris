@@ -85,16 +85,16 @@ class LDTkLD(PTLDTkLD):
 
         if x == 'z':
             xv = sqrt(1-self.mu**2)
-            xl = 'z [R$_\star$]'
+            xl = r'z [R$_\star$]'
         elif x == 'mu':
             xv = self.mu
-            xl = '$\mu$'
+            xl = r'$\mu$'
         else:
             raise ValueError("x must be either 'mu' or 'z'")
 
         ldi, _ = self(self.mu, array([teff, logg, metal]))
         l = ax.pcolormesh(xv, self.wavelength, ldi[0])
         fig.colorbar(l, label='Surface brightness')
-        setp(ax, xlabel=xl, ylabel='Wavelength  [$\mu$m]' )
+        setp(ax, xlabel=xl, ylabel=r'Wavelength  [$\mu$m]' )
         fig.tight_layout()
         return fig

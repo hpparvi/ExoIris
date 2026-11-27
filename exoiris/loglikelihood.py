@@ -24,7 +24,7 @@ class LogLikelihood:
     def __init__(self, wavelength: ndarray, spectra: None | ndarray = None, spmean: None | ndarray = None,
                  spcov: None | ndarray = None, eps: float = 1e-10, method: Literal['svd', 'randomized_svd', 'eigh'] = 'svd',
                  n_max_samples: int = 10000, nk: int | None = None):
-        """Reduced-rank Normal log-likelihood.
+        r"""Reduced-rank Normal log-likelihood.
 
         This class constructs a statistically robust log-likelihood function for
         comparing a theoretical transmission spectrum to the posterior distribution
@@ -122,7 +122,7 @@ class LogLikelihood:
         self.log_twopi = self.eigenvalues.size * log(2*pi)
 
     def __call__(self, model: ndarray | float) -> ndarray:
-        """Evaluate the log-likelihood of a model spectrum.
+        r"""Evaluate the log-likelihood of a model spectrum.
 
         Parameters
         ----------

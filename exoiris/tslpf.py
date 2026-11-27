@@ -52,7 +52,8 @@ from numpy import (
 from numpy.linalg import lstsq, LinAlgError
 from numpy.random import default_rng
 from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
-from pytransit.orbits import as_from_rhop, i_from_ba
+from pytransit.orbits import as_from_rhop
+from meepmeep.backends.numba.utils import i_from_baew
 from pytransit.param import ParameterSet, UniformPrior as UP, NormalPrior as NP, GParameter
 from scipy.interpolate import (
     pchip_interpolate,
@@ -456,17 +457,19 @@ class TSLPF(LogPosteriorFunction):
             self._gp[i].kernel = terms.Matern32Term(sigma=sigma, rho=rho)
             self._gp[i].compute(self._gp_time[i], yerr=self._gp_ferr[i], quiet=True)
 
-    def set_gp_kernel(self, kernel: terms.Term) -> None:
+    def set_gp_kernel(self, kernel: terms.Term, idata: int | None = None) -> None:
         """Sets the kernel for the Gaussian Process (GP) model and recomputes the GP.
 
         Parameters
         ----------
         kernel : terms.Term
             The kernel to be set for the GP.
+        idata : int, optional
+            The index of the data set to set the kernel for. If None, the kernel is set for all data sets.
         """
-        for i, gp in enumerate(self._gp):
-            gp.kernel = kernel
-            gp.compute(self._gp_time[i], yerr=self._gp_ferr[i], quiet=True)
+        for i in (range(len(self._gp)) if idata is None else [idata]):
+            self._gp[i].kernel = kernel
+            self._gp[i].compute(self._gp_time[i], yerr=self._gp_ferr[i], quiet=True)
 
     def _init_p_star(self) -> None:
         pstar = [GParameter('rho', 'stellar density', 'g/cm^3', UP(0.1, 25.0), (0, inf))]
@@ -550,6 +553,8 @@ class TSLPF(LogPosteriorFunction):
         match self.ldmodel:
             case 'power-2':
                 ldc, lde = ps.coeffs_p2()
+            case 'power-2-pm':
+                ldc, lde = ps.coeffs_p2mp()
             case 'quadratic':
                 ldc, lde = ps.coeffs_qd()
             case 'quadratic-tri':
@@ -932,9 +937,10 @@ class TSLPF(LogPosteriorFunction):
         k = self._eval_k(pv)
         p = pv[:, 1]
         aor = as_from_rhop(pv[:, 0], p)
-        inc = i_from_ba(pv[:, 2], aor)
         ecc = pv[:, 3] ** 2 + pv[:, 4] ** 2
         w = arctan2(pv[:, 4], pv[:, 3])
+        # The MeepMeep function is used because the PyTransit one ignores the eccentricity.
+        inc = i_from_baew(pv[:, 2], aor, ecc, w)
         epids = self.data.epoch_groups
         fluxes = []
         if isinstance(self.ldmodel, LDTkLD):
