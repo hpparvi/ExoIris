@@ -318,8 +318,12 @@ class TSLPF(LogPosteriorFunction):
         return len(self.ps)
 
     def set_data(self, data: TSDataGroup):
+        if len(data) != len(self.tms):
+            raise ValueError(f"The new data must have as many data sets as the old data ({len(self.tms)}), "
+                             f"but it has {len(data)}.")
         self._original_data = deepcopy(data)
         self.data = data
+        self._baseline_models = None
         self.npb: list[int] = [f.shape[0] for f in self.flux]
         self.npt: list[int] = [f.shape[1] for f in self.flux]
         for i, time in enumerate(self.times):
@@ -546,7 +550,7 @@ class TSLPF(LogPosteriorFunction):
                 ldc, lde = ps.coeffs_p2()
             case 'quadratic':
                 ldc, lde = ps.coeffs_qd()
-            case 'quadratic-triangular':
+            case 'quadratic-tri':
                 ldc, lde = ps.coeffs_tq()
             case _:
                 raise ValueError('Unsupported limb darkening model.')
@@ -604,7 +608,6 @@ class TSLPF(LogPosteriorFunction):
         self._init_parameters()
         psn = self.ps
         sln = self._sl_rratios
-        ndn = self.ndim
 
         # Check if we have spots
         # ----------------------
@@ -613,6 +616,7 @@ class TSLPF(LogPosteriorFunction):
             self.initialize_spots(spots.tphot, spots.wlref, spots.include_tlse)
             for eg in spots.spot_epoch_groups:
                 self.spot_model.add_spot(eg)
+        ndn = self.ndim
 
         # Set the priors back as they were
         # --------------------------------
@@ -770,7 +774,6 @@ class TSLPF(LogPosteriorFunction):
             self.set_free_k_knots(self.free_k_knot_ids)
         psn = self.ps
         sln = self._sl_ld
-        ndn = self.ndim
 
         # Check if we have spots
         # ----------------------
@@ -779,6 +782,7 @@ class TSLPF(LogPosteriorFunction):
             self.initialize_spots(spots.tphot, spots.wlref, spots.include_tlse)
             for eg in spots.spot_epoch_groups:
                 self.spot_model.add_spot(eg)
+        ndn = self.ndim
 
         # Set the priors back as they were
         # --------------------------------
@@ -949,7 +953,7 @@ class TSLPF(LogPosteriorFunction):
 
     def baseline_model(self, mtransit):
         npv = mtransit[0].shape[0]
-        if self._baseline_models is None or self._baseline_models[0].shape[0] != npv:
+        if self._baseline_models is None or any(b.shape != m.shape for b, m in zip(self._baseline_models, mtransit)):
             self._baseline_models = [zeros(m.shape) for m in mtransit]
         for i, d in enumerate(self.data):
             for ipv in range(npv):
@@ -1004,8 +1008,8 @@ class TSLPF(LogPosteriorFunction):
         return self.ps.sample_from_prior(npop)
 
     def set_radius_ratio_limits(self, kmin, kmax):
-        for ipb in range(self.nk):
-            self.set_prior(f'k_{ipb + 1:03d}', 'UP', kmin, kmax)
+        for l in self.k_knots:
+            self.set_prior(f'k_{l:08.5f}', 'UP', kmin, kmax)
 
     def lnlikelihood(self, pv) -> ndarray | float :
         """Log likelihood for parameter vector pv.

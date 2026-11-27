@@ -361,7 +361,7 @@ class TSData:
         elims
             The limits of the region to mask in exposure indices.
         """
-        if (t0 and p and t14) or ephemeris is not None:
+        if (t0 is not None and p is not None and t14 is not None) or ephemeris is not None:
             if ephemeris is not None:
                 self._ephemeris = ephemeris
             else:
@@ -369,8 +369,8 @@ class TSData:
             phase = fold(self.time, self.ephemeris.period, self.ephemeris.zero_epoch)
             self.transit_mask = abs(phase) > 0.502 * self.ephemeris.duration
         elif elims is not None:
-            self.transit_mask = ones(self.fluxes.shape, bool)
-            self.transit_mask[:, elims[0]:elims[1]] = False
+            self.transit_mask = ones(self.npt, bool)
+            self.transit_mask[elims[0]:elims[1]] = False
         else:
             raise ValueError("Transit masking requires either t0, p, and t14, ephemeris, or transit limits in exposure indices.")
         return self

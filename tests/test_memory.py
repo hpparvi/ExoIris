@@ -53,6 +53,8 @@ def test_quadratic_tri_domain_is_rejected_before_model_evaluation(monkeypatch):
     tsa = ei._tsa
     pvp = tsa.ps.sample_from_prior(8)
     pvp[:4, tsa._sl_ld] = -0.1
+    # Constant coefficients: the spline through random knot values can leave [0, 1].
+    pvp[4:, tsa._sl_ld] = 0.5
 
     assert (tsa.lnprior(pvp)[:4] == -np.inf).all()
     assert np.isfinite(tsa.lnprior(pvp)[4:]).all()

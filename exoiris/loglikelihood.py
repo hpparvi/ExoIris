@@ -89,6 +89,10 @@ class LogLikelihood:
             spectra = spectra[:n_max_samples, :]
             self.spmean = spectra.mean(axis=0)
 
+        # A covariance matrix can only be decomposed with eigh, whatever the method.
+        if spectra is None:
+            method = 'eigh'
+
         if method == 'svd':
             _, sigma, evecs = svd(spectra - spectra.mean(0), full_matrices=False)
             evals = (sigma**2) / (spectra.shape[0] - 1)
@@ -99,7 +103,7 @@ class LogLikelihood:
             _, sigma, evecs = randomized_svd(spectra - spectra.mean(0),  n_components=nk, n_iter=5, random_state=0)
             evals = (sigma ** 2) / (spectra.shape[0] - 1)
             evecs = evecs.T
-        elif method == 'eigh' or (spmean is not None and spcov is not None):
+        elif method == 'eigh':
             if spectra is not None:
                 self.spcov = cov(spectra, rowvar=False)
             else:
@@ -109,6 +113,8 @@ class LogLikelihood:
             # eigh sorts the eigenvalues in ascending order, the SVD in descending order.
             # The largest eigenvalues must come first for the truncation to `nk` below.
             evals, evecs = evals[::-1], evecs[:, ::-1]
+        else:
+            raise ValueError("`method` must be 'svd', 'randomized_svd', or 'eigh'.")
 
         keep = evals > eps * evals.max()
         self.eigenvalues, self.eigenvectors = evals[keep][:nk], evecs[:, keep][:, :nk]

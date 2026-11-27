@@ -79,8 +79,9 @@ def load_model(fname: Path | str, name: str | None = None):
         # Read the limb darkening model.
         # ==============================
         if hdr['LDMODEL'] == 'ldtk':
-            filters, teff, logg, metal, dataset = pickle.loads(codecs.decode(json.loads(hdr['LDTKLD']).encode(), "base64"))
-            ldm = LDTkLD(filters, teff, logg, metal, dataset=dataset)
+            # LDTkLD creates its filters from the wavelength bin edges of the data, so the saved filters are not used.
+            _, teff, logg, metal, dataset = pickle.loads(codecs.decode(json.loads(hdr['LDTKLD']).encode(), "base64"))
+            ldm = LDTkLD(data, teff, logg, metal, dataset=dataset)
         else:
             ldm =  hdr['LDMODEL']
 
@@ -330,18 +331,16 @@ class ExoIris:
             self.set_prior(f'k_{l:08.5f}', prior, *nargs)
 
     def set_baseline_prior(self, prior, *nargs) -> None:
-        """Set an identical prior on all baseline knots.
+        """Deprecated, has no effect.
 
-        Parameters
-        ----------
-        prior
-            The prior for the baseline knots.  This can be "NP" for a normal prior, "UP" for a uniform prior,
-            or an object with .logpdf(x) method.
-        *nargs
-            Additional arguments for the prior.
+        The baseline is not parameterized with knots anymore. The baseline coefficients are solved or
+        marginalized analytically by the likelihood, so the model has no baseline parameters to set
+        a prior on. The method is kept so that old analysis scripts keep running.
+
+        .. deprecated:: 1.2.1
         """
-        for par in self.ps[self._tsa._sl_baseline]:
-            self.set_prior(par.name, prior, *nargs)
+        warnings.warn("set_baseline_prior has no effect and will be removed: the baseline coefficients are solved "
+                      "analytically and are not model parameters.", DeprecationWarning, stacklevel=2)
 
     def set_ldtk_prior(self,
                        teff: UFloat | tuple[float, float],
@@ -576,7 +575,7 @@ class ExoIris:
         knot_ids
             List of radius ratio knot indices to be made free parameters.
         """
-        self._tsa.free_k_knot_locations(knot_ids)
+        self._tsa.set_free_k_knots(knot_ids)
 
     def create_dense_radius_ratio_block(self, wlmin: float, wlmax: float) -> None:
         """Create a block of radius ratio knots using the full data resolution.
@@ -830,8 +829,12 @@ class ExoIris:
 
                 sl = self._tsa._sl_rratios
                 x0[:, sl] = normal(sqrt(pv0[self._wa.ps.find_pid('k2')]), 0.001, size=(npop, self.nk))
+                # Keep the population inside the uniform priors. Other priors, such as a normal prior,
+                # have no limits to clip to.
                 for i in range(sl.start, sl.stop):
-                    x0[:, i] = clip(x0[:, i], 1.001*self.ps[i].prior.a, 0.999*self.ps[i].prior.b)
+                    prior = self.ps[i].prior
+                    if hasattr(prior, 'a') and hasattr(prior, 'b'):
+                        x0[:, i] = clip(x0[:, i], 1.001*prior.a, 0.999*prior.b)
 
         self._tsa.optimize_global(niter=niter, npop=npop, population=x0, pool=pool, lnpost=lnpost,
                                   vectorize=(pool is None), min_ptp=min_ptp, plot_convergence=plot_convergence)

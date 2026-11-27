@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   locations refer to the knots by index.
 - `ExoIris.save` now follows its `overwrite` argument and raises an `OSError` if the file exists and `overwrite` is
   False, which is the default. The method always overwrote an existing file before.
+- `TSLPF.set_data` now raises a `ValueError` if the new data has a different number of data sets than the old data.
+
+### Deprecated
+- `ExoIris.set_baseline_prior` has no effect and gives a `DeprecationWarning`. The baseline coefficients are solved
+  analytically and are not model parameters. The method raised an `AttributeError` before.
 
 ### Fixed
 - Fixed the `fixed_gp` and `free_gp` likelihoods for `BBData`. The rows of the internal 2D representation were treated
@@ -38,6 +43,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed the free radius ratio knot locations being lost when the knots were changed. The model kept reading the
   locations from unrelated parameters. Changing the limb darkening knots now keeps the free knot locations.
 - Fixed the knot order prior being added again each time the free radius ratio knot locations were set.
+- Fixed `load_model` failing for models that use the `LDTkLD` limb darkening model.
+- Fixed `ExoIris.free_radius_ratio_knot_locations` and `TSLPF.set_radius_ratio_limits`, which raised an error on
+  every call.
+- Fixed `ExoIris.set_ldtk_prior` rejecting the `quadratic-tri` limb darkening model.
+- Fixed `ExoIris.set_data` failing when the new data has a different wavelength grid than the old data.
+- Fixed `TSData.mask_transit` raising a `ValueError` for a zero epoch of 0.0, and creating a 2D transit mask from
+  exposure index limits.
+- Fixed `ExoIris.fit` failing when the radius ratios have a prior without limits, such as a normal prior.
+- Fixed `LogLikelihood` failing when created from a mean spectrum and a covariance matrix with the default method.
+  An unknown method now raises a `ValueError`.
+- Fixed changing the radius ratio or limb darkening knots failing for a model with spots and an existing optimizer
+  population or MCMC chains.
 
 ## [1.2.0] - 2026-11-27
 
