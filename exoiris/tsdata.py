@@ -527,7 +527,8 @@ class TSData:
                           tm_edges=(self._tm_l_edges, self._tm_r_edges),
                           transit_mask=self.transit_mask, ephemeris=self.ephemeris,
                           n_baseline=self.n_baseline,
-                          mask_nonfinite_errors=self.mask_nonfinite_errors)
+                          mask_nonfinite_errors=self.mask_nonfinite_errors,
+                          covs=self.covs)
 
     def crop_time(self, tmin: float, tmax: float, inplace: bool = True) -> 'TSData':
         """Crop the data to include only the time range between lmin and lmax.

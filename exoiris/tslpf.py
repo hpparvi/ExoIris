@@ -82,13 +82,15 @@ def nlstsq(covs, res, mask, wlmask, with_nans):
     """Least-squares baseline coefficients for each wavelength.
 
     The coefficients are NaN for the wavelengths that cannot be solved: fully masked ones and
-    ones with non-finite residuals. The inputs are validated here instead of letting ``lstsq``
+    ones with non-finite residuals, and all of them if the covariates are not finite. The inputs are validated here instead of letting ``lstsq``
     raise, because numba does not release the arrays a jitted function has allocated when an
     exception is raised, whether or not the exception is caught.
     """
     nwl = res.shape[0]
     nc = covs.shape[1]
     x = full((nc, nwl), nan)
+    if not isfinite(covs).all():
+        return x
     if wlmask.any():
         r = ascontiguousarray(res[wlmask].T)
         if not isfinite(r).all():

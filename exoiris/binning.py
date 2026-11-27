@@ -137,7 +137,7 @@ class Binning:
         if isinstance(other, Binning):
             return CompoundBinning([self, other])
         elif isinstance(other, CompoundBinning):
-            return other + self
+            return CompoundBinning([self, *other.binnings])
         else:
             raise TypeError(f"Can't concatenate Binning and {other.__class__.__name__}")
 
@@ -160,7 +160,7 @@ class CompoundBinning:
         Array of bin edges from all binning objects.
     """
     def __init__(self, binnings: Sequence[Binning]) -> None:
-        self.binnings = binnings
+        self.binnings = list(binnings)
         self.bins = concatenate([b.bins for b in self.binnings])
 
     def __repr__(self):
@@ -168,13 +168,8 @@ class CompoundBinning:
 
     def __add__(self, other) -> 'CompoundBinning':
         if isinstance(other, CompoundBinning):
-            cb = CompoundBinning(self.binnings)
-            cb.binnings.extend(other.binnings)
-            cb.bins = concatenate([cb.bins, other.bins])
+            return CompoundBinning([*self.binnings, *other.binnings])
         elif isinstance(other, Binning):
-            cb = CompoundBinning(self.binnings)
-            cb.binnings.append(other)
-            cb.bins = concatenate([cb.bins, other.bins])
+            return CompoundBinning([*self.binnings, other])
         else:
             raise TypeError(f"Cannot concatenate CompoundBinning and {other.__class__.__name__}")
-        return cb

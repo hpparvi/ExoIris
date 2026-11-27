@@ -75,14 +75,15 @@ def test_load_and_save_keeps_results(tmp_path, monkeypatch):
     assert np.allclose(b.optimizer_population, ei.optimizer_population)
 
 
-def test_save_does_not_overwrite_by_default(tmp_path, monkeypatch):
+def test_save_follows_overwrite(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     ei = _make_analysis(_make_data())
     (tmp_path / 'test.fits').write_text('existing')
     with pytest.raises(OSError):
-        ei.save()
+        ei.save(overwrite=False)
     assert (tmp_path / 'test.fits').read_text() == 'existing'
-    ei.save(overwrite=True)
+    # The default is to overwrite.
+    ei.save()
     assert 'K_KNOTS' in _hdu_names('test.fits')
 
 

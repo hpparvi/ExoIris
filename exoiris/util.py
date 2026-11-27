@@ -48,7 +48,7 @@ def create_binning(ranges, bwidths):
     bins = []
     for r, w in zip(ranges, bwidths):
         n = int(floor((r[1] - r[0]) / w))
-        e = linspace(*r, num=n)
+        e = linspace(*r, num=n + 1)
         bins.append(vstack([e[:-1], e[1:]]).T)
     return concatenate(bins)
 

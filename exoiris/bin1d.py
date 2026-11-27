@@ -57,9 +57,8 @@ def bin1d(v, e, el, er, bins, estimate_errors: bool = False) -> tuple[ndarray, n
     for ibin in range(nbins):
         npt[:] = 0
         bel, ber = bins[ibin]
-        for i in range(i, ndata - 1):
-            if el[i + 1] > bel:
-                break
+        while i < ndata - 1 and el[i + 1] <= bel:
+            i += 1
         il = i
         if er[i] > ber:
             weights[i, :] = ber - bel

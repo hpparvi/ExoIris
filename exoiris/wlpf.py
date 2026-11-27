@@ -157,7 +157,8 @@ class WhiteLPF(BaseLPF):
 
         for i, sl in enumerate(self.lcslices):
             ax = axs.flat[i]
-            tc = pv[0] + pv[1]*epoch(self.times[i].mean(), pv[0], pv[1])
+            tc0 = pv[self._start_tc + self.tm.epids[i]]
+            tc = tc0 + pv[0]*epoch(self.times[i].mean(), tc0, pv[0])
             ax.plot(self.timea[sl] - tref, self.ofluxa[sl], '.k', alpha=0.25)
             ax.plot(self.timea[sl] - tref, fm[sl], 'k')
             ax.axvline(tc - tref, ls='--', c='0.5')

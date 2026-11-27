@@ -673,6 +673,7 @@ class ExoIris:
             The number of iterations for the global optimization algorithm (default is 500).
         """
         self._wa = WhiteLPF(self._tsa)
+        self.white_gp_models = None
         self._wa.optimize_global(niter, plot_convergence=False, use_tqdm=False)
         self._wa.optimize()
         pv = self._wa._local_minimization.x
@@ -1316,13 +1317,13 @@ class ExoIris:
         else:
             return mean, sp_samples.std(0)
 
-    def save(self, overwrite: bool = False) -> None:
+    def save(self, overwrite: bool = True) -> None:
         """Save the ExoIris analysis to a FITS file.
 
         Parameters
         ----------
         overwrite
-            Flag indicating whether to overwrite an existing file with the same name.
+            Flag indicating whether to overwrite an existing file with the same name. Default is True.
 
         Raises
         ------
@@ -1575,7 +1576,10 @@ class ExoIris:
             de.optimize(niter)
             x = de.minimum_location
             gp_hyperparameters.append(10**x)
+            # The GP must be recomputed for the optimal kernel: it is otherwise left factorized
+            # for the last kernel the optimizer tried.
             gp.kernel = terms.Matern32Term(sigma=10**x[0], rho=10**x[1])
+            gp.compute(time, yerr=ferr, quiet=True)
             self.white_gp_models.append(gp.predict(fres))
             self._tsa.set_gp_hyperparameters(10**x[0], 10**x[1], i)
         return gp_hyperparameters

@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changing the radius ratio knots now removes the free radius ratio knot locations with a warning, because the
   locations refer to the knots by index.
 - `ExoIris.save` now follows its `overwrite` argument and raises an `OSError` if the file exists and `overwrite` is
-  False, which is the default. The method always overwrote an existing file before.
+  False. The default is now True, so a plain `save()` call overwrites an existing file as before.
 - `TSLPF.set_data` now raises a `ValueError` if the new data has a different number of data sets than the old data.
 
 ### Deprecated
@@ -55,6 +55,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   An unknown method now raises a `ValueError`.
 - Fixed changing the radius ratio or limb darkening knots failing for a model with spots and an existing optimizer
   population or MCMC chains.
+- Fixed the transit centre and duration lines in the white light curve plot, which were drawn using the orbital
+  period and stellar density instead of the transit centre.
+- Fixed `bin1d` for bins that start inside the last data point. The bin was given a wrong mix of the last two
+  data points.
+- Fixed `TSData.crop_wavelength` with `inplace=False` replacing the covariates with the default ones.
+- Fixed a memory leak in the `white_profiled` noise model for non-finite covariates.
+- Fixed the white light curve GP predictions shown by `ExoIris.plot_white_gp_predictions`. They were calculated
+  for the last kernel the optimizer tried instead of the optimal one, and were kept after a new white light curve
+  fit.
+- Fixed adding to a `CompoundBinning` modifying the original object, and `Binning + CompoundBinning` putting the
+  bins in the wrong order.
+- Fixed `util.create_binning` creating one bin too few for each range.
 
 ## [1.2.0] - 2026-11-27
 
