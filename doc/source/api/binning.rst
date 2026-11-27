@@ -1,4 +1,4 @@
-.. _api.binning
+.. _api.binning:
 
 Binning data
 ============
@@ -21,7 +21,6 @@ will be constant. Giving the resolving power, the range will be divided into bin
     :toctree: api/
 
     Binning
-    Binning.bins
 
 
 CompoundBinning

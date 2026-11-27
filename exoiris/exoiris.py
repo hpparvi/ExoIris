@@ -245,13 +245,17 @@ class ExoIris:
         """
         return squeeze(self._tsa.lnposterior(pvp))
 
-    def set_noise_model(self, noise_model: Literal['white', 'fixed_gp', 'free_gp']) -> None:
+    def set_noise_model(self, noise_model: Literal['white_profiled', 'white_marginalized', 'fixed_gp', 'free_gp']) -> None:
         """Set the noise model for the analysis.
 
         Parameters
         ----------
         noise_model
-            The noise model to be used.
+            The noise model to be used. The white noise models, ``'white_profiled'`` and ``'white_marginalized'``,
+            differ in how they treat the baseline coefficients: the first solves them with linear least squares at
+            every likelihood evaluation and the second marginalizes over them analytically. The Gaussian process
+            noise models, ``'fixed_gp'`` and ``'free_gp'``, keep the GP hyperparameters fixed or sample them as
+            free parameters, respectively. The name ``'white'`` is accepted as an alias for ``'white_profiled'``.
 
         Raises
         ------
@@ -1278,8 +1282,7 @@ class ExoIris:
         samples
             Array of samples used to compute the spectrum uncertainties. If None, previously
             stored samples will be utilized.
-
-        return_cov : bool, optional
+        return_cov
             Indicates whether to return the covariance matrix of the computed transmission
             spectrum. If True, the covariance matrix is returned along with the mean spectrum.
             If False, the standard deviation of the spectrum is returned.
@@ -1288,6 +1291,7 @@ class ExoIris:
         -------
         tuple[ndarray, ndarray]
             A tuple containing two arrays:
+
             - The mean transmission spectrum.
             - The covariance matrix of the spectrum (if `return_cov` is True), or the
               standard deviation (if `return_cov` is False).

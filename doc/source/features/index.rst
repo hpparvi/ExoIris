@@ -5,6 +5,7 @@ Features
    :maxdepth: 1
 
    joint_modeling
+   broadband
    flexible_resolution
    spot_modeling
    ttvs

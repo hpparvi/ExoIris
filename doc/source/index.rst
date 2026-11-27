@@ -23,7 +23,8 @@ Overview
 **ExoIris** is a Python package for exoplanet transmission spectroscopy that models full 2D spectroscopic transit
 time series directly, estimating self-consistent transmission spectra with uncertainties. It supports joint
 multi-instrument, multi-epoch analyses with flexible spectral resolution, Gaussian process noise models,
-transit timing variations, spot-crossings, and inclusion of the transit light source effect.
+transit timing variations, spot-crossings, and inclusion of the transit light source effect. Broadband transit
+light curves can be included in the same model.
 
 A complete analysis,
 including optimization and MCMC sampling, typically takes minutes to tens of minutes, though the most complex
@@ -39,6 +40,12 @@ multi-instrument analyses may take up to a few hours. See the feature overview b
       :link-type: doc
 
       Analyse multiple instruments and epochs in a single self-consistent model.
+
+   .. grid-item-card:: Broadband Photometry
+      :link: features/broadband
+      :link-type: doc
+
+      Model broadband light curves jointly with the spectroscopic data.
 
    .. grid-item-card:: Flexible Spectral Resolution
       :link: features/flexible_resolution
@@ -104,6 +111,7 @@ Documentation
 
    api/exoiris
    api/tsdata
+   api/bbdata
    api/binning
    api/ldtkld
    api/utilities

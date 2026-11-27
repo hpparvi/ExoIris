@@ -58,6 +58,7 @@ from numpy import (
     vstack,
     ones_like,
     average,
+    errstate,
 )
 from pytransit.orbits import fold
 
@@ -265,12 +266,42 @@ class TSData:
                       covs=covs)
 
     def save(self, fname: Path, overwrite: bool = True):
+        """Save the data set to a FITS file.
+
+        The file stores the fluxes, uncertainties, masks, baseline covariates, and the noise, epoch, and
+        offset groups, and can be read back with `TSData.load`.
+
+        Parameters
+        ----------
+        fname
+            Output file path.
+        overwrite
+            Whether to overwrite an existing file.
+        """
         hdul = pf.HDUList([pf.PrimaryHDU()] + self.export_fits())
         hdul[0].header['TSDATA'] = self.name
         hdul.writeto(fname, overwrite=overwrite)
 
     @staticmethod
     def load(fname: Path | str, noise_group: int | None = None) -> "TSData | TSDataGroup":
+        """Load a data set from a FITS file.
+
+        The type of the returned object follows the contents of the file: a file saved with `TSData.save`
+        gives a `TSData` object, a file saved with `~exoiris.BBData.save` a `~exoiris.BBData` object, and a
+        file saved with `TSDataGroup.save` a `TSDataGroup`.
+
+        Parameters
+        ----------
+        fname
+            Path to the FITS file.
+        noise_group
+            Noise group to assign to the loaded data set. The noise group stored in the file is used if None.
+            Applies only to files holding a single data set.
+
+        Returns
+        -------
+        TSData or TSDataGroup
+        """
         d = _load(fname)
         if noise_group is not None:
             d.noise_group = noise_group
@@ -281,7 +312,7 @@ class TSData:
 
     @property
     def ephemeris(self) -> Ephemeris:
-        """Ephemeris."""
+        """Transit ephemeris. Setting the ephemeris recomputes the transit mask."""
         return self._ephemeris
 
     @ephemeris.setter
@@ -296,6 +327,7 @@ class TSData:
 
     @property
     def bbox_tm(self) -> tuple[float, float]:
+        """Time bounds of the bounding box."""
         return self.mintm, self.maxtm
 
     def mask_transit(self, t0: float | None = None, p: float | None = None, t14: float | None = None,
@@ -678,12 +710,36 @@ class TSData:
         return fig
 
     def create_white_light_curve(self, data=None) -> ndarray:
-        """Create a white light curve."""
+        """Create a white light curve.
+
+        The white light curve is the inverse-variance weighted average of the spectroscopic light curves
+        over wavelength. Non-finite values are ignored, and an exposure without any valid values is NaN.
+
+        Parameters
+        ----------
+        data
+            A 2D array with the same shape as the flux array to average instead of the fluxes, such as a
+            model or residual array.
+
+        Returns
+        -------
+        ndarray
+            The white light curve as a 1D array with one value per exposure.
+
+        Raises
+        ------
+        ValueError
+            If the shape of `data` does not match the shape of the flux array.
+        """
         if data is not None and data.shape != self.fluxes.shape:
             raise ValueError("The data must have the same shape as the 2D flux array.")
         data = data if data is not None else self.fluxes
-        weights = where(isfinite(data) & isfinite(self.errors), 1/self.errors**2, 0.0)
-        return average(where(isfinite(data), data, 0), axis=0, weights=weights)
+        valid = isfinite(data) & isfinite(self.errors)
+        weights = where(valid, 1/self.errors**2, 0.0)
+        wsum = weights.sum(0)
+        # An exposure without any valid points has a zero weight sum and gets a NaN.
+        with errstate(invalid='ignore', divide='ignore'):
+            return (where(valid, data, 0.0) * weights).sum(0) / where(wsum > 0, wsum, nan)
 
     def plot_white(self, ax: Axes | None = None, figsize: tuple[float, float] | None = None) -> Figure:
         """Plot a white light curve.
@@ -743,6 +799,19 @@ class TSData:
         return self.plot(ax=ax, figsize=figsize, data=where(self.transit_mask, self.fluxes, nan))
 
     def plot_mean_error(self, ax: Axes | None = None, figsize: tuple[float, float] | None = None) -> Figure:
+        """Plot the mean flux uncertainty as a function of wavelength.
+
+        Parameters
+        ----------
+        ax
+            The axes to plot on. A new figure is created if None.
+        figsize
+            The size of the figure, used only when a new figure is created.
+
+        Returns
+        -------
+        Figure
+        """
         if ax is None:
             fig, ax = subplots(figsize=figsize, constrained_layout=True)
         else:
@@ -1061,12 +1130,34 @@ class TSDataGroup:
         return f"TSDataGroup with {self.size} groups"
 
     def save(self, fname: Path, overwrite: bool = True):
+        """Save all the data sets to a single FITS file.
+
+        Parameters
+        ----------
+        fname
+            Output file path.
+        overwrite
+            Whether to overwrite an existing file.
+        """
         hdul = pf.HDUList([pf.PrimaryHDU()] + self.export_fits())
         hdul[0].header['tsdgroup'] = True
         hdul.writeto(fname, overwrite=overwrite)
 
     @staticmethod
     def load(fname: Path | str) -> "TSData | TSDataGroup":
+        """Load data from a FITS file.
+
+        The type of the returned object follows the contents of the file, see `TSData.load`.
+
+        Parameters
+        ----------
+        fname
+            Path to the FITS file.
+
+        Returns
+        -------
+        TSData or TSDataGroup
+        """
         return _load(fname)
 
     def plot(self, axs=None, vmin: float = None, vmax: float = None, ncols: int = 1, cmap=None, figsize=None, data: ndarray | None = None) -> Figure:

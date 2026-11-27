@@ -32,7 +32,7 @@ from numpy import (
     atleast_2d,
     repeat,
     array,
-    average,
+    errstate,
     unique,
 )
 from scipy.optimize import minimize
@@ -42,17 +42,29 @@ from pytransit.orbits import as_from_rhop, i_from_ba, fold, i_from_baew, d_from_
 from pytransit.param import GParameter, NormalPrior as NP, UniformPrior as UP
 from pytransit.lpf.lpf import map_ldc
 
+from .bbdata import BBData
 from .tslpf import TSLPF
 
 class WhiteLPF(BaseLPF):
     def __init__(self, tsa: TSLPF):
         self.tsa = tsa
         fluxes, times, errors = [], [], []
-        for t, f, e in zip(tsa.data.times, tsa.data.fluxes, tsa.data.errors):
-            weights = where(isfinite(f) & isfinite(e), 1/e**2, 0.0)
-            mf = average(where(isfinite(f), f, 0), axis=0, weights=weights)
-            me = sqrt(1 / weights.sum(0))
-            m = isfinite(mf)
+        for d in tsa.data.data:
+            t = d.time
+            if isinstance(d, BBData):
+                # The rows of a broadband data set are copies of a single light curve,
+                # so averaging them as independent measurements would underestimate the errors.
+                mf, me = d._bb_flux, d._bb_errors
+            else:
+                f, e = d.fluxes, d.errors
+                valid = isfinite(f) & isfinite(e)
+                weights = where(valid, 1/e**2, 0.0)
+                wsum = weights.sum(0)
+                # Exposures without valid points get a NaN and are removed below.
+                with errstate(invalid='ignore', divide='ignore'):
+                    mf = (where(valid, f, 0.0) * weights).sum(0) / where(wsum > 0, wsum, nan)
+                    me = sqrt(1 / where(wsum > 0, wsum, nan))
+            m = isfinite(mf) & isfinite(me)
             times.append(t[m])
             fluxes.append(mf[m])
             errors.append(me[m])

@@ -65,6 +65,7 @@ transmission spectrum, and even the observational data can be changed to improve
     ExoIris.set_radius_ratio_knots
     ExoIris.add_radius_ratio_knots
     ExoIris.set_limb_darkening_knots
+    ExoIris.add_limb_darkening_knots
     ExoIris.free_radius_ratio_knot_locations
     ExoIris.create_dense_radius_ratio_block
     ExoIris.plot_setup
@@ -100,7 +101,14 @@ Noise model setup
 
 The noise in the spectroscopic light curves can be modeled as either white noise or time-correlated noise
 (using a Gaussian process, GP). The noise model is chosen with the `ExoIris.set_noise_model` method, and can be
-set to ``"white"``, ``"fixed_gp"``, or ``"free_gp"``. Selecting ``"fixed_gp"`` models the noise as a time-correlated
+set to ``"white_profiled"``, ``"white_marginalized"``, ``"fixed_gp"``, or ``"free_gp"``.
+
+The two white noise models differ in how they treat the baseline coefficients. The default, ``"white_profiled"``,
+solves the coefficients with linear least squares at every likelihood evaluation, while ``"white_marginalized"``
+integrates them out analytically, which propagates the baseline uncertainty to the posterior. The older name
+``"white"`` is still accepted as an alias for ``"white_profiled"``.
+
+Selecting ``"fixed_gp"`` models the noise as a time-correlated
 Gaussian process using the `celerite2` package with fixed hyperparameters, while ``"free_gp"`` allows the GP
 hyperparameters to be sampled as free parameters. The corresponding `celerite2.GaussianProcess` object can be
 accessed directly via the `ExoIris.gp` attribute.

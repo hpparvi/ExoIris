@@ -4,7 +4,8 @@ Joint Modeling
 ExoIris is designed from the ground up for joint analysis of multiple spectrophotometric datasets. Whether
 you have observations from different JWST instruments, HST gratings, ground-based spectrographs, multiple
 visits of the same target, or any combination of these, ExoIris handles them all within a single,
-self-consistent model.
+self-consistent model. Broadband transit light curves can be added to the same model, as described in
+:doc:`broadband`.
 
 Why Joint Modeling?
 -------------------
@@ -41,7 +42,7 @@ which are independent across datasets. Noise groups control which datasets share
 parameters, so that each instrument's noise characteristics are handled independently. Epoch groups
 associate datasets with specific transit events, allowing simultaneous observations to share a transit
 center while observations from different nights get independent timing. Offset groups handle systematic
-flux calibration differences between instruments through fitted multiplicative corrections.
+flux calibration differences between instruments through fitted additive corrections.
 
 These three axes---noise, epoch, and offset---cover the most common scenarios in multi-instrument transit
 spectroscopy, from combining NIRISS orders within a single visit to stitching together data from entirely

@@ -5,7 +5,64 @@ All notable changes to ExoIris will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - Unreleased
+## [1.2.0] - Unreleased
+
+### Added
+- Added `nsamples` and `likelihood` arguments to `ExoIris.set_ldtk_prior` for choosing the number of stellar parameter
+  samples and the LDTk likelihood used to fit the limb darkening coefficients.
+- Added a `cloud_model` option to `PRTRetrieval` with `deck` and `powerlaw` cloud descriptions, and a haze factor for
+  the cloud deck model.
+- Added a prior for the `quadratic-tri` limb darkening model that rejects coefficients outside [0, 1]. The prior is
+  evaluated for the coefficients interpolated to the data wavelengths, because the interpolating spline can leave the
+  valid range even when all the knot values are inside it.
+
+### Changed
+- ExoIris now requires PyTransit 2.9.2 or later and LDTk 1.9.3 or later.
+- `ExoIris.set_ldtk_prior` now draws 1000 stellar parameter samples and uses the `diagonal` LDTk likelihood by
+  default. The coefficients fitted with the `reduced-rank` likelihood can vary strongly between calls.
+- The log posterior no longer evaluates the model for parameter vectors that the priors reject.
+- Posteriors sampled with the `quadratic-tri` limb darkening model can change slightly near the edges of the
+  coefficient range because of the new prior.
+- Widened the equilibrium temperature prior and bounds in `PRTRetrieval`, and renamed the cloud top pressure
+  parameter from `pc` to `cd_pc`.
+
+### Fixed
+- Fixed a memory leak that filled the memory when fitting with the `quadratic-tri` limb darkening model. The
+  interpolated limb darkening coefficients could become negative, which made the transit model return NaNs, and each
+  such model evaluation leaked memory.
+- Fixed a memory leak in the `white_profiled` noise model for data with fully masked wavelengths.
+- Fixed a memory leak in the `white_marginalized` noise model for non-finite models, zero uncertainties, and
+  wavelengths with fewer valid points than baseline covariates.
+- Fixed the `BBData` time cropping, time binning, time partitioning, masked exposure removal, and baseline
+  normalization. The methods either returned a plain `TSData` object that was no longer modelled as broadband data,
+  or left the light curve used by the likelihood unchanged. The methods that work along the wavelength axis
+  (`bin_wavelength`, `crop_wavelength`, and `mask_outliers`) now raise a `NotImplementedError` for `BBData`.
+- Fixed a `ZeroDivisionError` in `ExoIris.fit_white` and `TSData.create_white_light_curve` for data with fully masked
+  exposures. `TSData.create_white_light_curve` now returns a NaN for a fully masked exposure.
+- Fixed the white light curve uncertainties of `BBData`, which were too small by a factor of sqrt(`n_wl`).
+- Updated the transit model to work with the current PyTransit RoadRunner model.
+- Fixed the bounds of the species abundance parameters and the units of the Guillot profile parameters in
+  `PRTRetrieval`.
+
+## [1.1.1] - 2026-05-29
+
+### Added
+- Added the `BBData` class for modelling broadband light curves jointly with spectroscopic time series, with
+  `save`, `load`, and `create_white_light_curve` methods.
+- Added `save` and `load` methods to `TSData` and `TSDataGroup`.
+- Added `TSData.remove_fully_masked()` method for removing fully masked wavelengths and exposures.
+- Added an experimental `PRTRetrieval` class for atmospheric retrieval with petitRADTRANS 3.
+- Added feature overview pages and tutorials on spot crossings and the transit light source effect to the
+  documentation.
+
+### Changed
+- The linear radius ratio interpolation now holds the radius ratio constant outside the knot wavelength range instead
+  of extrapolating.
+
+### Fixed
+- Limited the number of eigenvalues in `LogLikelihood` to `nk` to improve numerical stability.
+
+## [1.1.0] - 2026-02-05
 
 ### Added
 - Added `TSData.create_white_light_curve()` method for creating white light curves with weighted averaging.
@@ -15,6 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `TSData.bin()` method for combined wavelength and time binning.
 
 ### Fixed
+- Fixed the error propagation in 2D binning.
+- Fixed the least-squares baseline fitting for wavelengths where the fit fails.
 - Several minor bugs.
 
 ## [1.0.0] - 2026-01-28
