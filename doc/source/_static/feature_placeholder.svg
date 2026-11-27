@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="150" viewBox="0 0 300 150">
+  <rect width="300" height="150" fill="#f0f0f0" rx="8"/>
+  <text x="150" y="80" text-anchor="middle" font-family="sans-serif" font-size="20" fill="#b0b0b0">ExoIris</text>
+</svg>
