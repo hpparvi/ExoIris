@@ -161,7 +161,10 @@ def load_model(fname: Path | str, name: str | None = None):
         if 'MCMC' in hdul:
             npop = hdul['MCMC'].header['NPOP']
             ndim = hdul['MCMC'].header['NDIM']
-            a._tsa._mc_chains = Table(hdul['MCMC'].data).to_pandas().values.reshape([npop, -1, ndim])
+            # The samples are stored step by step (all the walkers of the first step, then all
+            # the walkers of the second, ...), while the chain array has a shape [npop, nsteps, ndim].
+            flat = Table(hdul['MCMC'].data).to_pandas().values
+            a._tsa._mc_chains = flat.reshape([-1, npop, ndim]).swapaxes(0, 1).copy()
         return a
 
 
@@ -1310,6 +1313,11 @@ class ExoIris:
         ----------
         overwrite
             Flag indicating whether to overwrite an existing file with the same name.
+
+        Raises
+        ------
+        OSError
+            If the file exists and `overwrite` is False.
         """
         pri = pf.PrimaryHDU()
         pri.header['name'] = self.name
@@ -1394,22 +1402,27 @@ class ExoIris:
 
         # Global optimization results
         # ===========================
-        if self._tsa.de is not None:
+        # The results are read from the stored arrays rather than from the optimizer and sampler
+        # objects, because the objects do not exist for a loaded model or after a knot change.
+        if self._tsa._de_population is not None:
             de = pf.BinTableHDU(Table(self._tsa._de_population, names=self.ps.names), name='DE')
-            de.header['npop'] = self._tsa.de.n_pop
-            de.header['ndim'] = self._tsa.de.n_par
-            de.header['imin'] = self._tsa.de.minimum_index
+            de.header['npop'] = self._tsa._de_population.shape[0]
+            de.header['ndim'] = self._tsa._de_population.shape[1]
+            de.header['imin'] = int(self._tsa._de_imin) if self._tsa._de_imin is not None else 0
             hdul.append(de)
 
         # MCMC results
         # ============
-        if self._tsa.sampler is not None:
-            mc = pf.BinTableHDU(Table(self._tsa.sampler.flatchain, names=self.ps.names), name='MCMC')
-            mc.header['npop'] = self._tsa.sampler.nwalkers
-            mc.header['ndim'] = self._tsa.sampler.ndim
+        if self._tsa._mc_chains is not None:
+            chains = self._tsa._mc_chains
+            npop, _, ndim = chains.shape
+            # Stored step by step, see load_model.
+            mc = pf.BinTableHDU(Table(chains.swapaxes(0, 1).reshape([-1, ndim]), names=self.ps.names), name='MCMC')
+            mc.header['npop'] = npop
+            mc.header['ndim'] = ndim
             hdul.append(mc)
 
-        hdul.writeto(f"{self.name}.fits", overwrite=True)
+        hdul.writeto(f"{self.name}.fits", overwrite=overwrite)
 
     def create_loglikelihood_function(self, wavelengths: ndarray, kind: Literal['radius_ratio', 'depth'] = 'depth',
                                       method: Literal['svd', 'randomized_svd', 'eigh'] = 'svd',

@@ -385,9 +385,16 @@ class TSLPF(LogPosteriorFunction):
         self._gp_ferr = []
         self._gp = []
         for d in self.data:
-            self._gp_time.append((tile(d.time[newaxis, :], (d.nwl, 1)) + arange(d.nwl)[:, newaxis])[d.mask])
-            self._gp_flux.append(d.fluxes[d.mask])
-            self._gp_ferr.append(d.errors[d.mask])
+            if isinstance(d, BBData):
+                # The rows of a broadband data set are copies of a single light curve,
+                # so the GP is conditioned on the 1D light curve rather than on the rows.
+                self._gp_time.append(d.time[d._bb_mask])
+                self._gp_flux.append(d._bb_flux[d._bb_mask])
+                self._gp_ferr.append(d._bb_errors[d._bb_mask])
+            else:
+                self._gp_time.append((tile(d.time[newaxis, :], (d.nwl, 1)) + arange(d.nwl)[:, newaxis])[d.mask])
+                self._gp_flux.append(d.fluxes[d.mask])
+                self._gp_ferr.append(d.errors[d.mask])
             self._gp.append(GP(terms.Matern32Term(sigma=self._gp_flux[-1].std(), rho=0.1)))
             self._gp[-1].compute(self._gp_time[-1], yerr=self._gp_ferr[-1], quiet=True)
 
@@ -804,7 +811,8 @@ class TSLPF(LogPosteriorFunction):
 
     def _eval_ldc(self, pvp):
         if isinstance(self.ldmodel, LDTkLD):
-            ldp = pvp[:, newaxis, self._sl_ld]
+            # Copy the parameters: the clipping below must not modify the caller's array.
+            ldp = atleast_2d(pvp)[:, newaxis, self._sl_ld].copy()
             ldp[:, 0, 0] = clip(ldp[:, 0, 0], *self.ldmodel.sc.client.teffl)
             ldp[:, 0, 1] = clip(ldp[:, 0, 1], *self.ldmodel.sc.client.loggl)
             ldp[:, 0, 2] = clip(ldp[:, 0, 2], *self.ldmodel.sc.client.zl)
@@ -1004,8 +1012,12 @@ class TSLPF(LogPosteriorFunction):
             for j in range(npv):
                 if self._nm == NM_GP_FREE:
                     self.set_gp_hyperparameters(*10**pv[j, self._sl_gp])
-                for i in range(self.data.size):
-                    lnl[j] += self._gp[i].log_likelihood(self._gp_flux[i] - fmod[i][j][self.data[i].mask])
+                for i, d in enumerate(self.data):
+                    if isinstance(d, BBData):
+                        mod = (d._weights[:, None] * fmod[i][j]).sum(axis=0)[d._bb_mask]
+                    else:
+                        mod = fmod[i][j][d.mask]
+                    lnl[j] += self._gp[i].log_likelihood(self._gp_flux[i] - mod)
         return lnl if npv > 1 else lnl[0]
 
     def lnposterior(self, pv) -> ndarray | float:

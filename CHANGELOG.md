@@ -5,6 +5,22 @@ All notable changes to ExoIris will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- `ExoIris.save` now follows its `overwrite` argument and raises an `OSError` if the file exists and `overwrite` is
+  False, which is the default. The method always overwrote an existing file before.
+
+### Fixed
+- Fixed the `fixed_gp` and `free_gp` likelihoods for `BBData`. The rows of the internal 2D representation were treated
+  as independent light curves, so the broadband data were counted `n_wl` times.
+- Fixed the `LDTkLD` limb darkening evaluation modifying the parameter array given to it. The stellar parameters were
+  clipped in place, which changed the optimizer and sampler populations.
+- Fixed the order of the MCMC chains read by `load_model`. The samples were assigned to wrong walkers and steps, so
+  sampling continued from a loaded model did not start from the last step of the saved chains.
+- Fixed `ExoIris.save` dropping the optimizer population and the MCMC chains from a model read with `load_model`, and
+  after the radius ratio or limb darkening knots were changed.
+
 ## [1.2.0] - 2026-11-27
 
 ### Added
