@@ -28,6 +28,29 @@ Development version:
 ```bash
 git clone https://github.com/hpparvi/ExoIris.git && cd ExoIris && pip install -e .
 ```
+
+## Citing
+
+If you use ExoIris in your research, please cite 
+[Parviainen (2026, AJ, 171, 237)](https://doi.org/10.3847/1538-3881/ae47ee):
+
+```bibtex
+@ARTICLE{2026AJ....171..237P,
+       author = {{Parviainen}, Hannu},
+        title = "{ExoIris: Fast Exoplanet Transmission Spectroscopy in Python}",
+      journal = {\aj},
+         year = 2026,
+        month = apr,
+       volume = {171},
+       number = {4},
+          eid = {237},
+        pages = {237},
+          doi = {10.3847/1538-3881/ae47ee},
+}
+```
+
+To reference the exact version of the code you used, please also cite the 
+[Zenodo archive](https://doi.org/10.5281/zenodo.18598641) of that release.
 ---
 
 © 2026 Hannu Parviainen

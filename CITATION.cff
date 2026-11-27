@@ -1,0 +1,45 @@
+cff-version: 1.2.0
+message: >-
+  If you use ExoIris in your research, please cite the paper
+  listed under preferred-citation.
+type: software
+title: "ExoIris: Fast Exoplanet Transmission Spectroscopy in Python"
+abstract: >-
+  ExoIris is a Python package for exoplanet transmission spectroscopy
+  that models the full 2D spectroscopic transit time series directly,
+  supporting joint multi-instrument, multi-epoch analyses.
+authors:
+  - family-names: Parviainen
+    given-names: Hannu
+    orcid: "https://orcid.org/0000-0001-5519-1391"
+repository-code: "https://github.com/hpparvi/ExoIris"
+url: "https://exoiris.readthedocs.io"
+license: GPL-3.0-or-later
+keywords:
+  - astronomy
+  - exoplanets
+  - transmission spectroscopy
+  - exoplanet atmospheres
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.18598641
+    description: Zenodo archive
+preferred-citation:
+  type: article
+  title: "ExoIris: Fast Exoplanet Transmission Spectroscopy in Python"
+  authors:
+    - family-names: Parviainen
+      given-names: Hannu
+      orcid: "https://orcid.org/0000-0001-5519-1391"
+  journal: "The Astronomical Journal"
+  year: 2026
+  month: 4
+  volume: 171
+  issue: 4
+  start: 237
+  doi: 10.3847/1538-3881/ae47ee
+  url: "https://scixplorer.org/abs/2026AJ....171..237P"
+  identifiers:
+    - type: other
+      value: "arXiv:2509.15913"
+      description: arXiv preprint
