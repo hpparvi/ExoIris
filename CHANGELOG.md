@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The default prior on the spot temperature now ends at the photosphere temperature instead of 6000 K, and starts
   at 3000 K or 1000 K below the photosphere temperature, whichever is lower. The spot amplitude is positive, which
   describes a spot cooler than the photosphere.
+- The default priors on the TLSE spot and facula temperatures now end and start at the photosphere temperature.
+  Both covered the whole stellar spectrum grid before, so the spots and faculae could swap roles.
 - `TSLPF.set_data` now raises a `ValueError` if the new data has a different number of data sets than the old data.
 
 ### Deprecated

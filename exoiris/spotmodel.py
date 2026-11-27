@@ -165,8 +165,11 @@ class SpotModel:
             self._init_tlse_parameters()
 
     def _init_tlse_parameters(self):
-        ps = [GParameter('tlse_tspot', 'Effective temperature of unocculted spots', 'K', U(1200, 7000), (1200, 7000))]
-        ps.append(GParameter('tlse_tfac', 'Effective temperature of unocculted faculae', 'K', U(1200, 7000), (1200, 7000)))
+        # Spots are cooler and faculae hotter than the photosphere. Priors that overlap would let the
+        # two components swap roles.
+        tmin, tmax = self.full_spectrum.grid[0][[0, -1]]
+        ps = [GParameter('tlse_tspot', 'Effective temperature of unocculted spots', 'K', U(tmin, self.tphot), (tmin, tmax))]
+        ps.append(GParameter('tlse_tfac', 'Effective temperature of unocculted faculae', 'K', U(self.tphot, tmax), (tmin, tmax)))
         for e in unique(self.tsa.data.epoch_groups):
             ps.append(GParameter(f"tlse_aspot_e{e:02d}", "Area fraction covered by unocculted spots", "", U(0,1), (0,1)))
             ps.append(GParameter(f"tlse_afac_e{e:02d}", "Area fraction covered by unocculted faculae", "", U(0,1), (0,1)))

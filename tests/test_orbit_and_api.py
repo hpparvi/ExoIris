@@ -94,6 +94,18 @@ def test_spot_temperature_prior_ends_at_the_photosphere(tphot, tmin):
     assert (prior.a, prior.b) == (tmin, tphot)
 
 
+def test_tlse_temperature_priors_meet_at_the_photosphere():
+    ei = _make_analysis(_make_data())
+    ei.initialize_spots(5000.0, 1.5)
+    spot = ei.ps[ei.ps.find_pid('tlse_tspot')].prior
+    facula = ei.ps[ei.ps.find_pid('tlse_tfac')].prior
+    assert (spot.a, spot.b) == (1200.0, 5000.0)
+    assert (facula.a, facula.b) == (5000.0, 7000.0)
+    pvp = ei._tsa.ps.sample_from_prior(200)
+    assert (pvp[:, ei.ps.find_pid('tlse_tspot')] <= 5000.0).all()
+    assert (pvp[:, ei.ps.find_pid('tlse_tfac')] >= 5000.0).all()
+
+
 def test_spot_parameter_descriptions():
     ei = _make_analysis(_make_data())
     ei.initialize_spots(5000.0, 1.5)
