@@ -6,6 +6,7 @@
 [![Licence](http://img.shields.io/badge/license-GPLv3-blue.svg?style=flat)](http://www.gnu.org/licenses/gpl-3.0.html)
 [![PyPI version](https://badge.fury.io/py/exoiris.svg)](https://pypi.org/project/ExoIris/)
 [![DOI](https://zenodo.org/badge/805355873.svg)](https://doi.org/10.5281/zenodo.18598641)
+[![Paper](https://img.shields.io/badge/AJ-10.3847%2F1538--3881%2Fae47ee-blue.svg)](https://iopscience.iop.org/article/10.3847/1538-3881/ae47ee/meta)
 
 **ExoIris** is a Python package for exoplanet transmission spectroscopy that models the full 2D spectroscopic transit time
 series directly, replacing the traditional two-step workflow. It jointly fits spectrophotometric datasets from different

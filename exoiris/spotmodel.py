@@ -81,11 +81,34 @@ def tlse(tphot, tspot, tfac, aspot, afac, spectra, tgrid):
     return 1.0 / (1.0 - aspot*(1.0 - fspot/fphot) - afac*(1.0 - ffac/fphot))
 
 
-def spot_contrast(tphot, tspot, spectra, spnorm):
+def spot_contrast(tphot, tspot, spectra, ref_flux_ratio):
+    """Wavelength dependence of the spot crossing amplitude relative to the reference wavelength.
+
+    A planet crossing a spot blocks the spot flux instead of the photosphere flux, so the amplitude
+    of the spot crossing signal is proportional to 1 - c, where c is the spot-to-photosphere flux
+    ratio. The amplitude relative to the reference wavelength is (1 - c(wavelength)) / (1 - c(ref)).
+
+    Returns NaNs for a spot with the temperature of the photosphere, which gives no signal, and
+    for temperatures outside the stellar spectrum grid.
+
+    Parameters
+    ----------
+    tphot
+        Photosphere temperature.
+    tspot
+        Spot temperature.
+    spectra
+        Stellar spectra binned to the data wavelengths as a function of temperature.
+    ref_flux_ratio
+        Flux ratio to the photosphere at the reference wavelength for the temperatures
+        of the spectrum grid.
+    """
     fphot = interpolate_spectrum(tphot, spectra.values, spectra.grid[0])
     fspot = interpolate_spectrum(tspot, spectra.values, spectra.grid[0])
-    norm = interpolate_spectrum(tspot, spnorm, spectra.grid[0])
-    return (fphot / fspot) / norm
+    cref = interpolate_spectrum(tspot, ref_flux_ratio, spectra.grid[0])
+    if cref == 1.0:
+        return full(fphot.shape, nan)
+    return (1.0 - fspot / fphot) / (1.0 - cref)
 
 
 def bin_stellar_spectrum_model(sp: RegularGridInterpolator, data: TSData):
@@ -121,8 +144,8 @@ class SpotModel:
 
         wave = ms.grid[1] / 1e3
         m = (wave > wlref - 0.025) & (wave < wlref + 0.025)
-        spot_norm = ms.values[:, m].mean(1)
-        self.spot_norm = interpolate_spectrum(tphot, spot_norm, ms.grid[0]) / spot_norm
+        ref_flux = ms.values[:, m].mean(1)
+        self.ref_flux_ratio = ref_flux / interpolate_spectrum(tphot, ref_flux, ms.grid[0])
 
         self.binned_spectra = []
         for d in tsa.data:
@@ -160,7 +183,7 @@ class SpotModel:
         self.spot_data_ids.append([i for i, d in enumerate(self.tsa.data) if d.epoch_group == epoch_group])
 
         i = self.nspots
-        pspot = [GParameter(f"spc_{i:02d}", 'spot {i:02d} center', "d", U(0, 1), (0, inf)),
+        pspot = [GParameter(f"spc_{i:02d}", 'spot {i:02d} center', "d", U(0, 1), (-inf, inf)),
                  GParameter(f"spa_{i:02d}", 'spot {i:02d} amplitude', "", U(0, 1), (0, inf)),
                  GParameter(f"spw_{i:02d}", 'spot {i:02d} FWHM', "d", U(0, 1), (0, inf)),
                  GParameter(f"sps_{i:02d}", 'spot {i:02d} shape', "d", U(1, 5), (0, inf)),
@@ -195,4 +218,4 @@ class SpotModel:
                 center, amplitude, fwhm, shape, tspot = pvp[ipv, self.spot_pv_slices[isp]]
                 for idata in self.spot_data_ids[isp]:
                     models[idata][ipv, :, :] += (spot_model(self.tsa.data[idata].time, center, amplitude, fwhm, shape) *
-                                                 spot_contrast(self.tphot, tspot, self.binned_spectra[idata], self.spot_norm)[:, None])
+                                                 spot_contrast(self.tphot, tspot, self.binned_spectra[idata], self.ref_flux_ratio)[:, None])
