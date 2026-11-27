@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   locations refer to the knots by index.
 - `ExoIris.save` now follows its `overwrite` argument and raises an `OSError` if the file exists and `overwrite` is
   False. The default is now True, so a plain `save()` call overwrites an existing file as before.
+- The spot width parameters (`spw_XX`) are now the exact full width at half maximum of the spot profile. The profile
+  was 1-4% narrower than the parameter value for the shapes allowed by the default prior, so the spot widths from
+  earlier fits are not directly comparable. The model fits are not affected.
 - `TSLPF.set_data` now raises a `ValueError` if the new data has a different number of data sets than the old data.
 
 ### Deprecated
@@ -67,6 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed adding to a `CompoundBinning` modifying the original object, and `Binning + CompoundBinning` putting the
   bins in the wrong order.
 - Fixed `util.create_binning` creating one bin too few for each range.
+- Fixed the white light curve fit using a too narrow prior on the squared radius ratio when the radius ratios have a
+  normal prior. The prior width was the square of the radius ratio prior width instead of `2 k sigma`.
 
 ## [1.2.0] - 2026-11-27
 

@@ -87,7 +87,8 @@ class WhiteLPF(BaseLPF):
         if 'Uniform' in str(pr.__class__):
             self.set_prior('k2', 'UP', pr.a**2, pr.b**2)
         if 'Normal' in str(pr.__class__):
-            self.set_prior('k2', 'NP', pr.mean**2, pr.std**2)
+            # The white light curve model samples k^2, and sigma(k^2) = 2 k sigma(k) to first order.
+            self.set_prior('k2', 'NP', pr.mean**2, 2*pr.mean*pr.std)
         ngids = tsa.data.noise_groups[self.lcids]
         for i in range(tsa.data.n_noise_groups):
             self.set_prior(f'wn_loge_{i}', 'NP', log10(diff(self.ofluxa[ngids==i]).std() / sqrt(2)), 0.1)

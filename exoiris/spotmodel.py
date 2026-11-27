@@ -51,7 +51,8 @@ def spot_model(x, center, amplitude, fwhm, shape):
         return full(x.shape, nan)
     if fwhm == 0.0:
         return zeros(x.shape)
-    c = log(4)**(1/shape) * fwhm
+    # The profile falls to half of its maximum at |x - center| = c/2 * log(2)**(1/shape).
+    c = fwhm / log(2)**(1/shape)
     return amplitude*exp(-(2*fabs(x-center) / c)**shape)
 
 
